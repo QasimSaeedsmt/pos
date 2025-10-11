@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "747739668486",
+    "project_id": "tllp-connect",
+    "storage_bucket": "tllp-connect.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:747739668486:android:2f692b23a04dbb69e1e387",
+        "android_client_info": {
+          "package_name": "com.qsyncai.mpcm"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3fHSkg9V2o1l0ceR4cRHL9W8qXzcAcRY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
