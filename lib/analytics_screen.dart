@@ -5,8 +5,10 @@ import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:provider/provider.dart';
 import 'constants.dart';
 import 'app.dart';
+import 'main.dart';
 
 // Analytics Data Models
 class SalesAnalytics {
@@ -218,20 +220,44 @@ class TimePeriods {
   static final allPeriods = [today, yesterday, thisWeek, lastWeek, thisMonth, lastMonth];
 }
 
-// Analytics Service
+// Analytics Service with Tenant Isolation
 class AnalyticsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _currentTenantId;
+
+  void setTenantId(String tenantId) {
+    _currentTenantId = tenantId;
+  }
+
+  // Updated collection references with tenant isolation
+  CollectionReference get ordersRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('orders');
+
+  CollectionReference get customersRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('customers');
+
+  CollectionReference get productsRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('products');
 
   Future<SalesAnalytics> getSalesAnalytics(TimePeriod period) async {
     try {
-      final ordersSnapshot = await _firestore
-          .collection('orders')
+      if (_currentTenantId == null) {
+        throw Exception('Tenant ID not set');
+      }
+
+      final ordersSnapshot = await ordersRef
           .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
           .where('dateCreated', isLessThanOrEqualTo: period.endDate)
           .get();
 
       final orders = ordersSnapshot.docs.map((doc) {
-        final data = doc.data();
+        final data = doc.data() as Map<String, dynamic>;
         return Order.fromFirestore(data, doc.id);
       }).toList();
 
@@ -316,13 +342,16 @@ class AnalyticsService {
 
   Future<CustomerAnalytics> getCustomerAnalytics(TimePeriod period) async {
     try {
-      final customersSnapshot = await _firestore.collection('customers').get();
+      if (_currentTenantId == null) {
+        throw Exception('Tenant ID not set');
+      }
+
+      final customersSnapshot = await customersRef.get();
       final customers = customersSnapshot.docs.map((doc) {
         return Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
       }).toList();
 
-      final ordersSnapshot = await _firestore
-          .collection('orders')
+      final ordersSnapshot = await ordersRef
           .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
           .where('dateCreated', isLessThanOrEqualTo: period.endDate)
           .get();
@@ -376,16 +405,14 @@ class AnalyticsService {
 
   Future<List<TopCustomer>> _getTopCustomers() async {
     try {
-      final customersSnapshot = await _firestore
-          .collection('customers')
+      final customersSnapshot = await customersRef
           .orderBy('totalSpent', descending: true)
           .limit(10)
           .get();
 
       return customersSnapshot.docs.map((doc) {
         final data = doc.data();
-        final customer = Customer.fromFirestore(data, doc.id);
-
+        final customer = Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
         String tier = 'Bronze';
         if (customer.totalSpent > 1000) tier = 'Platinum';
         else if (customer.totalSpent > 500) tier = 'Gold';
@@ -461,11 +488,13 @@ class AnalyticsService {
 
   Future<double?> _calculateRepeatCustomerRate(TimePeriod period) async {
     try {
-      final customers = await _firestore.collection('customers').get();
+      final customers = await customersRef.get();
       final totalCustomers = customers.size;
       final repeatCustomers = customers.docs.where((doc) {
         final data = doc.data();
-        return (data['orderCount'] as num? ?? 0) > 1;
+        final mapData = data! as Map<String, dynamic>;
+        return (mapData['orderCount'] as num? ?? 0) > 1;
+
       }).length;
 
       return totalCustomers > 0 ? (repeatCustomers / totalCustomers) * 100 : 0;
@@ -482,14 +511,12 @@ class AnalyticsService {
     );
 
     try {
-      final currentCustomers = (await _firestore
-          .collection('customers')
+      final currentCustomers = (await customersRef
           .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
           .where('dateCreated', isLessThanOrEqualTo: period.endDate)
           .get()).size;
 
-      final previousCustomers = (await _firestore
-          .collection('customers')
+      final previousCustomers = (await customersRef
           .where('dateCreated', isGreaterThanOrEqualTo: previousPeriod.startDate)
           .where('dateCreated', isLessThanOrEqualTo: previousPeriod.endDate)
           .get()).size;
@@ -502,7 +529,7 @@ class AnalyticsService {
 
   Future<Product?> _getProductById(String productId) async {
     try {
-      final doc = await _firestore.collection('products').doc(productId).get();
+      final doc = await productsRef.doc(productId).get();
       if (doc.exists) {
         return Product.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
       }
@@ -513,14 +540,14 @@ class AnalyticsService {
   }
 
   Future<List<Order>> getRecentOrders({int limit = 10}) async {
-    final snapshot = await _firestore
-        .collection('orders')
+    final snapshot = await ordersRef
         .orderBy('dateCreated', descending: true)
         .limit(limit)
         .get();
 
     return snapshot.docs.map((doc) {
-      return Order.fromFirestore(doc.data(), doc.id);
+      final data = doc.data() as Map<String, dynamic>;
+      return Order.fromFirestore(data, doc.id);
     }).toList();
   }
 
@@ -568,7 +595,17 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _setTenantContext();
     _loadAnalytics();
+  }
+
+  void _setTenantContext() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final tenantId = authProvider.currentUser?.tenantId;
+
+    if (tenantId != null && tenantId != 'super_admin') {
+      _analyticsService.setTenantId(tenantId);
+    }
   }
 
   Future<void> _loadAnalytics() async {
@@ -669,79 +706,55 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
-      // appBar: AppBar(
-      //   backgroundColor: Colors.blue[700],
-      //   elevation: 0,
-      //   actions: [
-      //     IconButton(
-      //       icon: Icon(Icons.refresh),
-      //       onPressed: _loadAnalytics,
-      //       tooltip: 'Refresh',
-      //     ),
-      //   ],
-      //   bottom: TabBar(
-      //     controller: _tabController,
-      //     labelColor: Colors.white,
-      //     unselectedLabelColor: Colors.white70,
-      //     indicatorColor: Colors.white,
-      //     tabs: [
-      //       Tab(text: 'Overview'),
-      //       Tab(text: 'Sales'),
-      //       Tab(text: 'Products'),
-      //       Tab(text: 'Customers'),
-      //     ],
-      //   ),
-      // ),
-        body: Column(
-          children: [
-            // Tab Bar
-            Container(
-              color: Colors.blue.shade700,
-
-              child: TabBar(
-                controller: _tabController,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                indicatorColor: Colors.white,
-                indicatorWeight: 3,
-                indicatorSize: TabBarIndicatorSize.tab,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w600),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
-                tabs: const [
-                  Tab(text: 'Overview'),
-                  Tab(text: 'Sales'),
-                  Tab(text: 'Products'),
-                  Tab(text: 'Customers'),
-                ],
-              ),
+      body: Column(
+        children: [
+          // Tab Bar
+          Container(
+            color: Colors.blue.shade700,
+            child: TabBar(
+              controller: _tabController,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              indicatorColor: Colors.white,
+              indicatorWeight: 3,
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
+              tabs: const [
+                Tab(text: 'Overview'),
+                Tab(text: 'Sales'),
+                Tab(text: 'Products'),
+                Tab(text: 'Customers'),
+              ],
             ),
+          ),
 
-            // Period Selector
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: _buildPeriodSelector(),
+          // Period Selector
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _buildPeriodSelector(),
+          ),
+
+          // Tab Content
+          Expanded(
+            child: _isLoading
+                ? _buildLoadingState()
+                : _hasError
+                ? _buildErrorState()
+                : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOverviewTab(),
+                _buildSalesTab(),
+                _buildProductsTab(),
+                _buildCustomersTab(),
+              ],
             ),
-
-            // Tab Content
-            Expanded(
-              child: _isLoading
-                  ? _buildLoadingState()
-                  : _hasError
-                  ? _buildErrorState()
-                  : TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildOverviewTab(),
-                  _buildSalesTab(),
-                  _buildProductsTab(),
-                  _buildCustomersTab(),
-                ],
-              ),
-            ),
-          ],
-        ));
-
-        }
+          ),
+        ],
+      ),
+    );
+  }
 
   // Overview Tab
   Widget _buildOverviewTab() {
@@ -769,7 +782,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
       children: [
         _buildMetricCard(
           title: 'Total Sales',
-          value: '${Constants.CURRENCY_NAME}${_analytics?.totalSales.toStringAsFixed(0) ?? '0'}',
+          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.totalSales.toStringAsFixed(0) ?? '0'}',
           icon: Icons.attach_money,
           color: Colors.green,
         ),
@@ -787,7 +800,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         ),
         _buildMetricCard(
           title: 'Avg Order',
-          value: '${Constants.CURRENCY_NAME}${_analytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
+          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
           icon: Icons.analytics,
           color: Colors.purple,
         ),
@@ -890,7 +903,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             ),
           ),
           Text(
-            '${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(0)}',
+            '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
           ),
         ],
@@ -916,14 +929,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             SizedBox(height: 16),
             Row(
               children: [
-                _buildCashMetric('Total Cash', '${Constants.CURRENCY_NAME}${_cashSummary['totalCash']?.toStringAsFixed(0) ?? '0'}'),
+                _buildCashMetric('Total Cash', '${Constants.DEFAULT_CURRENCY}${_cashSummary['totalCash']?.toStringAsFixed(0) ?? '0'}'),
                 _buildCashMetric('Transactions', '${_cashSummary['cashOrders'] ?? 0}'),
               ],
             ),
             SizedBox(height: 12),
             Row(
               children: [
-                _buildCashMetric('Avg Transaction', '${Constants.CURRENCY_NAME}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
+                _buildCashMetric('Avg Transaction', '${Constants.DEFAULT_CURRENCY}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
                 _buildCashMetric('Peak Hour', _cashSummary['peakHour'] ?? 'N/A'),
               ],
             ),
@@ -1123,7 +1136,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 Text(performance.product.name, style: TextStyle(fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
                 SizedBox(height: 4),
                 Text(
-                  '${performance.quantitySold} sold • ${Constants.CURRENCY_NAME}${performance.revenue.toStringAsFixed(0)}',
+                  '${performance.quantitySold} sold • ${Constants.DEFAULT_CURRENCY}${performance.revenue.toStringAsFixed(0)}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
@@ -1161,7 +1174,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                     dataSource: productData,
                     xValueMapper: (ChartData data, _) => data.x,
                     yValueMapper: (ChartData data, _) => data.y,
-                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.CURRENCY_NAME}${data.y.toStringAsFixed(0)}',
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
                     dataLabelSettings: DataLabelSettings(isVisible: true),
                   ),
                 ],
@@ -1233,7 +1246,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 ),
                 _buildCustomerMetricCard(
                   title: 'Avg Order Value',
-                  value: '${Constants.CURRENCY_NAME}${_customerAnalytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
+                  value: '${Constants.DEFAULT_CURRENCY}${_customerAnalytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
                   subtitle: 'Per customer',
                   icon: Icons.attach_money,
                   color: Colors.blue,
@@ -1458,7 +1471,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${Constants.CURRENCY_NAME}${customer.totalSpent.toStringAsFixed(0)}',
+                '${Constants.DEFAULT_CURRENCY}${customer.totalSpent.toStringAsFixed(0)}',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green[700]),
               ),
               SizedBox(height: 2),
@@ -1607,7 +1620,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
                           child: Text(
-                            '${Constants.CURRENCY_NAME}${location.totalRevenue.toStringAsFixed(0)}',
+                            '${Constants.DEFAULT_CURRENCY}${location.totalRevenue.toStringAsFixed(0)}',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[700]),
                           ),
                         ),

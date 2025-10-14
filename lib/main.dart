@@ -4,18 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mpcm/app.dart';
-import 'package:mpcm/settings.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
-
-import 'analytics_screen.dart';
 import 'firebase_options.dart';
 
 class SuperAdminHome extends StatelessWidget {
@@ -1315,137 +1309,560 @@ class SplashScreen extends StatelessWidget {
   }
 }
 
+
 class LoginScreen extends StatefulWidget {
   @override
   _LoginScreenState createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _slideAnimation;
+
+  bool _obscurePassword = true;
+  bool _isHovering = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: 1000),
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.0, 0.5, curve: Curves.easeOut),
+      ),
+    );
+
+    _slideAnimation = Tween<double>(begin: 30.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.3, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
+    final size = MediaQuery.of(context).size;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      body: Padding(
-        padding: EdgeInsets.all(20),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? [
+              Color(0xFF0F2027),
+              Color(0xFF203A43),
+              Color(0xFF2C5364),
+            ]
+                : [
+              Color(0xFF667EEA),
+              Color(0xFF764BA2),
+            ],
+          ),
+        ),
         child: Center(
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  FlutterLogo(size: 80),
-                  SizedBox(height: 30),
-                  Text(
-                    'Welcome Back',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+          child: Container(
+            constraints: BoxConstraints(maxWidth: 500),
+            margin: EdgeInsets.all(20),
+            child: AnimatedBuilder(
+              animation: _animationController,
+              builder: (context, child) {
+                return Transform.translate(
+                  offset: Offset(0, _slideAnimation.value),
+                  child: Opacity(
+                    opacity: _fadeAnimation.value,
+                    child: child,
                   ),
-                  SizedBox(height: 10),
-                  Text(
-                    'Sign in to your account',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
-                  ),
-                  SizedBox(height: 30),
-
-                  if (authProvider.error != null)
-                    Container(
-                      padding: EdgeInsets.all(12),
-                      margin: EdgeInsets.only(bottom: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.red[50],
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red),
-                      ),
-                      child: Row(
+                );
+              },
+              child: Card(
+                elevation: 24,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Padding(
+                  padding: EdgeInsets.all(40),
+                  child: SingleChildScrollView(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.error, color: Colors.red),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              authProvider.error!,
-                              style: TextStyle(color: Colors.red),
+                          // Logo with modern design
+                          Container(
+                            width: 80,
+                            height: 80,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 20,
+                                  offset: Offset(0, 10),
+                                ),
+                              ],
                             ),
+                            child: Icon(
+                              Icons.rocket_launch_rounded,
+                              color: Colors.white,
+                              size: 40,
+                            ),
+                          ),
+
+                          SizedBox(height: 32),
+
+                          // Welcome text
+                          Text(
+                            'Welcome Back',
+                            style: TextStyle(
+                              fontSize: 32,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : Color(0xFF2D3748),
+                            ),
+                          ),
+
+                          SizedBox(height: 8),
+
+                          Text(
+                            'Sign in to continue your journey',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: isDark ? Colors.white70 : Color(0xFF718096),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+
+                          SizedBox(height: 32),
+
+                          // Error message with modern design
+                          if (authProvider.error != null)
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.all(16),
+                              margin: EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: Colors.red.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.error_outline,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  ),
+                                  SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      authProvider.error!,
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  GestureDetector(
+                                    // onTap: () => authProvider.clearError(),
+                                    child: Icon(
+                                      Icons.close,
+                                      color: Colors.red,
+                                      size: 18,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          // Email field
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: TextFormField(
+                              controller: _emailController,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Email Address',
+                                labelStyle: TextStyle(
+                                  color: isDark ? Colors.white70 : Color(0xFF718096),
+                                ),
+                                prefixIcon: Container(
+                                  margin: EdgeInsets.only(right: 12, left: 16),
+                                  child: Icon(
+                                    Icons.email_rounded,
+                                    color: Color(0xFF667EEA),
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your email';
+                                }
+                                if (!AppUtils.isEmailValid(value)) {
+                                  return 'Please enter a valid email';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+
+                          SizedBox(height: 20),
+
+                          // Password field
+                          Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: Offset(0, 5),
+                                ),
+                              ],
+                            ),
+                            child: TextFormField(
+                              controller: _passwordController,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              obscureText: _obscurePassword,
+                              decoration: InputDecoration(
+                                labelText: 'Password',
+                                labelStyle: TextStyle(
+                                  color: isDark ? Colors.white70 : Color(0xFF718096),
+                                ),
+                                prefixIcon: Container(
+                                  margin: EdgeInsets.only(right: 12, left: 16),
+                                  child: Icon(
+                                    Icons.lock_rounded,
+                                    color: Color(0xFF667EEA),
+                                  ),
+                                ),
+                                suffixIcon: GestureDetector(
+                                  onTap: () {
+                                    setState(() {
+                                      _obscurePassword = !_obscurePassword;
+                                    });
+                                  },
+                                  child: Container(
+                                    margin: EdgeInsets.only(right: 16),
+                                    child: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_rounded
+                                          : Icons.visibility_off_rounded,
+                                      color: Color(0xFF718096),
+                                    ),
+                                  ),
+                                ),
+                                filled: true,
+                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide.none,
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: BorderSide(
+                                    color: Color(0xFF667EEA),
+                                    width: 2,
+                                  ),
+                                ),
+                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              ),
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Please enter your password';
+                                }
+                                if (value.length < 6) {
+                                  return 'Password must be at least 6 characters';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+
+                          SizedBox(height: 24),
+
+                          // Sign In button
+                          MouseRegion(
+                            onEnter: (_) => setState(() => _isHovering = true),
+                            onExit: (_) => setState(() => _isHovering = false),
+                            child: AnimatedContainer(
+                              duration: Duration(milliseconds: 300),
+                              width: double.infinity,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: _isHovering
+                                    ? [
+                                  BoxShadow(
+                                    color: Color(0xFF667EEA).withOpacity(0.4),
+                                    blurRadius: 20,
+                                    offset: Offset(0, 10),
+                                  ),
+                                ]
+                                    : [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 10,
+                                    offset: Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: ElevatedButton(
+                                onPressed: authProvider.isLoading
+                                    ? null
+                                    : () async {
+                                  if (_formKey.currentState!.validate()) {
+                                    await authProvider.login(
+                                      _emailController.text.trim(),
+                                      _passwordController.text,
+                                    );
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.transparent,
+                                  shadowColor: Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: authProvider.isLoading
+                                    ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                    : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Sign In',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    SizedBox(width: 8),
+                                    Icon(
+                                      Icons.arrow_forward_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(height: 24),
+
+                          // Sign up link
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'New to our platform?',
+                                style: TextStyle(
+                                  color: isDark ? Colors.white70 : Color(0xFF718096),
+                                ),
+                              ),
+                              SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => Navigator.push(
+                                  context,
+                                  PageRouteBuilder(
+                                    pageBuilder: (_, __, ___) => ClientSignupScreen(),
+                                    transitionsBuilder: (_, animation, __, child) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: child,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                child: Text(
+                                  'Create account',
+                                  style: TextStyle(
+                                    color: Color(0xFF667EEA),
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          SizedBox(height: 20),
+
+                          // Divider
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Divider(
+                                  color: isDark ? Colors.white24 : Colors.grey[300],
+                                ),
+                              ),
+                              Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 16),
+                                child: Text(
+                                  'or',
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white54 : Color(0xFF718096),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: Divider(
+                                  color: isDark ? Colors.white24 : Colors.grey[300],
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          SizedBox(height: 20),
+
+                          // Social login buttons
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildSocialButton(
+                                icon: Icons.g_mobiledata_rounded,
+                                color: Colors.red,
+                                onTap: () {},
+                              ),
+                              SizedBox(width: 16),
+                              _buildSocialButton(
+                                icon: Icons.facebook_rounded,
+                                color: Colors.blue,
+                                onTap: () {},
+                              ),
+                              SizedBox(width: 16),
+                              _buildSocialButton(
+                                icon: Icons.apple_rounded,
+                                color: Colors.black,
+                                onTap: () {},
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email),
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!AppUtils.isEmailValid(value)) {
-                        return 'Please enter a valid email';
-                      }
-                      return null;
-                    },
                   ),
-                  SizedBox(height: 20),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      prefixIcon: Icon(Icons.lock),
-                      border: OutlineInputBorder(),
-                    ),
-                    obscureText: true,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      if (value.length < 6) {
-                        return 'Password must be at least 6 characters';
-                      }
-                      return null;
-                    },
-                  ),
-                  SizedBox(height: 20),
-
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: ElevatedButton(
-                      onPressed: authProvider.isLoading
-                          ? null
-                          : () async {
-                              if (_formKey.currentState!.validate()) {
-                                await authProvider.login(
-                                  _emailController.text.trim(),
-                                  _passwordController.text,
-                                );
-                              }
-                            },
-                      child: authProvider.isLoading
-                          ? CircularProgressIndicator(color: Colors.white)
-                          : Text('Sign In', style: TextStyle(fontSize: 16)),
-                    ),
-                  ),
-
-                  SizedBox(height: 20),
-                  TextButton(
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ClientSignupScreen()),
-                    ),
-                    child: Text('Don\'t have an account? Sign up here'),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSocialButton({required IconData icon, required Color color, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 50,
+        height: 50,
+        decoration: BoxDecoration(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? Color(0xFF2D3748)
+              : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Icon(
+          icon,
+          color: color,
+          size: 24,
         ),
       ),
     );
@@ -1517,7 +1934,7 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
       _BusinessInfoStep(_updateBusinessInfo),
       _AdminAccountStep(_updateAdminAccount),
       _SubscriptionStep(_updateSubscription),
-      _InitialSetupStep(_updateInitialSetup),
+      // _InitialSetupStep(_updateInitialSetup),
       _ConfirmationStep(_completeSignup),
     ]);
   }
@@ -1537,17 +1954,6 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
 
   void _updateSubscription(String plan) {
     setState(() => _subscriptionPlan = plan);
-    _nextStep();
-  }
-
-  void _updateInitialSetup(
-    List<Map<String, dynamic>> products,
-    List<Map<String, dynamic>> users,
-  ) {
-    setState(() {
-      _initialProducts = products;
-      _initialUsers = users;
-    });
     _nextStep();
   }
 
@@ -1881,144 +2287,6 @@ class __SubscriptionStepState extends State<_SubscriptionStep> {
   }
 }
 
-class _InitialSetupStep extends StatefulWidget {
-  final Function(List<Map<String, dynamic>>, List<Map<String, dynamic>>)
-  onComplete;
-  _InitialSetupStep(this.onComplete);
-
-  @override
-  __InitialSetupStepState createState() => __InitialSetupStepState();
-}
-
-class __InitialSetupStepState extends State<_InitialSetupStep> {
-  final List<Map<String, dynamic>> _products = [];
-  final List<Map<String, dynamic>> _users = [];
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Icon(Icons.settings, size: 60, color: Colors.purple),
-          SizedBox(height: 20),
-          Text(
-            'Initial Setup',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 10),
-          Text(
-            'Set up your initial products and users',
-            style: TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-          SizedBox(height: 30),
-
-          Expanded(
-            child: DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  TabBar(
-                    tabs: [
-                      Tab(text: 'Products (${_products.length})'),
-                      Tab(text: 'Users (${_users.length})'),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [_buildProductsTab(), _buildUsersTab()],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          SizedBox(height: 20),
-          ElevatedButton(
-            onPressed: () => widget.onComplete(_products, _users),
-            child: Text('Complete Setup'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProductsTab() {
-    return Column(
-      children: [
-        ElevatedButton.icon(
-          onPressed: _addProduct,
-          icon: Icon(Icons.add),
-          label: Text('Add Product'),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _products.length,
-            itemBuilder: (context, index) {
-              final product = _products[index];
-              return ListTile(
-                title: Text(product['name']),
-                subtitle: Text(
-                  '\$${product['price']} - Stock: ${product['stock']}',
-                ),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete),
-                  onPressed: () => setState(() => _products.removeAt(index)),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildUsersTab() {
-    return Column(
-      children: [
-        ElevatedButton.icon(
-          onPressed: _addUser,
-          icon: Icon(Icons.person_add),
-          label: Text('Add User'),
-        ),
-        Expanded(
-          child: ListView.builder(
-            itemCount: _users.length,
-            itemBuilder: (context, index) {
-              final user = _users[index];
-              return ListTile(
-                title: Text(user['email']),
-                subtitle: Text(user['role']),
-                trailing: IconButton(
-                  icon: Icon(Icons.delete),
-                  onPressed: () => setState(() => _users.removeAt(index)),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _addProduct() {
-    showDialog(
-      context: context,
-      builder: (context) => AddProductDialog(
-        onSave: (product) => setState(() => _products.add(product)),
-      ),
-    );
-  }
-
-  void _addUser() {
-    showDialog(
-      context: context,
-      builder: (context) =>
-          AddUserDialog(onSave: (user) => setState(() => _users.add(user))),
-    );
-  }
-}
 
 class _ConfirmationStep extends StatelessWidget {
   final Function(BuildContext) onComplete;
@@ -2057,77 +2325,6 @@ class _ConfirmationStep extends StatelessWidget {
 // =============================
 // DIALOGS AND MODALS
 // =============================
-class AddProductDialog extends StatefulWidget {
-  final Function(Map<String, dynamic>) onSave;
-  AddProductDialog({required this.onSave});
-
-  @override
-  _AddProductDialogState createState() => _AddProductDialogState();
-}
-
-class _AddProductDialogState extends State<AddProductDialog> {
-  final _nameController = TextEditingController();
-  final _priceController = TextEditingController();
-  final _stockController = TextEditingController();
-  final _categoryController = TextEditingController();
-  final _descriptionController = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Add Product'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: InputDecoration(labelText: 'Product Name'),
-            ),
-            TextField(
-              controller: _priceController,
-              decoration: InputDecoration(labelText: 'Price'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: _stockController,
-              decoration: InputDecoration(labelText: 'Stock'),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(
-              controller: _categoryController,
-              decoration: InputDecoration(labelText: 'Category'),
-            ),
-            TextField(
-              controller: _descriptionController,
-              decoration: InputDecoration(labelText: 'Description'),
-              maxLines: 3,
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Cancel'),
-        ),
-        ElevatedButton(onPressed: _saveProduct, child: Text('Save')),
-      ],
-    );
-  }
-
-  void _saveProduct() {
-    final product = {
-      'name': _nameController.text,
-      'price': double.parse(_priceController.text),
-      'stock': int.parse(_stockController.text),
-      'category': _categoryController.text,
-      'description': _descriptionController.text,
-    };
-    widget.onSave(product);
-    Navigator.pop(context);
-  }
-}
 
 class AddUserDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
@@ -2186,307 +2383,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
   }
 }
 
-// =============================
-// TENANT DASHBOARD
-// =============================
-class TenantDashboard extends StatefulWidget {
-  @override
-  _TenantDashboardState createState() => _TenantDashboardState();
-}
 
-class _TenantDashboardState extends State<TenantDashboard> {
-  int _currentIndex = 0;
-  int _cartItemCount = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final tenant = authProvider.currentTenant;
-    final EnhancedCartManager cartManager = EnhancedCartManager();
-
-    if (tenant == null) {
-      return Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    final List<Widget> _clientAdminScreens = [
-      DashboardHome(),
-
-      TenantProductsScreen(cartManager: cartManager),
-      CartScreen(cartManager: cartManager),
-      AnalyticsDashboardScreen(),
-      ProductManagementScreen(),
-
-      ReturnsManagementScreen(), // Add this line
-
-
-      SettingsScreen(),
-      if (authProvider.currentUser!.canManageUsers) UsersScreen(),
-      TicketsScreen(),
-
-      ProfileScreen(),
-    ];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(tenant.businessName),
-        actions: [
-          IconButton(icon: Icon(Icons.notifications), onPressed: () {}),
-          IconButton(
-            icon: Icon(Icons.logout),
-            onPressed: () => authProvider.logout(),
-          ),
-        ],
-      ),
-      body: _clientAdminScreens[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex < 5 ? _currentIndex : 4, // Ensure index is within bounds
-        onTap: (index) {
-          if (index == 4) {
-            // More option
-            _showMoreMenu(context, authProvider);
-          } else {
-            setState(() => _currentIndex = index);
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag_outlined),
-            activeIcon: Icon(Icons.shopping_bag),
-            label: 'Products',
-          ),
-          BottomNavigationBarItem(
-            icon: _buildCartIcon(),
-            activeIcon: _buildCartIcon(isActive: true),
-            label: 'Cart',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined),
-            activeIcon: Icon(Icons.analytics),
-            label: 'Analytics',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.more_horiz),
-            activeIcon: Icon(Icons.more_horiz),
-            label: 'More',
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Helper method for cart icon with badge
-  Widget _buildCartIcon({bool isActive = false}) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Icon(isActive ? Icons.shopping_cart : Icons.shopping_cart_outlined),
-        if (_cartItemCount > 0)
-          Positioned(
-            right: -6,
-            top: -4,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.redAccent,
-                shape: BoxShape.circle,
-              ),
-              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-              child: Text(
-                '$_cartItemCount',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  // More menu dialog
-  void _showMoreMenu(BuildContext context, AuthProvider authProvider) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.inventory_2_outlined),
-                title: Text('Manage Inventory'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() => _currentIndex = 4);
-
-                  // Navigate to manage screen
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.assignment_return_outlined),
-                title: Text('Returns'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() => _currentIndex = 5);
-
-                  // Navigate to returns screen
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.settings_outlined),
-                title: Text('Settings'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() => _currentIndex = 6);
-
-                  // Navigate to settings screen
-                },
-              ),
-              if (authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.people),
-                  title: Text('Users'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() => _currentIndex = 7);
-
-                    // Navigate to users screen
-                  },
-                ),
-              ListTile(
-                leading: Icon(Icons.report_problem),
-                title: Text('Ticket'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() => _currentIndex = 8);
-
-                  // Navigate to profile screen
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.person),
-                title: Text('Profile'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(() => _currentIndex = 9);
-
-                  // Navigate to profile screen
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class DashboardHome extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
-    return FutureBuilder<Map<String, dynamic>>(
-      future: FirebaseService.getDashboardStats(
-        authProvider.currentUser!.tenantId,
-      ),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(child: CircularProgressIndicator());
-        }
-
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-
-        final stats = snapshot.data!;
-
-        return Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            children: [
-              // Stats Grid
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                childAspectRatio: 1.5,
-                children: [
-                  _StatCard(
-                    'Total Revenue',
-                    '\$${stats['totalRevenue'].toStringAsFixed(2)}',
-                    Icons.attach_money,
-                    Colors.green,
-                  ),
-                  _StatCard(
-                    'Total Sales',
-                    stats['totalSales'].toString(),
-                    Icons.shopping_cart,
-                    Colors.blue,
-                  ),
-                  _StatCard(
-                    'Total Products',
-                    stats['totalProducts'].toString(),
-                    Icons.inventory,
-                    Colors.orange,
-                  ),
-                  _StatCard(
-                    'Low Stock',
-                    stats['lowStockProducts'].toString(),
-                    Icons.warning,
-                    Colors.red,
-                  ),
-                ],
-              ),
-
-              SizedBox(height: 20),
-
-              // Quick Actions
-              Text(
-                'Quick Actions',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 10),
-
-              GridView.count(
-                crossAxisCount: 2,
-                shrinkWrap: true,
-                children: [
-                  _ActionCard(
-                    'New Sale',
-                    Icons.point_of_sale,
-                    Colors.blue,
-                    () {},
-                  ),
-                  _ActionCard('Add Product', Icons.add, Colors.green, () {}),
-                  if (authProvider.currentUser!.canManageUsers)
-                    _ActionCard(
-                      'Manage Users',
-                      Icons.people,
-                      Colors.purple,
-                      () {},
-                    ),
-                  _ActionCard('Support', Icons.support, Colors.orange, () {}),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
 
 class _StatCard extends StatelessWidget {
   final String title;
@@ -2513,194 +2410,6 @@ class _StatCard extends StatelessWidget {
             Text(title, style: TextStyle(color: Colors.grey)),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class ProductsScreen extends StatefulWidget {
-  @override
-  _ProductsScreenState createState() => _ProductsScreenState();
-}
-
-class _ProductsScreenState extends State<ProductsScreen> {
-  final _searchController = TextEditingController();
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
-    return Scaffold(
-      body: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search products...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-              ),
-              onChanged: (value) => setState(() {}),
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('tenants')
-                  .doc(authProvider.currentUser!.tenantId)
-                  .collection('products')
-                  .snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Center(child: CircularProgressIndicator());
-                }
-
-                final products = snapshot.data!.docs;
-
-                return ListView.builder(
-                  itemCount: products.length,
-                  itemBuilder: (context, index) {
-                    final product =
-                        products[index].data() as Map<String, dynamic>;
-
-                    if (_searchController.text.isNotEmpty &&
-                        !product['name'].toString().toLowerCase().contains(
-                          _searchController.text.toLowerCase(),
-                        )) {
-                      return SizedBox.shrink();
-                    }
-
-                    return ProductCard(product: product);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-      floatingActionButton:
-          Provider.of<AuthProvider>(context).currentUser!.canManageProducts
-          ? FloatingActionButton(
-              onPressed: () => showDialog(
-                context: context,
-                builder: (context) => AddProductDialog(
-                  onSave: (product) => FirebaseService.addProduct(
-                    tenantId: authProvider.currentUser!.tenantId,
-                    name: product['name'],
-                    price: product['price'],
-                    stock: product['stock'],
-                    category: product['category'],
-                    description: product['description'],
-                  ),
-                ),
-              ),
-              child: Icon(Icons.add),
-            )
-          : null,
-    );
-  }
-}
-
-class ProductCard extends StatelessWidget {
-  final Map<String, dynamic> product;
-
-  ProductCard({required this.product});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: ListTile(
-        leading: Icon(
-          Icons.inventory,
-          color: product['lowStockAlert'] ? Colors.red : Colors.green,
-        ),
-        title: Text(product['name']),
-        subtitle: Text('\$${product['price']} - Stock: ${product['stock']}'),
-        trailing: product['lowStockAlert']
-            ? Icon(Icons.warning, color: Colors.red)
-            : null,
-        onTap: () {
-          // Show product details
-        },
-      ),
-    );
-  }
-}
-
-class SalesScreen extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-
-    return Scaffold(
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('tenants')
-            .doc(authProvider.currentUser!.tenantId)
-            .collection('sales')
-            .orderBy('createdAt', descending: true)
-            .snapshots(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return Center(child: CircularProgressIndicator());
-          }
-
-          final sales = snapshot.data!.docs;
-
-          return ListView.builder(
-            itemCount: sales.length,
-            itemBuilder: (context, index) {
-              final sale = sales[index].data() as Map<String, dynamic>;
-
-              return Card(
-                margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: ListTile(
-                  leading: Icon(Icons.receipt, color: Colors.green),
-                  title: Text('Sale #${sale['id']}'),
-                  subtitle: Text(
-                    '\$${sale['totalAmount']} - ${DateFormat('MMM dd, yyyy').format((sale['createdAt'] as Timestamp).toDate())}',
-                  ),
-                  trailing: Text(sale['paymentMethod']),
-                ),
-              );
-            },
-          );
-        },
-      ),
-      floatingActionButton:
-          Provider.of<AuthProvider>(context).currentUser!.canProcessSales
-          ? FloatingActionButton(
-              onPressed: () => _createNewSale(context),
-              child: Icon(Icons.point_of_sale),
-            )
-          : null,
-    );
-  }
-
-  void _createNewSale(BuildContext context) {
-    // Implement POS interface
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('New Sale'),
-        content: Text('POS interface would be implemented here'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close'),
-          ),
-        ],
       ),
     );
   }
@@ -3001,46 +2710,51 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
 
+          ElevatedButton(onPressed: (){
+            final authProvider = Provider.of<AuthProvider>(context,listen: false);
+            authProvider.logout();
+
+          }, child: Text("Logout")),
           SizedBox(height: 20),
 
-          Expanded(
-            child: ListView(
-              children: [
-                ListTile(
-                  leading: Icon(Icons.support),
-                  title: Text('Support Tickets'),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => TicketsScreen()),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(Icons.settings),
-                  title: Text('Branding & Settings'),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => BrandingScreen()),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(Icons.analytics),
-                  title: Text('Analytics & Reports'),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => AnalyticsScreen()),
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(Icons.notifications),
-                  title: Text('Notifications'),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => NotificationsScreen()),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Expanded(
+          //   child: ListView(
+          //     children: [
+          //       ListTile(
+          //         leading: Icon(Icons.support),
+          //         title: Text('Support Tickets'),
+          //         onTap: () => Navigator.push(
+          //           context,
+          //           MaterialPageRoute(builder: (_) => TicketsScreen()),
+          //         ),
+          //       ),
+          //       ListTile(
+          //         leading: Icon(Icons.settings),
+          //         title: Text('Branding & Settings'),
+          //         onTap: () => Navigator.push(
+          //           context,
+          //           MaterialPageRoute(builder: (_) => BrandingScreen()),
+          //         ),
+          //       ),
+          //       ListTile(
+          //         leading: Icon(Icons.analytics),
+          //         title: Text('Analytics & Reports'),
+          //         onTap: () => Navigator.push(
+          //           context,
+          //           MaterialPageRoute(builder: (_) => AnalyticsScreen()),
+          //         ),
+          //       ),
+          //       ListTile(
+          //         leading: Icon(Icons.notifications),
+          //         title: Text('Notifications'),
+          //         onTap: () => Navigator.push(
+          //           context,
+          //           MaterialPageRoute(builder: (_) => NotificationsScreen()),
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
         ],
       ),
     );

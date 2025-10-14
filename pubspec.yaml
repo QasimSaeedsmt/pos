@@ -52,8 +52,9 @@ dependencies:
   intl:
   syncfusion_flutter_charts:
   liquid_pull_to_refresh:
-
+#  flutter_local_notifications:
   hive_flutter:
+  badges:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8

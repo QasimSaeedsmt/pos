@@ -252,3 +252,227 @@ class AppTheme {
         : BoxDecoration();
   }
 }
+// theme_manager.dart
+// import 'package:flutter/material.dart';
+// import 'package:shared_preferences/shared_preferences.dart';
+//
+// class AppThemeManager with ChangeNotifier {
+//   static const String _themeModeKey = 'theme_mode';
+//
+//   ThemeMode _themeMode = ThemeMode.system;
+//
+//   ThemeMode get themeMode => _themeMode;
+//
+//   // Modern color palettes
+//   final Map<String, Color> _primaryColors = {
+//     'blue': Color(0xFF2196F3),
+//     'purple': Color(0xFF9C27B0),
+//     'teal': Color(0xFF009688),
+//     'orange': Color(0xFFFF9800),
+//     'green': Color(0xFF4CAF50),
+//     'indigo': Color(0xFF3F51B5),
+//     'pink': Color(0xFFE91E63),
+//     'deep_orange': Color(0xFFFF5722),
+//   };
+//
+//   final Map<String, List<Color>> _gradientPalettes = {
+//     'blue': [Color(0xFF2196F3), Color(0xFF21CBF3)],
+//     'purple': [Color(0xFF9C27B0), Color(0xFF673AB7)],
+//     'teal': [Color(0xFF009688), Color(0xFF4CAF50)],
+//     'sunset': [Color(0xFFFF9800), Color(0xFFE91E63)],
+//     'ocean': [Color(0xFF00BCD4), Color(0xFF3F51B5)],
+//     'forest': [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+//     'royal': [Color(0xFF3F51B5), Color(0xFF9C27B0)],
+//     'fire': [Color(0xFFFF5722), Color(0xFFFF9800)],
+//   };
+//
+//   String _primaryColor = 'blue';
+//   String _accentColor = 'teal';
+//   bool _enableGradient = true;
+//   bool _enableAnimations = true;
+//   double _fontSizeScale = 1.0;
+//   String _fontFamily = 'Roboto';
+//   bool _compactMode = false;
+//   String _buttonStyle = 'rounded';
+//
+//   // Getters
+//   String get primaryColor => _primaryColor;
+//   String get accentColor => _accentColor;
+//   bool get enableGradient => _enableGradient;
+//   bool get enableAnimations => _enableAnimations;
+//   double get fontSizeScale => _fontSizeScale;
+//   String get fontFamily => _fontFamily;
+//   bool get compactMode => _compactMode;
+//   String get buttonStyle => _buttonStyle;
+//
+//   Color get primaryColorValue => _primaryColors[_primaryColor] ?? _primaryColors['blue']!;
+//   List<Color> get gradientColors => _gradientPalettes[_accentColor] ?? _gradientPalettes['teal']!;
+//
+//   AppThemeManager() {
+//     _loadThemeSettings();
+//   }
+//
+//   Future<void> _loadThemeSettings() async {
+//     final prefs = await SharedPreferences.getInstance();
+//
+//     // Load theme mode
+//     final themeModeString = prefs.getString(_themeModeKey) ?? 'system';
+//     _themeMode = _parseThemeMode(themeModeString);
+//
+//     // Load other theme settings
+//     _primaryColor = prefs.getString('primary_color') ?? 'blue';
+//     _accentColor = prefs.getString('accent_color') ?? 'teal';
+//     _enableGradient = prefs.getBool('enable_gradient') ?? true;
+//     _enableAnimations = prefs.getBool('enable_animations') ?? true;
+//     _fontSizeScale = prefs.getDouble('font_size_scale') ?? 1.0;
+//     _fontFamily = prefs.getString('font_family') ?? 'Roboto';
+//     _compactMode = prefs.getBool('compact_mode') ?? false;
+//     _buttonStyle = prefs.getString('button_style') ?? 'rounded';
+//
+//     notifyListeners();
+//   }
+//
+//   Future<void> setThemeMode(ThemeMode mode) async {
+//     _themeMode = mode;
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setString(_themeModeKey, mode.toString().split('.').last);
+//     notifyListeners();
+//   }
+//
+//   Future<void> setThemeModeFromString(String mode) async {
+//     _themeMode = _parseThemeMode(mode);
+//     final prefs = await SharedPreferences.getInstance();
+//     await prefs.setString(_themeModeKey, mode);
+//     notifyListeners();
+//   }
+//
+//   ThemeMode _parseThemeMode(String mode) {
+//     switch (mode) {
+//       case 'light':
+//         return ThemeMode.light;
+//       case 'dark':
+//         return ThemeMode.dark;
+//       case 'system':
+//       default:
+//         return ThemeMode.system;
+//     }
+//   }
+//
+//   // Update other theme settings
+//   Future<void> updateThemeSettings({
+//     String? primaryColor,
+//     String? accentColor,
+//     bool? enableGradient,
+//     bool? enableAnimations,
+//     double? fontSizeScale,
+//     String? fontFamily,
+//     bool? compactMode,
+//     String? buttonStyle,
+//   }) async {
+//     final prefs = await SharedPreferences.getInstance();
+//
+//     if (primaryColor != null) {
+//       _primaryColor = primaryColor;
+//       await prefs.setString('primary_color', primaryColor);
+//     }
+//
+//     if (accentColor != null) {
+//       _accentColor = accentColor;
+//       await prefs.setString('accent_color', accentColor);
+//     }
+//
+//     if (enableGradient != null) {
+//       _enableGradient = enableGradient;
+//       await prefs.setBool('enable_gradient', enableGradient);
+//     }
+//
+//     if (enableAnimations != null) {
+//       _enableAnimations = enableAnimations;
+//       await prefs.setBool('enable_animations', enableAnimations);
+//     }
+//
+//     if (fontSizeScale != null) {
+//       _fontSizeScale = fontSizeScale;
+//       await prefs.setDouble('font_size_scale', fontSizeScale);
+//     }
+//
+//     if (fontFamily != null) {
+//       _fontFamily = fontFamily;
+//       await prefs.setString('font_family', fontFamily);
+//     }
+//
+//     if (compactMode != null) {
+//       _compactMode = compactMode;
+//       await prefs.setBool('compact_mode', compactMode);
+//     }
+//
+//     if (buttonStyle != null) {
+//       _buttonStyle = buttonStyle;
+//       await prefs.setString('button_style', buttonStyle);
+//     }
+//
+//     notifyListeners();
+//   }
+//
+//   // Helper method to get app bar gradient
+//   Gradient getAppBarGradient() {
+//     return LinearGradient(
+//       colors: enableGradient ? gradientColors : [primaryColorValue, primaryColorValue],
+//       begin: Alignment.topLeft,
+//       end: Alignment.bottomRight,
+//     );
+//   }
+//
+//   // Helper to get button style
+//   ButtonStyle getButtonStyle() {
+//     switch (_buttonStyle) {
+//       case 'rounded':
+//         return ElevatedButton.styleFrom(
+//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+//         );
+//       case 'square':
+//         return ElevatedButton.styleFrom(
+//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+//         );
+//       case 'outlined':
+//         return ElevatedButton.styleFrom(
+//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//           side: BorderSide(color: primaryColorValue),
+//           backgroundColor: Colors.transparent,
+//           foregroundColor: primaryColorValue,
+//         );
+//       default:
+//         return ElevatedButton.styleFrom(
+//           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+//         );
+//     }
+//   }
+//
+//   // Reset all theme settings to default
+//   Future<void> resetToDefaults() async {
+//     final prefs = await SharedPreferences.getInstance();
+//
+//     await prefs.remove(_themeModeKey);
+//     await prefs.remove('primary_color');
+//     await prefs.remove('accent_color');
+//     await prefs.remove('enable_gradient');
+//     await prefs.remove('enable_animations');
+//     await prefs.remove('font_size_scale');
+//     await prefs.remove('font_family');
+//     await prefs.remove('compact_mode');
+//     await prefs.remove('button_style');
+//
+//     // Reset to defaults
+//     _themeMode = ThemeMode.system;
+//     _primaryColor = 'blue';
+//     _accentColor = 'teal';
+//     _enableGradient = true;
+//     _enableAnimations = true;
+//     _fontSizeScale = 1.0;
+//     _fontFamily = 'Roboto';
+//     _compactMode = false;
+//     _buttonStyle = 'rounded';
+//
+//     notifyListeners();
+//   }
+// }

@@ -1,5 +1,8 @@
 // settings.dart
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:mpcm/products/currency_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
@@ -94,7 +97,10 @@ final Map<String, List<Color>> _gradientPalettes = {
   ],
 };
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({Key? key}) : super(key: key);
+  // String tenantId;
+   SettingsScreen({Key? key,
+     // required this.tenantId
+   }) : super(key: key);
 
   @override
   _SettingsScreenState createState() => _SettingsScreenState();
@@ -412,8 +418,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadSettings();
+    _loadCurrency();
   }
-
+  _loadCurrency() async {
+    // final currencyService = Provider.of<CurrencyService>(context, listen: false);
+    // await currencyService.loadCurrency(widget.tenantId);
+    // setState(() {
+    //   _currency = currencyService.currency;
+    // });
+  }
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -837,6 +850,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
     return Scaffold(
       appBar: AppBar(
         title: Text('Settings'),
@@ -1022,12 +1036,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             options: ['English', 'Spanish', 'French', 'German', 'Chinese', 'Japanese'],
             onChanged: (value) => setState(() => _language = value!),
           ),
+
           _buildDropdownSetting(
             title: 'Currency',
             subtitle: 'Default currency',
             value: _currency,
             options: ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR'],
-            onChanged: (value) => setState(() => _currency = value!),
+            onChanged: (value) {
+              if (value != null) {
+                setState(() => _currency = value);
+                // Update in Firestore via CurrencyService
+                final currencyService = Provider.of<CurrencyService>(context, listen: false);
+                // currencyService.updateCurrency(authProvider, value);
+              }
+            },
           ),
           _buildTextInputSetting(
             title: 'Tax Rate (%)',
