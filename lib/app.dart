@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -28,6 +29,1900 @@ import 'analytics_screen.dart';
 import 'app_theme.dart';
 import 'constants.dart';
 import 'main.dart';
+// Modern Dashboard Screen with Real Data
+class ModernDashboardScreen extends StatefulWidget {
+  const ModernDashboardScreen({super.key});
+
+  @override
+  _ModernDashboardScreenState createState() => _ModernDashboardScreenState();
+}
+
+class _ModernDashboardScreenState extends State<ModernDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  final EnhancedPOSService _posService = EnhancedPOSService();
+  final AuthProvider _authProvider = AuthProvider();
+  final FirestoreService _firestore = FirestoreService();
+
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<double> _slideAnimation;
+
+  // Real data variables
+  DashboardStats _stats = DashboardStats.empty();
+  List<Order> _recentOrders = [];
+  List<Product> _lowStockProducts = [];
+  List<RevenueDataPoint> _revenueData = [];
+  List<TopSellingProduct> _topSellingProducts = [];
+  List<Customer> _recentCustomers = [];
+
+  bool _isLoading = true;
+  bool _isOnline = true;
+  bool _isRefreshing = false;
+  String _selectedPeriod = 'today'; // today, week, month, year
+
+  @override
+  void initState() {
+    super.initState();
+    _initAnimations();
+    _loadDashboardData();
+    _setupConnectivityListener();
+  }
+
+  void _initAnimations() {
+    _animationController = AnimationController(
+      duration: Duration(milliseconds: 800),
+      vsync: this,
+    );
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.0, 0.5, curve: Curves.easeIn),
+      ),
+    );
+
+    _slideAnimation = Tween<double>(begin: 50.0, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(0.3, 1.0, curve: Curves.easeOut),
+      ),
+    );
+
+    _animationController.forward();
+  }
+
+  Future<void> _loadDashboardData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+      _isRefreshing = true;
+    });
+
+    try {
+      final tenantId = _authProvider.currentUser?.tenantId;
+      if (tenantId == null || tenantId.isEmpty) {
+        throw Exception('Invalid tenant ID');
+      }
+
+      // Verify tenant exists
+      final tenantDoc = await FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(tenantId)
+          .get();
+
+      if (!tenantDoc.exists) {
+        throw Exception('Tenant not found in database');
+      }
+
+      _firestore.setTenantId(tenantId);
+      _posService.setTenantContext(tenantId);
+
+      // Load all data with timeout protection
+      final results = await Future.wait([
+        _fetchDashboardStats().timeout(Duration(seconds: 30)),
+        _fetchRecentOrders().timeout(Duration(seconds: 20)),
+        _fetchLowStockProducts().timeout(Duration(seconds: 20)),
+        _fetchRevenueData().timeout(Duration(seconds: 25)),
+        _fetchTopSellingProducts().timeout(Duration(seconds: 25)),
+        _fetchRecentCustomers().timeout(Duration(seconds: 20)),
+      ], eagerError: true).catchError((error) {
+        throw Exception('Data loading timeout: $error');
+      });
+
+      if (mounted) {
+        setState(() {
+          _stats = results[0] as DashboardStats;
+          _recentOrders = results[1] as List<Order>;
+          _lowStockProducts = results[2] as List<Product>;
+          _revenueData = results[3] as List<RevenueDataPoint>;
+          _topSellingProducts = results[4] as List<TopSellingProduct>;
+          _recentCustomers = results[5] as List<Customer>;
+          _isLoading = false;
+          _isRefreshing = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading dashboard data: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isRefreshing = false;
+        });
+      }
+
+      // Show specific error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load real dashboard data: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: _loadDashboardData,
+          ),
+        ),
+      );
+    }
+  }
+  Future<DashboardStats> _fetchDashboardStats() async {
+    final tenantId = _authProvider.currentUser!.tenantId;
+    _firestore.setTenantId(tenantId);
+
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    try {
+      // Fetch all required data with validation
+      final futures = await Future.wait([
+        _firestore.ordersRef
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
+            .where('dateCreated', isLessThanOrEqualTo: Timestamp.fromDate(todayEnd))
+            .get(),
+        _firestore.ordersRef
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart.subtract(Duration(days: 1))))
+            .where('dateCreated', isLessThanOrEqualTo: Timestamp.fromDate(todayEnd.subtract(Duration(days: 1))))
+            .get(),
+        _firestore.ordersRef.get(),
+        _firestore.productsRef.where('status', isEqualTo: 'publish').get(),
+        _firestore.customersRef.get(),
+        _firestore.returnsRef
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
+            .get(),
+        _firestore.returnsRef.get(),
+      ]);
+
+      // Validate we got all data
+      for (var i = 0; i < futures.length; i++) {
+        if (futures[i] == null) {
+          throw Exception('Failed to fetch dataset $i');
+        }
+      }
+
+      final todayOrdersSnapshot = futures[0] as QuerySnapshot;
+      final yesterdayOrdersSnapshot = futures[1] as QuerySnapshot;
+      final allOrdersSnapshot = futures[2] as QuerySnapshot;
+      final productsSnapshot = futures[3] as QuerySnapshot;
+      final customersSnapshot = futures[4] as QuerySnapshot;
+      final todayReturnsSnapshot = futures[5] as QuerySnapshot;
+      final allReturnsSnapshot = futures[6] as QuerySnapshot;
+
+      // Calculate real metrics with validation
+      final todayOrders = todayOrdersSnapshot.docs;
+      final yesterdayOrders = yesterdayOrdersSnapshot.docs;
+      final allOrders = allOrdersSnapshot.docs;
+      final allProducts = productsSnapshot.docs;
+      final allCustomers = customersSnapshot.docs;
+      final todayReturns = todayReturnsSnapshot.docs;
+      final totalReturns = allReturnsSnapshot.docs;
+
+      // Calculate today's revenue with validation
+      double todayRevenue = 0.0;
+      for (final order in todayOrders) {
+        final data = order.data() as Map<String, dynamic>;
+        final total = (data['total'] as num?)?.toDouble();
+        if (total != null) {
+          todayRevenue += total;
+        }
+      }
+
+      // Calculate yesterday's revenue
+      double yesterdayRevenue = 0.0;
+      for (final order in yesterdayOrders) {
+        final data = order.data() as Map<String, dynamic>;
+        final total = (data['total'] as num?)?.toDouble();
+        if (total != null) {
+          yesterdayRevenue += total;
+        }
+      }
+
+      // Calculate total revenue
+      double totalRevenue = 0.0;
+      for (final order in allOrders) {
+        final data = order.data() as Map<String, dynamic>;
+        final total = (data['total'] as num?)?.toDouble();
+        if (total != null) {
+          totalRevenue += total;
+        }
+      }
+
+      // Calculate low stock products
+      int lowStockCount = 0;
+      for (final product in allProducts) {
+        final data = product.data() as Map<String, dynamic>;
+        final stockQuantity = (data['stockQuantity'] as num?)?.toInt() ?? 0;
+        if (stockQuantity <= 10) {
+          lowStockCount++;
+        }
+      }
+
+      // Today's unique customers
+      final todayCustomerIds = <String>{};
+      for (final order in todayOrders) {
+        final data = order.data() as Map<String, dynamic>;
+        final customerId = data['customerId']?.toString();
+        if (customerId != null && customerId.isNotEmpty) {
+          todayCustomerIds.add(customerId);
+        }
+      }
+
+      // Calculate derived metrics
+      final averageOrderValue = allOrders.isNotEmpty ? totalRevenue / allOrders.length : 0.0;
+      final conversionRate = allCustomers.isNotEmpty
+          ? (allOrders.length / allCustomers.length * 100).clamp(0.0, 100.0)
+          : 0.0;
+
+      final revenueGrowth = _calculateGrowthPercentage(todayRevenue, yesterdayRevenue);
+      final salesGrowth = _calculateGrowthPercentage(
+          todayOrders.length.toDouble(),
+          yesterdayOrders.length.toDouble()
+      );
+
+      return DashboardStats(
+        totalRevenue: totalRevenue,
+        todayRevenue: todayRevenue,
+        totalSales: allOrders.length,
+        todaySales: todayOrders.length,
+        totalProducts: allProducts.length,
+        lowStockProducts: lowStockCount,
+        totalCustomers: allCustomers.length,
+        todayCustomers: todayCustomerIds.length,
+        averageOrderValue: averageOrderValue,
+        conversionRate: conversionRate,
+        revenueGrowth: revenueGrowth,
+        salesGrowth: salesGrowth,
+        todayReturns: todayReturns.length,
+        totalReturns: totalReturns.length,
+      );
+
+    } catch (e) {
+      print('Error in _fetchDashboardStats: $e');
+      // Return empty stats but don't throw - let the UI handle empty state
+      return DashboardStats.empty();
+    }
+  }
+  double _calculateGrowthPercentage(double today, double yesterday) {
+    if (yesterday == 0) return today > 0 ? 100.0 : 0.0;
+    return ((today - yesterday) / yesterday * 100);
+  }
+
+  Future<List<Order>> _fetchRecentOrders() async {
+    try {
+      // Get real orders from Firestore
+      final tenantId = _authProvider.currentUser!.tenantId;
+      _firestore.setTenantId(tenantId);
+
+      final ordersSnapshot = await _firestore.ordersRef
+          .orderBy('dateCreated', descending: true)
+          .limit(5)
+          .get();
+
+      return ordersSnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return Order.fromFirestore(data, doc.id);
+      }).toList();
+    } catch (e) {
+      print('Error fetching recent orders: $e');
+      return [];
+    }
+  }
+
+  Future<List<Product>> _fetchLowStockProducts() async {
+    try {
+      // Always fetch fresh data from Firestore
+      final tenantId = _authProvider.currentUser!.tenantId;
+      _firestore.setTenantId(tenantId);
+
+      final productsSnapshot = await _firestore.productsRef
+          .where('status', isEqualTo: 'publish')
+          .where('stockQuantity', isLessThanOrEqualTo: 10)
+          .orderBy('stockQuantity')
+          .limit(3)
+          .get();
+
+      return productsSnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return Product.fromFirestore(data, doc.id);
+      }).toList();
+    } catch (e) {
+      print('Error fetching low stock products: $e');
+      // Return empty list instead of fallback data
+      return [];
+    }
+  }
+  Future<List<RevenueDataPoint>> _fetchRevenueData() async {
+    final tenantId = _authProvider.currentUser!.tenantId;
+    _firestore.setTenantId(tenantId);
+
+    final now = DateTime.now();
+    final List<RevenueDataPoint> revenueData = [];
+
+    try {
+      // Generate real revenue data for last 7 days with validation
+      for (int i = 6; i >= 0; i--) {
+        final date = DateTime(now.year, now.month, now.day - i);
+        final startOfDay = DateTime(date.year, date.month, date.day);
+        final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59);
+
+        final ordersSnapshot = await _firestore.ordersRef
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+            .where('dateCreated', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+            .get();
+
+        double dayRevenue = 0.0;
+        int dayOrders = 0;
+
+        for (final order in ordersSnapshot.docs) {
+          final data = order.data() as Map<String, dynamic>;
+          final total = (data['total'] as num?)?.toDouble();
+          if (total != null) {
+            dayRevenue += total;
+            dayOrders++;
+          }
+        }
+
+        revenueData.add(RevenueDataPoint(
+          date: date,
+          revenue: dayRevenue,
+          orders: dayOrders,
+        ));
+      }
+
+      // Validate we have at least some data
+      if (revenueData.isEmpty) {
+        print('No revenue data found for the last 7 days');
+      }
+
+      return revenueData;
+    } catch (e) {
+      print('Error generating revenue data: $e');
+      // Return empty list - UI will handle no data state
+      return [];
+    }
+  }
+  Future<List<TopSellingProduct>> _fetchTopSellingProducts() async {
+    final tenantId = _authProvider.currentUser!.tenantId;
+    _firestore.setTenantId(tenantId);
+
+    try {
+      // Get recent orders (last 30 days) for sales analysis
+      final thirtyDaysAgo = DateTime.now().subtract(Duration(days: 30));
+      final ordersSnapshot = await _firestore.ordersRef
+          .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo))
+          .get();
+
+      // Aggregate product sales from real order data
+      final productSales = <String, TopSellingProduct>{};
+
+      for (final orderDoc in ordersSnapshot.docs) {
+        final orderData = orderDoc.data() as Map<String, dynamic>;
+        final lineItems = orderData['lineItems'] as List<dynamic>? ?? [];
+
+        for (final item in lineItems) {
+          final itemMap = item as Map<String, dynamic>;
+          final productId = itemMap['productId']?.toString() ?? '';
+          final productName = itemMap['productName']?.toString() ?? 'Unknown Product';
+          final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
+          final price = (itemMap['price'] as num?)?.toDouble() ?? 0.0;
+
+          if (productId.isNotEmpty) {
+            if (productSales.containsKey(productId)) {
+              final existing = productSales[productId]!;
+              productSales[productId] = TopSellingProduct(
+                productId: productId,
+                productName: productName,
+                totalSold: existing.totalSold + quantity,
+                totalRevenue: existing.totalRevenue + (price * quantity),
+                imageUrl: existing.imageUrl,
+              );
+            } else {
+              // Try to get product image if available
+              String? imageUrl;
+              try {
+                final productDoc = await _firestore.productsRef.doc(productId).get();
+                if (productDoc.exists) {
+                  final productData = productDoc.data() as Map<String, dynamic>?;
+                  imageUrl = productData?['imageUrl']?.toString();
+                }
+              } catch (e) {
+                print('Error fetching product image: $e');
+              }
+
+              productSales[productId] = TopSellingProduct(
+                productId: productId,
+                productName: productName,
+                totalSold: quantity,
+                totalRevenue: price * quantity,
+                imageUrl: imageUrl,
+              );
+            }
+          }
+        }
+      }
+
+      // Sort by total sold and take top 5
+
+      final sortedList = productSales.values.toList();
+      sortedList.sort((a, b) => b.totalSold.compareTo(a.totalSold));
+      return sortedList.take(5).toList();
+
+    } catch (e) {
+      print('Error fetching top selling products: $e');
+      return [];
+    }
+  }
+
+  Future<List<Customer>> _fetchRecentCustomers() async {
+    try {
+      // Get recent customers
+      final customers = await _posService.getAllCustomers();
+      return customers.take(5).toList();
+    } catch (e) {
+      print('Error fetching recent customers: $e');
+      return [];
+    }
+  }
+
+  void _setupConnectivityListener() {
+    _posService.onlineStatusStream.listen((isOnline) {
+      if (mounted) {
+        setState(() => _isOnline = isOnline);
+      }
+    });
+  }
+
+  Future<void> _refreshData() async {
+    if (_isRefreshing) return;
+
+    setState(() => _isRefreshing = true);
+    await _loadDashboardData();
+  }
+
+  void _showPeriodSelector() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Select Time Period', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            _buildPeriodOption('Today', 'today'),
+            _buildPeriodOption('This Week', 'week'),
+            _buildPeriodOption('This Month', 'month'),
+            _buildPeriodOption('This Year', 'year'),
+            SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPeriodOption(String label, String value) {
+    return ListTile(
+      leading: Icon(Icons.calendar_today, color: Colors.blue),
+      title: Text(label),
+      trailing: _selectedPeriod == value ? Icon(Icons.check, color: Colors.blue) : null,
+      onTap: () {
+        setState(() => _selectedPeriod = value);
+        Navigator.pop(context);
+        _loadDashboardData(); // Reload data for selected period
+      },
+    );
+  }
+
+  // Navigation methods
+  void _navigateToSales() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ProductSellingScreen(cartManager: EnhancedCartManager())),
+    );
+  }
+
+  void _navigateToInventory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => ProductManagementScreen()),
+    );
+  }
+
+  void _navigateToAnalytics() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => AnalyticsDashboardScreen()),
+    );
+  }
+
+  void _navigateToCustomers() {
+    // Navigate to customers screen
+    // Navigator.push(context, MaterialPageRoute(builder: (context) => CustomersScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      body: _isLoading ? _buildLoadingState() : _buildDashboard(),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 60,
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation(Colors.blue[700]!),
+            ),
+          ),
+          SizedBox(height: 20),
+          Text(
+            'Loading Real Dashboard Data...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Fetching from your Firestore database',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboard() {
+    return AnimatedBuilder(
+      animation: _animationController,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, _slideAnimation.value),
+          child: Opacity(
+            opacity: _fadeAnimation.value,
+            child: RefreshIndicator(
+              onRefresh: _refreshData,
+              child: CustomScrollView(
+                slivers: [
+                  // Header Section
+                  _buildHeader(),
+
+                  // Stats Grid
+                  _buildStatsGrid(),
+
+                  // Charts and Main Content
+                  _buildMainContent(),
+
+                  // Recent Activity & Top Products
+                  _buildActivitySection(),
+
+                  // Bottom Padding
+                  SliverToBoxAdapter(child: SizedBox(height: 20)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  SliverToBoxAdapter _buildHeader() {
+    return SliverToBoxAdapter(
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.blue[700]!,
+              Colors.blue[800]!,
+              Colors.indigo[900]!,
+            ],
+          ),
+          borderRadius: BorderRadius.only(
+            bottomLeft: Radius.circular(30),
+            bottomRight: Radius.circular(30),
+          ),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 60, 20, 30),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Welcome Section
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Good ${_getGreeting()},',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        _authProvider.currentTenant?.businessName ?? 'Your Business',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'Real-time Business Overview',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Status Indicator
+                Column(
+                  children: [
+                    _buildStatusIndicator(),
+                    SizedBox(height: 8),
+                    if (_isRefreshing)
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    else
+                      IconButton(
+                        icon: Icon(Icons.refresh, color: Colors.white70),
+                        onPressed: _refreshData,
+                        tooltip: 'Refresh Data',
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            SizedBox(height: 20),
+
+            // Quick Stats Bar
+            _buildQuickStatsBar(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusIndicator() {
+    return StreamBuilder<bool>(
+      stream: _posService.onlineStatusStream,
+      builder: (context, snapshot) {
+        final isOnline = snapshot.data ?? true;
+        return Container(
+          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: isOnline ? Colors.green[400] : Colors.orange[400],
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: isOnline ? Colors.green[400]!.withOpacity(0.3) : Colors.orange[400]!.withOpacity(0.3),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              SizedBox(width: 6),
+              Text(
+                isOnline ? 'Live Data' : 'Offline Mode',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (!isOnline) ...[
+                SizedBox(width: 4),
+                Icon(Icons.warning_amber, size: 12, color: Colors.white),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+  Widget _buildQuickStatsBar() {
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _QuickStatItem(
+            value: _stats.todaySales.toString(),
+            label: 'Today Sales',
+            icon: Icons.shopping_cart,
+          ),
+          _QuickStatItem(
+            value: '${Constants.CURRENCY_NAME}${_stats.todayRevenue.toStringAsFixed(0)}',
+            label: "Today's Revenue",
+            icon: Icons.attach_money,
+          ),
+          _QuickStatItem(
+            value: _stats.todayCustomers.toString(),
+            label: 'Today Customers',
+            icon: Icons.people,
+          ),
+          _QuickStatItem(
+            value: _stats.todayReturns.toString(),
+            label: 'Today Returns',
+            icon: Icons.assignment_return,
+          ),
+        ],
+      ),
+    );
+  }
+
+  SliverToBoxAdapter _buildStatsGrid() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
+        child: GridView.count(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 1.2,
+          children: [
+            _StatCard(
+              title: 'Total Revenue',
+              value: '${Constants.CURRENCY_NAME}${_stats.totalRevenue.toStringAsFixed(0)}',
+              subtitle: '${Constants.CURRENCY_NAME}${_stats.todayRevenue.toStringAsFixed(0)} today',
+              icon: Icons.attach_money,
+              color: Colors.green,
+              trend: _stats.revenueGrowth,
+            ),
+            _StatCard(
+              title: 'Total Sales',
+              value: _stats.totalSales.toString(),
+              subtitle: '${_stats.todaySales} today',
+              icon: Icons.shopping_cart,
+              color: Colors.blue,
+              trend: _stats.salesGrowth,
+            ),
+            _StatCard(
+              title: 'Average Order',
+              value: '${Constants.CURRENCY_NAME}${_stats.averageOrderValue.toStringAsFixed(0)}',
+              subtitle: 'Per transaction',
+              icon: Icons.trending_up,
+              color: Colors.purple,
+              trend: 0.0, // You can calculate this if needed
+            ),
+            _StatCard(
+              title: 'Conversion Rate',
+              value: '${_stats.conversionRate.toStringAsFixed(1)}%',
+              subtitle: 'Customer conversion',
+              icon: Icons.people,
+              color: Colors.orange,
+              trend: 0.0, // You can calculate this if needed
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  SliverToBoxAdapter _buildMainContent() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          children: [
+            // Revenue Chart
+            _buildRevenueChart(),
+            SizedBox(height: 20),
+
+            // Quick Actions & Low Stock
+            Row(
+              children: [
+                Expanded(
+                  child: _buildQuickActions(),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: _buildLowStockAlert(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRevenueChart() {
+    final weeklyGrowth = _calculateWeeklyGrowth();
+
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Revenue Overview (Last 7 Days)',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              Spacer(),
+              Container(
+                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: weeklyGrowth >= 0 ? Colors.green[50] : Colors.red[50],
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '${weeklyGrowth >= 0 ? '+' : ''}${weeklyGrowth.toStringAsFixed(1)}% this week',
+                  style: TextStyle(
+                    color: weeklyGrowth >= 0 ? Colors.green[700] : Colors.red[700],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          SizedBox(
+            height: 200,
+            child: SfCartesianChart(
+              margin: EdgeInsets.zero,
+              plotAreaBorderWidth: 0,
+              primaryXAxis: CategoryAxis(
+                majorGridLines: MajorGridLines(width: 0),
+                labelStyle: TextStyle(fontSize: 12),
+              ),
+              primaryYAxis: NumericAxis(
+                numberFormat: NumberFormat.compactCurrency(symbol: Constants.CURRENCY_NAME),
+                majorGridLines: MajorGridLines(
+                  width: 1,
+                  color: Colors.grey[100],
+                ),
+                labelStyle: TextStyle(fontSize: 12),
+              ),
+              series: <CartesianSeries>[
+                ColumnSeries<RevenueDataPoint, String>(
+                  dataSource: _revenueData,
+                  xValueMapper: (RevenueDataPoint data, _) =>
+                      DateFormat('E').format(data.date),
+                  yValueMapper: (RevenueDataPoint data, _) => data.revenue,
+                  color: Colors.blue[400],
+                  width: 0.6,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _calculateWeeklyGrowth() {
+    if (_revenueData.length < 2) return 0.0;
+
+    final firstHalf = _revenueData.take(3).fold(0.0, (sum, data) => sum + data.revenue);
+    final secondHalf = _revenueData.skip(3).fold(0.0, (sum, data) => sum + data.revenue);
+
+    if (firstHalf == 0) return secondHalf > 0 ? 100.0 : 0.0;
+    return ((secondHalf - firstHalf) / firstHalf * 100);
+  }
+
+  Widget _buildQuickActions() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Quick Actions',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          SizedBox(height: 16),
+          Column(
+            children: [
+              _QuickActionTile(
+                icon: Icons.point_of_sale,
+                title: 'New Sale',
+                subtitle: 'Start a new transaction',
+                color: Colors.blue,
+                onTap: _navigateToSales,
+              ),
+              _QuickActionTile(
+                icon: Icons.inventory_2,
+                title: 'Manage Inventory',
+                subtitle: 'View and update stock',
+                color: Colors.green,
+                onTap: _navigateToInventory,
+              ),
+              _QuickActionTile(
+                icon: Icons.analytics,
+                title: 'View Analytics',
+                subtitle: 'Detailed business insights',
+                color: Colors.purple,
+                onTap: _navigateToAnalytics,
+              ),
+              _QuickActionTile(
+                icon: Icons.people,
+                title: 'Customers',
+                subtitle: 'Manage customer database',
+                color: Colors.orange,
+                onTap: _navigateToCustomers,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLowStockAlert() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Low Stock Alert',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              Spacer(),
+              if (_lowStockProducts.isNotEmpty)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_lowStockProducts.length} items',
+                    style: TextStyle(
+                      color: Colors.orange[700],
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          SizedBox(height: 16),
+          _lowStockProducts.isEmpty
+              ? _buildNoLowStock()
+              : Column(
+            children: _lowStockProducts
+                .map((product) => _LowStockItem(product: product))
+                .toList(),
+          ),
+          if (_lowStockProducts.isNotEmpty) ...[
+            SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: _navigateToInventory,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.orange[700],
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                ),
+                child: Text(
+                  'View All Low Stock',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoLowStock() {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          Icon(
+            Icons.inventory_2_outlined,
+            size: 48,
+            color: Colors.green[300],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'All products are well stocked',
+            style: TextStyle(
+              color: Colors.green[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  SliverToBoxAdapter _buildActivitySection() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Recent Orders & Top Products
+            Expanded(
+              flex: 2,
+              child: Column(
+                children: [
+                  _buildRecentOrders(),
+                  SizedBox(height: 16),
+                  _buildTopProducts(),
+                ],
+              ),
+            ),
+            SizedBox(width: 16),
+
+            // Recent Customers
+            Expanded(
+              flex: 1,
+              child: _buildRecentCustomers(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentOrders() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Recent Orders',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              Spacer(),
+              Text(
+                '${_recentOrders.length} orders',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: 16),
+          _recentOrders.isEmpty
+              ? _buildNoRecentActivity()
+              : Column(
+            children: _recentOrders
+                .map((order) => _RecentOrderItem(order: order))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopProducts() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Top Selling Products',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          SizedBox(height: 16),
+          _topSellingProducts.isEmpty
+              ? _buildNoTopProducts()
+              : Column(
+            children: _topSellingProducts
+                .map((product) => _TopProductItem(product: product))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentCustomers() {
+    return Container(
+      padding: EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Customers',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[800],
+            ),
+          ),
+          SizedBox(height: 16),
+          _recentCustomers.isEmpty
+              ? _buildNoRecentCustomers()
+              : Expanded(
+            child: ListView.builder(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: _recentCustomers.length,
+              itemBuilder: (context, index) {
+                final customer = _recentCustomers[index];
+                return _RecentCustomerItem(customer: customer);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoRecentActivity() {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          Icon(
+            Icons.receipt_long_outlined,
+            size: 48,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No recent transactions',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoTopProducts() {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          Icon(
+            Icons.star_outline,
+            size: 48,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No sales data available',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoRecentCustomers() {
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          Icon(
+            Icons.people_outline,
+            size: 48,
+            color: Colors.grey[400],
+          ),
+          SizedBox(height: 8),
+          Text(
+            'No customers',
+            style: TextStyle(
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Morning';
+    if (hour < 17) return 'Afternoon';
+    return 'Evening';
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+}
+
+// Enhanced Data Models
+class DashboardStats {
+  final double totalRevenue;
+  final double todayRevenue;
+  final int totalSales;
+  final int todaySales;
+  final int totalProducts;
+  final int lowStockProducts;
+  final int totalCustomers;
+  final int todayCustomers;
+  final double averageOrderValue;
+  final double conversionRate;
+  final double revenueGrowth;
+  final double salesGrowth;
+  final int todayReturns;
+  final int totalReturns;
+
+  const DashboardStats({
+    required this.totalRevenue,
+    required this.todayRevenue,
+    required this.totalSales,
+    required this.todaySales,
+    required this.totalProducts,
+    required this.lowStockProducts,
+    required this.totalCustomers,
+    required this.todayCustomers,
+    required this.averageOrderValue,
+    required this.conversionRate,
+    required this.revenueGrowth,
+    required this.salesGrowth,
+    required this.todayReturns,
+    required this.totalReturns,
+  });
+
+  factory DashboardStats.empty() {
+    return DashboardStats(
+      totalRevenue: 0,
+      todayRevenue: 0,
+      totalSales: 0,
+      todaySales: 0,
+      totalProducts: 0,
+      lowStockProducts: 0,
+      totalCustomers: 0,
+      todayCustomers: 0,
+      averageOrderValue: 0,
+      conversionRate: 0,
+      revenueGrowth: 0,
+      salesGrowth: 0,
+      todayReturns: 0,
+      totalReturns: 0,
+    );
+  }
+}
+
+class RevenueDataPoint {
+  final DateTime date;
+  final double revenue;
+  final int orders;
+
+  RevenueDataPoint({
+    required this.date,
+    required this.revenue,
+    required this.orders,
+  });
+}
+
+class TopSellingProduct {
+  final String productId;
+  final String productName;
+  final int totalSold;
+  final double totalRevenue;
+  final String? imageUrl;
+
+  TopSellingProduct({
+    required this.productId,
+    required this.productName,
+    required this.totalSold,
+    required this.totalRevenue,
+    this.imageUrl,
+  });
+}
+
+// Supporting Widgets
+class _QuickStatItem extends StatelessWidget {
+  final String value;
+  final String label;
+  final IconData icon;
+
+  const _QuickStatItem({
+    required this.value,
+    required this.label,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          padding: EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 20, color: Colors.white),
+        ),
+        SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final double trend;
+
+  const _StatCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.trend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, size: 20, color: color),
+                ),
+                Spacer(),
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: trend >= 0 ? Colors.green[50] : Colors.red[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        trend >= 0 ? Icons.trending_up : Icons.trending_down,
+                        size: 12,
+                        color: trend >= 0 ? Colors.green[600] : Colors.red[600],
+                      ),
+                      SizedBox(width: 2),
+                      Text(
+                        '${trend.abs().toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: trend >= 0 ? Colors.green[600] : Colors.red[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Container(
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, size: 20, color: color),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.grey[800],
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+        ),
+      ),
+      trailing: Icon(
+        Icons.arrow_forward_ios,
+        size: 16,
+        color: Colors.grey[400],
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _LowStockItem extends StatelessWidget {
+  final Product product;
+
+  const _LowStockItem({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange[100]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              image: product.imageUrl != null
+                  ? DecorationImage(
+                image: NetworkImage(product.imageUrl!),
+                fit: BoxFit.cover,
+              )
+                  : null,
+            ),
+            child: product.imageUrl == null
+                ? Center(
+              child: Icon(Icons.inventory_2, size: 20, color: Colors.orange),
+            )
+                : null,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Only ${product.stockQuantity} left',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange[700],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.add, size: 18, color: Colors.orange[700]),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => RestockProductScreen()),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentOrderItem extends StatelessWidget {
+  final Order order;
+
+  const _RecentOrderItem({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.green[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.receipt, size: 20, color: Colors.green[600]),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order #${order.number}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  '${order.lineItems.length} items • ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            DateFormat('HH:mm').format(order.dateCreated),
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TopProductItem extends StatelessWidget {
+  final TopSellingProduct product;
+
+  const _TopProductItem({required this.product});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+              image: product.imageUrl != null
+                  ? DecorationImage(
+                image: NetworkImage(product.imageUrl!),
+                fit: BoxFit.cover,
+              )
+                  : null,
+            ),
+            child: product.imageUrl == null
+                ? Center(
+              child: Icon(Icons.shopping_bag, size: 20, color: Colors.grey),
+            )
+                : null,
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  product.productName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${product.totalSold} sold • ${Constants.CURRENCY_NAME}${product.totalRevenue.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecentCustomerItem extends StatelessWidget {
+  final Customer customer;
+
+  const _RecentCustomerItem({required this.customer});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.blue[50],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(Icons.person, size: 20, color: Colors.blue),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  customer.fullName,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  customer.email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
@@ -889,7 +2784,34 @@ class FirestoreService {
 // Add to FirestoreService class
   // In FirestoreService class - REPLACE the existing return methods with these:
 // In FirestoreService - UPDATE the createReturn method to handle no-order returns:
+// In FirestoreService class, add these methods:
+  Future<String> addCategory(Category category) async {
+    try {
+      final categoryData = category.toFirestore();
+      final docRef = categoriesRef.doc(category.id);
+      await docRef.set(categoryData);
+      return docRef.id;
+    } catch (e) {
+      throw Exception('Failed to add category: $e');
+    }
+  }
 
+  Future<void> updateCategory(Category category) async {
+    try {
+      final categoryData = category.toFirestore();
+      await categoriesRef.doc(category.id).update(categoryData);
+    } catch (e) {
+      throw Exception('Failed to update category: $e');
+    }
+  }
+
+  Future<void> deleteCategory(String categoryId) async {
+    try {
+      await categoriesRef.doc(categoryId).delete();
+    } catch (e) {
+      throw Exception('Failed to delete category: $e');
+    }
+  }
   // Enhanced return operations with offline support
   Future<ReturnRequest> createReturn(ReturnRequest returnRequest) async {
     try {
@@ -1468,11 +3390,7 @@ class FirestoreService {
         .toList();
   }
 
-  Future<String> addCategory(Category category) async {
-    final docRef = categoriesRef.doc();
-    await docRef.set(category.toFirestore());
-    return docRef.id;
-  }
+
 
   // Test connection
   Future<bool> testConnection() async {
@@ -1486,6 +3404,259 @@ class FirestoreService {
 }
 
 /// Enhanced POS Service with Offline Support
+class CategoryManagementScreen extends StatefulWidget {
+  const CategoryManagementScreen({super.key});
+
+  @override
+  _CategoryManagementScreenState createState() => _CategoryManagementScreenState();
+}
+
+class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
+  final EnhancedPOSService _posService = EnhancedPOSService();
+  final List<Category> _categories = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() => _isLoading = true);
+    try {
+      final categories = await _posService.getCategories();
+      setState(() {
+        _categories.clear();
+        _categories.addAll(categories);
+      });
+    } catch (e) {
+      print('Failed to load categories: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load categories: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _showAddCategoryDialog() {
+    final nameController = TextEditingController();
+    final descriptionController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add New Category'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(
+                labelText: 'Category Name *',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: descriptionController,
+              decoration: InputDecoration(
+                labelText: 'Description',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (nameController.text.trim().isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Please enter category name')),
+                );
+                return;
+              }
+
+              try {
+                final category = Category(
+                  id: DateTime.now().millisecondsSinceEpoch.toString(),
+                  name: nameController.text.trim(),
+                  slug: nameController.text.trim().toLowerCase().replaceAll(' ', '-'),
+                  description: descriptionController.text.trim().isEmpty ? null : descriptionController.text.trim(),
+                  count: 0,
+                );
+
+                await _posService.addCategory(category);
+                Navigator.pop(context);
+                _loadCategories();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Category "${category.name}" added successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to add category: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text('Add Category'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryList() {
+    if (_isLoading) {
+      return Center(child: CircularProgressIndicator());
+    }
+
+    if (_categories.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.category_outlined, size: 80, color: Colors.grey[400]),
+            SizedBox(height: 16),
+            Text(
+              'No Categories Yet',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Add categories to organize your products',
+              style: TextStyle(color: Colors.grey),
+            ),
+            SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _showAddCategoryDialog,
+              icon: Icon(Icons.add),
+              label: Text('Add First Category'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: _categories.length,
+      itemBuilder: (context, index) {
+        final category = _categories[index];
+        return Card(
+          margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ListTile(
+            leading: Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.category, color: Colors.blue),
+            ),
+            title: Text(
+              category.name,
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (category.description != null)
+                  Text(category.description!),
+                SizedBox(height: 4),
+                Text(
+                  '${category.count} products',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ],
+            ),
+            trailing: IconButton(
+              icon: Icon(Icons.delete, color: Colors.red),
+              onPressed: () => _showDeleteDialog(category),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showDeleteDialog(Category category) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete Category'),
+        content: Text('Are you sure you want to delete "${category.name}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                // Note: You'll need to implement deleteCategory in your POS service
+                // await _posService.deleteCategory(category.id);
+                Navigator.pop(context);
+                _loadCategories();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Category deleted successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Failed to delete category: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Manage Categories'),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.add),
+            onPressed: _showAddCategoryDialog,
+            tooltip: 'Add Category',
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadCategories,
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+      body: _buildCategoryList(),
+    );
+  }
+}
 /// Enhanced POS Service with Offline Support
 class EnhancedPOSService {
   final FirestoreService _firestore = FirestoreService();
@@ -2209,6 +4380,75 @@ class Product {
     this.dimensions,
   });
 
+  List<String> get categoryNames => categories.map((cat) => cat.name).toList();
+
+  bool hasCategory(String categoryId) {
+    return categories.any((cat) => cat.id == categoryId);
+  }
+  Product copyWith({
+    String? id,
+    String? name,
+    String? sku,
+    double? price,
+    double? regularPrice,
+    double? salePrice,
+    String? imageUrl,
+    List<String>? imageUrls,
+    int? stockQuantity,
+    bool? inStock,
+    String? stockStatus,
+    String? description,
+    String? shortDescription,
+    List<Category>? categories,
+    List<Attribute>? attributes,
+    Map<String, dynamic>? metaData,
+    DateTime? dateCreated,
+    DateTime? dateModified,
+    bool? purchasable,
+    String? type,
+    String? status,
+    bool? featured,
+    String? permalink,
+    double? averageRating,
+    int? ratingCount,
+    String? parentId,
+    List<String>? variations,
+    String? weight,
+    String? dimensions,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      sku: sku ?? this.sku,
+      price: price ?? this.price,
+      regularPrice: regularPrice ?? this.regularPrice,
+      salePrice: salePrice ?? this.salePrice,
+      imageUrl: imageUrl ?? this.imageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
+      stockQuantity: stockQuantity ?? this.stockQuantity,
+      inStock: inStock ?? this.inStock,
+      stockStatus: stockStatus ?? this.stockStatus,
+      description: description ?? this.description,
+      shortDescription: shortDescription ?? this.shortDescription,
+      categories: categories ?? this.categories,
+      attributes: attributes ?? this.attributes,
+      metaData: metaData ?? this.metaData,
+      dateCreated: dateCreated ?? this.dateCreated,
+      dateModified: dateModified ?? this.dateModified,
+      purchasable: purchasable ?? this.purchasable,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      featured: featured ?? this.featured,
+      permalink: permalink ?? this.permalink,
+      averageRating: averageRating ?? this.averageRating,
+      ratingCount: ratingCount ?? this.ratingCount,
+      parentId: parentId ?? this.parentId,
+      variations: variations ?? this.variations,
+      weight: weight ?? this.weight,
+      dimensions: dimensions ?? this.dimensions,
+    );
+  }
+
   factory Product.fromFirestore(Map<String, dynamic> data, String id) {
     final List<Category> parsedCategories = [];
     if (data['categories'] != null && data['categories'] is List) {
@@ -2259,10 +4499,6 @@ class Product {
     }
 
     final productId = id.isNotEmpty ? id : data['id']?.toString() ?? '';
-
-    if (productId.isEmpty) {
-      print('WARNING: Creating product with empty ID. Data: $data');
-    }
 
     return Product(
       id: productId,
@@ -2346,29 +4582,6 @@ class Product {
     return null;
   }
 
-  // Helper methods
-  bool get isOnSale => salePrice != null && salePrice! < (regularPrice ?? price);
-
-  double get discountPercentage {
-    if (regularPrice == null || regularPrice! <= 0) return 0.0;
-    final discount = regularPrice! - price;
-    return (discount / regularPrice!) * 100;
-  }
-
-  bool get hasVariations => variations.isNotEmpty;
-
-  bool get isVariableProduct => type == 'variable';
-
-  bool get isSimpleProduct => type == 'simple' || type == null;
-
-  bool get canBePurchased => purchasable && inStock;
-
-  String get formattedPrice => '${Constants.CURRENCY_NAME}${price.toStringAsFixed(2)}';
-
-  String? get formattedRegularPrice => regularPrice != null ? '${Constants.CURRENCY_NAME}{regularPrice!.toStringAsFixed(2)}' : null;
-
-  String? get formattedSalePrice => salePrice != null ? '${Constants.CURRENCY_NAME}{salePrice!.toStringAsFixed(2)}' : null;
-
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -2377,11 +4590,6 @@ class Product {
 
   @override
   int get hashCode => id.hashCode;
-
-  @override
-  String toString() {
-    return 'Product(id: $id, name: $name, price: $price, inStock: $inStock)';
-  }
 }
 
 class CartItem {
@@ -3393,7 +5601,7 @@ class POSApp extends StatefulWidget {
 }
 
 class _POSAppState extends State<POSApp> {
-  final AppTheme _appTheme = AppTheme();
+
 
   @override
   void initState() {
@@ -3401,7 +5609,7 @@ class _POSAppState extends State<POSApp> {
     _loadTheme();
   }
   Future<void> _loadTheme() async {
-    await _appTheme.loadSettings();
+
     setState(() {});
   }
   final EnhancedPOSService _posService = EnhancedPOSService();
@@ -3649,840 +5857,10 @@ class TicketDetailsDialog extends StatelessWidget {
   }
 }
 // Modern Dashboard Screen
-class ModernDashboardScreen extends StatefulWidget {
-  const ModernDashboardScreen({super.key});
 
-  @override
-  _ModernDashboardScreenState createState() => _ModernDashboardScreenState();
-}
-
-class _ModernDashboardScreenState extends State<ModernDashboardScreen> with SingleTickerProviderStateMixin {
-  final EnhancedPOSService _posService = EnhancedPOSService();
-  final AuthProvider _authProvider = AuthProvider();
-
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _slideAnimation;
-
-  DashboardStats _stats = DashboardStats.empty();
-  List<Order> _recentOrders = [];
-  List<Product> _lowStockProducts = [];
-  List<ChartData> _revenueData = [];
-  bool _isLoading = true;
-  bool _isOnline = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _initAnimations();
-    _loadDashboardData();
-    _setupConnectivityListener();
-  }
-
-  void _initAnimations() {
-    _animationController = AnimationController(
-      duration: Duration(milliseconds: 800),
-      vsync: this,
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Interval(0.0, 0.5, curve: Curves.easeIn),
-      ),
-    );
-
-    _slideAnimation = Tween<double>(begin: 50.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Interval(0.3, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
-    _animationController.forward();
-  }
-
-  Future<void> _loadDashboardData() async {
-    setState(() => _isLoading = true);
-
-    try {
-      final stats = await _fetchDashboardStats();
-      final orders = await _posService.getRecentOrders(limit: 5);
-      final products = await _posService.fetchProducts(inStockOnly: false);
-
-      final lowStockProducts = products.where((p) => p.stockQuantity <= 10).toList();
-      final revenueData = await _generateRevenueData();
-
-      if (mounted) {
-        setState(() {
-          _stats = stats;
-          _recentOrders = orders;
-          _lowStockProducts = lowStockProducts.take(3).toList();
-          _revenueData = revenueData;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  Future<DashboardStats> _fetchDashboardStats() async {
-    // Simulate API call - replace with actual data fetching
-    await Future.delayed(Duration(milliseconds: 500));
-
-    return DashboardStats(
-      totalRevenue: 12540.00,
-      todayRevenue: 845.50,
-      totalSales: 342,
-      todaySales: 12,
-      totalProducts: 156,
-      lowStockProducts: 8,
-      totalCustomers: 89,
-      todayCustomers: 4,
-      averageOrderValue: 36.67,
-      conversionRate: 68.5,
-    );
-  }
-
-  Future<List<ChartData>> _generateRevenueData() async {
-    // Generate sample revenue data for the chart
-    return [
-      ChartData('Mon', 1200),
-      ChartData('Tue', 1800),
-      ChartData('Wed', 1500),
-      ChartData('Thu', 2200),
-      ChartData('Fri', 1900),
-      ChartData('Sat', 2600),
-      ChartData('Sun', 2100),
-    ];
-  }
-
-  void _setupConnectivityListener() {
-    _posService.onlineStatusStream.listen((isOnline) {
-      if (mounted) {
-        setState(() => _isOnline = isOnline);
-      }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: _isLoading ? _buildLoadingState() : _buildDashboard(),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 60,
-            height: 60,
-            child: CircularProgressIndicator(
-              strokeWidth: 3,
-              valueColor: AlwaysStoppedAnimation(Colors.blue[700]!),
-            ),
-          ),
-          SizedBox(height: 20),
-          Text(
-            'Loading Dashboard...',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDashboard() {
-    return AnimatedBuilder(
-      animation: _animationController,
-      builder: (context, child) {
-        return Transform.translate(
-          offset: Offset(0, _slideAnimation.value),
-          child: Opacity(
-            opacity: _fadeAnimation.value,
-            child: CustomScrollView(
-              slivers: [
-                // Header Section
-                _buildHeader(),
-
-                // Stats Grid
-                _buildStatsGrid(),
-
-                // Charts and Main Content
-                _buildMainContent(),
-
-                // Recent Activity
-                _buildRecentActivity(),
-
-                // Bottom Padding
-                SliverToBoxAdapter(child: SizedBox(height: 20)),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  SliverToBoxAdapter _buildHeader() {
-    return SliverToBoxAdapter(
-      child: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.blue[700]!,
-              Colors.blue[800]!,
-              Colors.indigo[900]!,
-            ],
-          ),
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(30),
-            bottomRight: Radius.circular(30),
-          ),
-        ),
-        padding: EdgeInsets.fromLTRB(20, 60, 20, 30),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Welcome Section
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Good ${_getGreeting()},',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        _authProvider.currentTenant?.businessName ?? 'Business',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Status Indicator
-                _buildStatusIndicator(),
-              ],
-            ),
-            SizedBox(height: 20),
-
-            // Quick Stats Bar
-            _buildQuickStatsBar(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusIndicator() {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: _isOnline ? Colors.green[400] : Colors.orange[400],
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: _isOnline ? Colors.green[400]!.withOpacity(0.3) : Colors.orange[400]!.withOpacity(0.3),
-            blurRadius: 8,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-            ),
-          ),
-          SizedBox(width: 6),
-          Text(
-            _isOnline ? 'Online' : 'Offline',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickStatsBar() {
-    return Container(
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _QuickStatItem(
-            value: _stats.todaySales.toString(),
-            label: 'Today Sales',
-            icon: Icons.shopping_cart,
-          ),
-          _QuickStatItem(
-            value: '${Constants.CURRENCY_NAME}${_stats.todayRevenue.toStringAsFixed(0)}',
-            label: "Today's Revenue",
-            icon: Icons.attach_money,
-          ),
-          _QuickStatItem(
-            value: _stats.todayCustomers.toString(),
-            label: 'New Customers',
-            icon: Icons.people,
-          ),
-        ],
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildStatsGrid() {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, 10),
-        child: GridView.count(
-          shrinkWrap: true,
-          physics: NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
-          childAspectRatio: 1.2,
-          children: [
-            _StatCard(
-              title: 'Total Revenue',
-              value: '${Constants.CURRENCY_NAME}${_stats.totalRevenue.toStringAsFixed(0)}',
-              subtitle: '${Constants.CURRENCY_NAME}${_stats.todayRevenue.toStringAsFixed(0)} today',
-              icon: Icons.attach_money,
-              color: Colors.green,
-              trend: 12.5,
-            ),
-            _StatCard(
-              title: 'Total Sales',
-              value: _stats.totalSales.toString(),
-              subtitle: '${_stats.todaySales} today',
-              icon: Icons.shopping_cart,
-              color: Colors.blue,
-              trend: 8.3,
-            ),
-            _StatCard(
-              title: 'Products',
-              value: _stats.totalProducts.toString(),
-              subtitle: '${_stats.lowStockProducts} low stock',
-              icon: Icons.inventory_2,
-              color: Colors.orange,
-              trend: -2.1,
-            ),
-            _StatCard(
-              title: 'Customers',
-              value: _stats.totalCustomers.toString(),
-              subtitle: '${_stats.todayCustomers} new today',
-              icon: Icons.people,
-              color: Colors.purple,
-              trend: 15.7,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildMainContent() {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20),
-        child: Column(
-          children: [
-            // Revenue Chart
-            _buildRevenueChart(),
-            SizedBox(height: 20),
-
-            // Quick Actions & Low Stock
-            Row(
-              children: [
-                Expanded(
-                  child: _buildQuickActions(),
-                ),
-                SizedBox(width: 16),
-                Expanded(
-                  child: _buildLowStockAlert(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRevenueChart() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Revenue Overview',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              Spacer(),
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '+12.5% this week',
-                  style: TextStyle(
-                    color: Colors.green[700],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-          SizedBox(
-            height: 200,
-            child: SfCartesianChart(
-              margin: EdgeInsets.zero,
-              plotAreaBorderWidth: 0,
-              primaryXAxis: CategoryAxis(
-                majorGridLines: MajorGridLines(width: 0),
-                labelStyle: TextStyle(fontSize: 12),
-              ),
-              primaryYAxis: NumericAxis(
-                numberFormat: NumberFormat.compactCurrency(symbol: Constants.CURRENCY_NAME),
-                majorGridLines: MajorGridLines(
-                  width: 1,
-                  color: Colors.grey[100],
-                ),
-                labelStyle: TextStyle(fontSize: 12),
-              ),
-              series: <CartesianSeries>[
-                AreaSeries<ChartData, String>(
-                  dataSource: _revenueData,
-                  xValueMapper: (ChartData data, _) => data.day,
-                  yValueMapper: (ChartData data, _) => data.revenue,
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.blue[100]!,
-                      Colors.blue[50]!,
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                  borderColor: Colors.blue[400]!,
-                  borderWidth: 2,
-                  markerSettings: MarkerSettings(
-                    isVisible: true,
-                    shape: DataMarkerType.circle,
-                    borderWidth: 2,
-                    borderColor: Colors.blue[400]!,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuickActions() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          SizedBox(height: 16),
-          Column(
-            children: [
-              _QuickActionTile(
-                icon: Icons.point_of_sale,
-                title: 'New Sale',
-                subtitle: 'Start a new transaction',
-                color: Colors.blue,
-                onTap: () => _navigateToSellingScreen(),
-              ),
-              _QuickActionTile(
-                icon: Icons.inventory_2,
-                title: 'Manage Inventory',
-                subtitle: 'View and update stock',
-                color: Colors.green,
-                onTap: () => _navigateToInventory(),
-              ),
-              _QuickActionTile(
-                icon: Icons.assignment_return,
-                title: 'Process Return',
-                subtitle: 'Handle product returns',
-                color: Colors.orange,
-                onTap: () => _navigateToReturns(),
-              ),
-              _QuickActionTile(
-                icon: Icons.analytics,
-                title: 'View Reports',
-                subtitle: 'Detailed analytics',
-                color: Colors.purple,
-                onTap: () => _navigateToAnalytics(),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLowStockAlert() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Low Stock Alert',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              Spacer(),
-              if (_lowStockProducts.isNotEmpty)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${_lowStockProducts.length} items',
-                    style: TextStyle(
-                      color: Colors.orange[700],
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: 16),
-          _lowStockProducts.isEmpty
-              ? _buildNoLowStock()
-              : Column(
-            children: _lowStockProducts
-                .map((product) => _LowStockItem(product: product))
-                .toList(),
-          ),
-          if (_lowStockProducts.isNotEmpty) ...[
-            SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: _navigateToLowStock,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.orange[700],
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                ),
-                child: Text(
-                  'View All Low Stock',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoLowStock() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(
-            Icons.inventory_2_outlined,
-            size: 48,
-            color: Colors.green[300],
-          ),
-          SizedBox(height: 8),
-          Text(
-            'All products are well stocked',
-            style: TextStyle(
-              color: Colors.green[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildRecentActivity() {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
-        child: Container(
-          padding: EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black12,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    'Recent Activity',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey[800],
-                    ),
-                  ),
-                  Spacer(),
-                  TextButton(
-                    onPressed: _navigateToOrders,
-                    child: Text(
-                      'View All',
-                      style: TextStyle(
-                        color: Colors.blue[600],
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 16),
-              _recentOrders.isEmpty
-                  ? _buildNoRecentActivity()
-                  : Column(
-                children: _recentOrders
-                    .map((order) => _RecentOrderItem(order: order))
-                    .toList(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNoRecentActivity() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(
-            Icons.receipt_long_outlined,
-            size: 48,
-            color: Colors.grey[400],
-          ),
-          SizedBox(height: 8),
-          Text(
-            'No recent transactions',
-            style: TextStyle(
-              color: Colors.grey[600],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // Navigation Methods
-  void _navigateToSellingScreen() {
-    // Navigator.push(
-    //   context,
-    //   MaterialPageRoute(
-    //     builder: (context) => ProductSellingScreen(cartManager: car),
-    //   ),
-    // );
-  }
-
-  void _navigateToInventory() {
-    // Navigate to inventory management
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ProductManagementScreen()),
-    );
-  }
-
-  void _navigateToReturns() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ReturnsManagementScreen()),
-    );
-  }
-
-  void _navigateToAnalytics() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AnalyticsDashboardScreen()),
-    );
-  }
-
-  void _navigateToLowStock() {
-    // Navigate to low stock products
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProductManagementScreen(), // Could be filtered view
-      ),
-    );
-  }
-
-  void _navigateToOrders() {
-    // Navigate to orders screen
-    // You might need to create this screen
-  }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Morning';
-    if (hour < 17) return 'Afternoon';
-    return 'Evening';
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    super.dispose();
-  }
-}
 
 // Supporting Models
-class DashboardStats {
-  final double totalRevenue;
-  final double todayRevenue;
-  final int totalSales;
-  final int todaySales;
-  final int totalProducts;
-  final int lowStockProducts;
-  final int totalCustomers;
-  final int todayCustomers;
-  final double averageOrderValue;
-  final double conversionRate;
 
-  const DashboardStats({
-    required this.totalRevenue,
-    required this.todayRevenue,
-    required this.totalSales,
-    required this.todaySales,
-    required this.totalProducts,
-    required this.lowStockProducts,
-    required this.totalCustomers,
-    required this.todayCustomers,
-    required this.averageOrderValue,
-    required this.conversionRate,
-  });
-
-  factory DashboardStats.empty() {
-    return DashboardStats(
-      totalRevenue: 0,
-      todayRevenue: 0,
-      totalSales: 0,
-      todaySales: 0,
-      totalProducts: 0,
-      lowStockProducts: 0,
-      totalCustomers: 0,
-      todayCustomers: 0,
-      averageOrderValue: 0,
-      conversionRate: 0,
-    );
-  }
-}
 
 class ChartData {
   final String day;
@@ -4491,353 +5869,7 @@ class ChartData {
   ChartData(this.day, this.revenue);
 }
 
-// Supporting Widgets
-class _QuickStatItem extends StatelessWidget {
-  final String value;
-  final String label;
-  final IconData icon;
 
-  const _QuickStatItem({
-    required this.value,
-    required this.label,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 20, color: Colors.white),
-        ),
-        SizedBox(height: 8),
-        Text(
-          value,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white70,
-            fontSize: 10,
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final double trend;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.trend,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, size: 20, color: color),
-                ),
-                Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: trend >= 0 ? Colors.green[50] : Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        trend >= 0 ? Icons.trending_up : Icons.trending_down,
-                        size: 12,
-                        color: trend >= 0 ? Colors.green[600] : Colors.red[600],
-                      ),
-                      SizedBox(width: 2),
-                      Text(
-                        '${trend.abs().toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: trend >= 0 ? Colors.green[600] : Colors.red[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(
-                color: Colors.grey[500],
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickActionTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        padding: EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, size: 20, color: color),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[800],
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
-      ),
-      trailing: Icon(
-        Icons.arrow_forward_ios,
-        size: 16,
-        color: Colors.grey[400],
-      ),
-      onTap: onTap,
-    );
-  }
-}
-
-class _LowStockItem extends StatelessWidget {
-  final Product product;
-
-  const _LowStockItem({required this.product});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange[100]!),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              image: product.imageUrl != null
-                  ? DecorationImage(
-                image: NetworkImage(product.imageUrl!),
-                fit: BoxFit.cover,
-              )
-                  : null,
-            ),
-            child: product.imageUrl == null
-                ? Center(
-              child: Icon(Icons.inventory_2, size: 20, color: Colors.orange),
-            )
-                : null,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Only ${product.stockQuantity} left',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.orange[700],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.add, size: 18, color: Colors.orange[700]),
-            onPressed: () {
-              // Navigate to restock screen
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => RestockProductScreen(),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecentOrderItem extends StatelessWidget {
-  final Order order;
-
-  const _RecentOrderItem({required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.green[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.receipt, size: 20, color: Colors.green[600]),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Order #${order.number}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  '${order.lineItems.length} items • ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            DateFormat('HH:mm').format(order.dateCreated),
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[500],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 // Main POS Screen
 class MainPOSScreen extends StatefulWidget {
   const MainPOSScreen({super.key});
@@ -5142,6 +6174,10 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
     return Scaffold(
       appBar: AppBar(
         actions: [
+
+          ElevatedButton(onPressed: (){
+            Navigator.push(context, MaterialPageRoute(builder: (context) => CategoryManagementScreen(),));
+          }, child: Text("Category")),
           ElevatedButton(onPressed: (){
             Navigator.push(context, MaterialPageRoute(builder: (context) => InvoiceSettingsScreen(),));
           }, child: Text("Print")),
@@ -5226,7 +6262,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
           ),
         ],
         flexibleSpace: Container(
-        decoration: AppTheme().getAppBarGradient(),
+
       ),
 
         title: Column(
@@ -5509,7 +6545,8 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
     super.dispose();
   }
 }
-// Product Selling Screen - Complete with Search, Barcode, and Cart Integration
+
+
 class ProductSellingScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
 
@@ -5525,24 +6562,39 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   final List<Product> _products = [];
   final List<Product> _filteredProducts = [];
   final List<Product> _recentProducts = [];
+  final List<Category> _categories = [];
+  String _selectedCategoryId = 'all';
   bool _isLoading = true;
   bool _isSearching = false;
   String _searchError = '';
   Timer? _searchDebounce;
   int _cartItemCount = 0;
-
-  // Categories
-  final List<Category> _categories = [];
-  String _selectedCategoryId = 'all';
   bool _inStockOnly = false;
-  final double _minPrice = 0;
-  final double _maxPrice = double.infinity;
+  bool _usePOSMode = false;
+
+  bool get _isDesktop {
+    if (kIsWeb) {
+      // For web, use screen width to determine desktop
+      final mediaQuery = MediaQuery.of(context);
+      return mediaQuery.size.width > 768;
+    }
+    // For mobile apps, check platform
+    return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+  }
 
   @override
   void initState() {
     super.initState();
     _initializeScreen();
     _setupCartListener();
+    // Auto-set POS mode for desktop on init
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_isDesktop && mounted) {
+        setState(() {
+          _usePOSMode = true;
+        });
+      }
+    });
   }
 
   void _setupCartListener() {
@@ -5566,15 +6618,11 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       _isLoading = true;
       _searchError = '';
     });
-
     try {
       final products = await _posService.fetchProducts(
         limit: 100,
         inStockOnly: _inStockOnly,
-        minPrice: _minPrice,
-        maxPrice: _maxPrice,
       );
-
       setState(() {
         _products.clear();
         _products.addAll(products);
@@ -5603,7 +6651,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   Future<void> _loadRecentProducts() async {
     try {
-      // Load recently sold products or frequently accessed products
       final recentProducts = await _posService.fetchProducts(limit: 10);
       setState(() {
         _recentProducts.clear();
@@ -5616,7 +6663,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   void _onSearchTextChanged(String query) {
     _searchDebounce?.cancel();
-
     if (query.isEmpty) {
       setState(() {
         _isSearching = false;
@@ -5624,9 +6670,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       });
       return;
     }
-
     setState(() => _isSearching = true);
-
     _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
       try {
         final results = await _posService.searchProducts(query);
@@ -5644,19 +6688,14 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   void _applyFilters() {
     List<Product> filtered = List.from(_products);
-
-    // Apply category filter
     if (_selectedCategoryId != 'all') {
       filtered = filtered.where((product) {
         return product.categories.any((category) => category.id == _selectedCategoryId);
       }).toList();
     }
-
-    // Apply stock filter
     if (_inStockOnly) {
       filtered = filtered.where((product) => product.inStock).toList();
     }
-
     setState(() {
       _filteredProducts.clear();
       _filteredProducts.addAll(filtered);
@@ -5666,7 +6705,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   Future<void> _addToCart(Product product) async {
     try {
       await widget.cartManager.addToCart(product);
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('${product.name} added to cart'),
@@ -5693,14 +6731,11 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         _isLoading = true;
         _searchError = '';
       });
-
       try {
         final products = await _posService.searchProductsBySKU(barcode);
         if (products.isNotEmpty) {
           final product = products.first;
           await _addToCart(product);
-
-          // Update search to show the found product
           _searchController.text = product.name;
           _onSearchTextChanged(product.name);
         } else {
@@ -5762,9 +6797,27 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     );
   }
 
+  void _toggleSellingMode() {
+    setState(() {
+      _usePOSMode = !_usePOSMode;
+    });
+  }
+
+  void _showPOSProductSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => POSProductSelectionSheet(
+        products: _products,
+        cartManager: widget.cartManager,
+        onProductAdded: _addToCart,
+      ),
+    );
+  }
+
   Widget _buildProductGrid() {
     final displayProducts = _isSearching ? _filteredProducts : _filteredProducts;
-
     if (_isLoading) {
       return Center(
         child: Column(
@@ -5777,7 +6830,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
-
     if (_searchError.isNotEmpty) {
       return Center(
         child: Column(
@@ -5795,7 +6847,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
-
     if (displayProducts.isEmpty) {
       return Center(
         child: Column(
@@ -5819,14 +6870,13 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
-
     return GridView.builder(
       padding: EdgeInsets.all(8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+        crossAxisCount: _isDesktop ? 4 : 2,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
-        childAspectRatio: 0.75,
+        childAspectRatio: _isDesktop ? 0.8 : 0.75,
       ),
       itemCount: displayProducts.length,
       itemBuilder: (context, index) {
@@ -5842,7 +6892,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   Widget _buildRecentProducts() {
     if (_recentProducts.isEmpty || _isSearching) return SizedBox();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -5887,145 +6936,346 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     );
   }
 
+  Widget _buildPOSModeInterface() {
+    return Column(
+      children: [
+        Container(
+          margin: EdgeInsets.all(16),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue[100]!),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.point_of_sale, color: Colors.blue[700]),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'POS Mode Active - Professional desktop interface for quick product entry',
+                  style: TextStyle(
+                    color: Colors.blue[800],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (!_isDesktop)
+                OutlinedButton(
+                  onPressed: _toggleSellingMode,
+                  child: Text('Switch to Grid Mode'),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _buildProductGrid(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesktopLayout() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left sidebar - Product search and filters
+        Container(
+          width: 350,
+          decoration: BoxDecoration(
+            border: Border(right: BorderSide(color: Colors.grey[300]!)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search products by name or SKU...',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                          icon: Icon(Icons.clear),
+                          onPressed: _clearSearch,
+                        )
+                            : null,
+                      ),
+                      onChanged: _onSearchTextChanged,
+                    ),
+                    SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.blue[50],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              icon: Icon(Icons.qr_code_scanner, color: Colors.blue[700]),
+                              onPressed: _scanAndAddProduct,
+                              tooltip: 'Scan Barcode',
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: OutlinedButton.icon(
+                            icon: Icon(Icons.filter_list, size: 18),
+                            label: Text('Filters'),
+                            onPressed: _showFilters,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blue,
+                              side: BorderSide(color: Colors.blue),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (_selectedCategoryId != 'all' || _inStockOnly)
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      if (_selectedCategoryId != 'all')
+                        Chip(
+                          label: Text(
+                            'Category: ${_categories.firstWhere((cat) => cat.id == _selectedCategoryId, orElse: () => Category(id: '', name: 'Unknown', slug: '', count: 0)).name}',
+                          ),
+                          deleteIcon: Icon(Icons.close, size: 16),
+                          onDeleted: () {
+                            setState(() {
+                              _selectedCategoryId = 'all';
+                              _applyFilters();
+                            });
+                          },
+                        ),
+                      if (_inStockOnly)
+                        Chip(
+                          label: Text('In Stock Only'),
+                          deleteIcon: Icon(Icons.close, size: 16),
+                          onDeleted: () {
+                            setState(() {
+                              _inStockOnly = false;
+                              _applyFilters();
+                            });
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              _buildRecentProducts(),
+            ],
+          ),
+        ),
+        // Main content area
+        Expanded(
+          child: _usePOSMode ? _buildPOSModeInterface() : Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Products',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    ElevatedButton.icon(
+                      icon: Icon(Icons.point_of_sale),
+                      label: Text('POS Mode'),
+                      onPressed: _toggleSellingMode,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue[600],
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: _buildProductGrid()),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search products by name or SKU...',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    suffixIcon: _searchController.text.isNotEmpty
+                        ? IconButton(
+                      icon: Icon(Icons.clear),
+                      onPressed: _clearSearch,
+                    )
+                        : null,
+                  ),
+                  onChanged: _onSearchTextChanged,
+                ),
+              ),
+              SizedBox(width: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  icon: Icon(Icons.qr_code_scanner, color: Colors.blue[700]),
+                  onPressed: _scanAndAddProduct,
+                  tooltip: 'Scan Barcode',
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_selectedCategoryId != 'all' || _inStockOnly)
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                if (_selectedCategoryId != 'all')
+                  Chip(
+                    label: Text(
+                      'Category: ${_categories.firstWhere((cat) => cat.id == _selectedCategoryId, orElse: () => Category(id: '', name: 'Unknown', slug: '', count: 0)).name}',
+                    ),
+                    deleteIcon: Icon(Icons.close, size: 16),
+                    onDeleted: () {
+                      setState(() {
+                        _selectedCategoryId = 'all';
+                        _applyFilters();
+                      });
+                    },
+                  ),
+                if (_inStockOnly)
+                  Chip(
+                    label: Text('In Stock Only'),
+                    deleteIcon: Icon(Icons.close, size: 16),
+                    onDeleted: () {
+                      setState(() {
+                        _inStockOnly = false;
+                        _applyFilters();
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
+        _buildRecentProducts(),
+        Expanded(
+          child: _buildProductGrid(),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildAppBarActions() {
+    final actions = <Widget>[];
+
+    if (_isDesktop) {
+      actions.addAll([
+        IconButton(
+          icon: Icon(_usePOSMode ? Icons.grid_view : Icons.point_of_sale),
+          onPressed: _toggleSellingMode,
+          tooltip: _usePOSMode ? 'Switch to Grid Mode' : 'Switch to POS Mode',
+        ),
+      ]);
+    }
+
+    actions.addAll([
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: Icon(Icons.shopping_cart),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CartScreen(cartManager: widget.cartManager),
+                ),
+              );
+            },
+          ),
+          if (_cartItemCount > 0)
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Container(
+                padding: EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  shape: BoxShape.circle,
+                ),
+                constraints: BoxConstraints(minWidth: 20, minHeight: 20),
+                child: Text(
+                  '$_cartItemCount',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+        ],
+      ),
+      IconButton(
+        icon: Icon(Icons.filter_list),
+        onPressed: _showFilters,
+        tooltip: 'Filters',
+      ),
+    ]);
+
+    if (!_isDesktop) {
+      actions.add(
+        IconButton(
+          icon: Icon(Icons.add_circle_outline),
+          onPressed: _showPOSProductSheet,
+          tooltip: 'Quick Add Products',
+        ),
+      );
+    }
+
+    return actions;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Sell Products'),
-        actions: [
-          // Cart Icon with Badge
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                icon: Icon(Icons.shopping_cart),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CartScreen(cartManager: widget.cartManager),
-                    ),
-                  );
-                },
-              ),
-              if (_cartItemCount > 0)
-                Positioned(
-                  right: 4,
-                  top: 4,
-                  child: Container(
-                    padding: EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    constraints: BoxConstraints(minWidth: 20, minHeight: 20),
-                    child: Text(
-                      '$_cartItemCount',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: Icon(Icons.filter_list),
-            onPressed: _showFilters,
-            tooltip: 'Filters',
-          ),
-        ],
+        actions: _buildAppBarActions(),
       ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search products by name or SKU...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? IconButton(
-                        icon: Icon(Icons.clear),
-                        onPressed: _clearSearch,
-                      )
-                          : null,
-                    ),
-                    onChanged: _onSearchTextChanged,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: IconButton(
-                    icon: Icon(Icons.qr_code_scanner, color: Colors.blue[700]),
-                    onPressed: _scanAndAddProduct,
-                    tooltip: 'Scan Barcode',
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Active Filters
-          if (_selectedCategoryId != 'all' || _inStockOnly)
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  if (_selectedCategoryId != 'all')
-                    Chip(
-                      label: Text(
-                        'Category: ${_categories.firstWhere((cat) => cat.id == _selectedCategoryId, orElse: () => Category(id: '', name: 'Unknown', slug: '', count: 0)).name}',
-                      ),
-                      deleteIcon: Icon(Icons.close, size: 16),
-                      onDeleted: () {
-                        setState(() {
-                          _selectedCategoryId = 'all';
-                          _applyFilters();
-                        });
-                      },
-                    ),
-                  if (_inStockOnly)
-                    Chip(
-                      label: Text('In Stock Only'),
-                      deleteIcon: Icon(Icons.close, size: 16),
-                      onDeleted: () {
-                        setState(() {
-                          _inStockOnly = false;
-                          _applyFilters();
-                        });
-                      },
-                    ),
-                ],
-              ),
-            ),
-
-          // Recent Products (Quick Access)
-          _buildRecentProducts(),
-
-          // Products Grid
-          Expanded(
-            child: _buildProductGrid(),
-          ),
-        ],
-      ),
+      body: _isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
     );
   }
 
@@ -6035,6 +7285,599 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     _searchController.dispose();
     super.dispose();
   }
+}
+
+class POSProductSelectionSheet extends StatefulWidget {
+  final List<Product> products;
+  final EnhancedCartManager cartManager;
+  final Function(Product) onProductAdded;
+
+  const POSProductSelectionSheet({
+    super.key,
+    required this.products,
+    required this.cartManager,
+    required this.onProductAdded,
+  });
+
+  @override
+  _POSProductSelectionSheetState createState() => _POSProductSelectionSheetState();
+}
+
+class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
+  final List<POSProductRow> _productRows = [POSProductRow()];
+  final Map<int, FocusNode> _focusNodes = {};
+  final Map<int, TextEditingController> _controllers = {};
+  final Map<int, List<Product>> _searchResults = {};
+  final Map<int, Product?> _selectedProducts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeFirstRow();
+  }
+  Future<void> _addAllToCart() async {
+    int addedCount = 0;
+    final List<String> errors = [];
+
+    for (int i = 0; i < _productRows.length; i++) {
+      final product = _selectedProducts[i];
+      final row = _productRows[i];
+
+      if (product != null && row.quantity > 0) {
+        try {
+          // Use custom price if provided, otherwise use product's original price
+          final effectivePrice = row.customPrice ?? product.price;
+
+          // Create product with custom price using copyWith
+          final productToAdd = product.copyWith(price: effectivePrice);
+
+          for (int j = 0; j < row.quantity; j++) {
+            await widget.cartManager.addToCart(productToAdd);
+          }
+          addedCount += row.quantity;
+        } catch (e) {
+          errors.add('${product.name}: $e');
+          print('Error adding product to cart: $e');
+        }
+      }
+    }
+
+    // Show results
+    if (addedCount > 0) {
+      String message = '$addedCount items added to cart';
+      if (errors.isNotEmpty) {
+        message += ' (${errors.length} errors)';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: errors.isNotEmpty ? Colors.orange : Colors.green,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      if (errors.isNotEmpty) {
+        // Show detailed errors in a dialog
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text('Some Items Could Not Be Added'),
+              content: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('The following items encountered issues:'),
+                    SizedBox(height: 12),
+                    ...errors.map((error) => Padding(
+                      padding: EdgeInsets.symmetric(vertical: 2),
+                      child: Text('• $error', style: TextStyle(fontSize: 14)),
+                    )).toList(),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('OK'),
+                ),
+              ],
+            ),
+          );
+        });
+      }
+
+      Navigator.pop(context);
+    } else {
+      String errorMessage = 'No valid products to add';
+      if (errors.isNotEmpty) {
+        errorMessage += '. ${errors.join(", ")}';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+  void _initializeFirstRow() {
+    _focusNodes[0] = FocusNode();
+    _controllers[0] = TextEditingController();
+    _searchResults[0] = [];
+    _selectedProducts[0] = null;
+
+    _focusNodes[0]!.addListener(() {
+      if (!_focusNodes[0]!.hasFocus && _controllers[0]!.text.isEmpty) {
+        _searchResults[0]!.clear();
+        setState(() {});
+      }
+    });
+  }
+
+  void _onProductSearchChanged(int index, String query) {
+    if (query.isEmpty) {
+      _searchResults[index]!.clear();
+      setState(() {});
+      return;
+    }
+
+    final results = widget.products.where((product) {
+      return product.name.toLowerCase().contains(query.toLowerCase()) ||
+          product.sku.toLowerCase().contains(query.toLowerCase());
+    }).toList();
+
+    _searchResults[index]!.clear();
+    _searchResults[index]!.addAll(results.take(5));
+    setState(() {});
+  }
+
+  void _onProductSelected(int index, Product product) {
+    _selectedProducts[index] = product;
+    _controllers[index]!.text = product.name;
+    _searchResults[index]!.clear();
+    _focusNodes[index]!.unfocus();
+
+    if (index == _productRows.length - 1) {
+      _addNewRow();
+    } else {
+      _focusNodes[index + 1]?.requestFocus();
+    }
+    setState(() {});
+  }
+
+  void _onQuantityChanged(int index, String value) {
+    _productRows[index].quantity = int.tryParse(value) ?? 1;
+    setState(() {});
+  }
+
+  void _onPriceChanged(int index, String value) {
+    final product = _selectedProducts[index];
+    if (product != null) {
+      _productRows[index].customPrice = double.tryParse(value);
+      setState(() {});
+    }
+  }
+
+  void _addNewRow() {
+    final newIndex = _productRows.length;
+    _productRows.add(POSProductRow());
+    _focusNodes[newIndex] = FocusNode();
+    _controllers[newIndex] = TextEditingController();
+    _searchResults[newIndex] = [];
+    _selectedProducts[newIndex] = null;
+    setState(() {});
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusNodes[newIndex]!.requestFocus();
+    });
+  }
+
+  void _removeRow(int index) {
+    if (_productRows.length > 1) {
+      _productRows.removeAt(index);
+      _focusNodes.remove(index);
+      _controllers.remove(index);
+      _searchResults.remove(index);
+      _selectedProducts.remove(index);
+
+      final newFocusNodes = <int, FocusNode>{};
+      final newControllers = <int, TextEditingController>{};
+      final newSearchResults = <int, List<Product>>{};
+      final newSelectedProducts = <int, Product?>{};
+
+      for (int i = 0; i < _productRows.length; i++) {
+        newFocusNodes[i] = _focusNodes[i] ?? FocusNode();
+        newControllers[i] = _controllers[i] ?? TextEditingController();
+        newSearchResults[i] = _searchResults[i] ?? [];
+        newSelectedProducts[i] = _selectedProducts[i];
+      }
+
+      setState(() {
+        _focusNodes.clear();
+        _focusNodes.addAll(newFocusNodes);
+        _controllers.clear();
+        _controllers.addAll(newControllers);
+        _searchResults.clear();
+        _searchResults.addAll(newSearchResults);
+        _selectedProducts.clear();
+        _selectedProducts.addAll(newSelectedProducts);
+      });
+    }
+  }
+
+
+
+  double _calculateLineTotal(int index) {
+    final product = _selectedProducts[index];
+    final row = _productRows[index];
+    if (product == null) return 0.0;
+
+    final price = row.customPrice ?? product.price;
+    return price * row.quantity;
+  }
+
+  double _calculateGrandTotal() {
+    double total = 0.0;
+    for (int i = 0; i < _productRows.length; i++) {
+      total += _calculateLineTotal(i);
+    }
+    return total;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.9,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Quick Product Entry',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: [
+                  Container(
+                    color: Colors.grey[50],
+                    padding: EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            'PRODUCT',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 1,
+                          child: Text(
+                            'QTY',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            'PRICE',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            'TOTAL',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 40),
+                      ],
+                    ),
+                  ),
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: NeverScrollableScrollPhysics(),
+                    itemCount: _productRows.length,
+                    itemBuilder: (context, index) {
+                      return _buildProductRow(index);
+                    },
+                  ),
+                  Padding(
+                    padding: EdgeInsets.all(16),
+                    child: OutlinedButton.icon(
+                      icon: Icon(Icons.add, size: 18),
+                      label: Text('Add Another Product'),
+                      onPressed: _addNewRow,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        side: BorderSide(color: Colors.blue),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              border: Border(top: BorderSide(color: Colors.grey[300]!)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'GRAND TOTAL',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '\$${_calculateGrandTotal().toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ],
+                ),
+                ElevatedButton.icon(
+                  icon: Icon(Icons.shopping_cart_checkout),
+                  label: Text('Add to Cart'),
+                  onPressed: _addAllToCart,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[600],
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductRow(int index) {
+    final product = _selectedProducts[index];
+    final row = _productRows[index];
+
+    return Container(
+      padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey[100]!)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: _controllers[index],
+                  focusNode: _focusNodes[index],
+                  decoration: InputDecoration(
+                    hintText: 'Search product...',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    suffixIcon: _controllers[index]!.text.isNotEmpty
+                        ? IconButton(
+                      icon: Icon(Icons.clear, size: 16),
+                      onPressed: () {
+                        _controllers[index]!.clear();
+                        _searchResults[index]!.clear();
+                        _selectedProducts[index] = null;
+                        setState(() {});
+                      },
+                    )
+                        : null,
+                  ),
+                  onChanged: (value) => _onProductSearchChanged(index, value),
+                ),
+                if (_searchResults[index]!.isNotEmpty && _focusNodes[index]!.hasFocus)
+                  Container(
+                    margin: EdgeInsets.only(top: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          blurRadius: 4,
+                          color: Colors.black12,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: _searchResults[index]!.map((product) {
+                        return ListTile(
+                          dense: true,
+                          leading: product.imageUrls.isNotEmpty
+                              ? CircleAvatar(
+                            backgroundImage: NetworkImage(product.imageUrls.first),
+                            radius: 16,
+                          )
+                              : CircleAvatar(
+                            child: Icon(Icons.inventory_2, size: 16),
+                            radius: 16,
+                          ),
+                          title: Text(
+                            product.name,
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            'SKU: ${product.sku} | \$${product.price}',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          onTap: () => _onProductSelected(index, product),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                if (product != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'SKU: ${product.sku}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        ),
+                        if (product.inStock)
+                          Text(
+                            'In Stock',
+                            style: TextStyle(fontSize: 11, color: Colors.green),
+                          )
+                        else
+                          Text(
+                            'Out of Stock',
+                            style: TextStyle(fontSize: 11, color: Colors.red),
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            flex: 1,
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: 'Qty',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+              keyboardType: TextInputType.number,
+              onChanged: (value) => _onQuantityChanged(index, value),
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  decoration: InputDecoration(
+                    hintText: 'Price',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) => _onPriceChanged(index, value),
+                ),
+                if (product != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: 2),
+                    child: Text(
+                      'Original: \$${product.price}',
+                      style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            flex: 2,
+            child: Container(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[300]!),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                '\$${_calculateLineTotal(index).toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 8),
+          IconButton(
+            icon: Icon(Icons.delete_outline, color: Colors.red),
+            onPressed: () => _removeRow(index),
+            tooltip: 'Remove Row',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _focusNodes.forEach((_, node) => node.dispose());
+    _controllers.forEach((_, controller) => controller.dispose());
+    super.dispose();
+  }
+}
+
+class POSProductRow {
+  int quantity;
+  double? customPrice;
+
+  POSProductRow({
+    this.quantity = 1,
+    this.customPrice,
+  });
 }
 
 // Product Card Widget
@@ -6061,7 +7904,6 @@ class ProductCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Product Image
               Container(
                 height: 100,
                 width: double.infinity,
@@ -6086,8 +7928,6 @@ class ProductCard extends StatelessWidget {
                     : null,
               ),
               SizedBox(height: 8),
-
-              // Product Name
               Text(
                 product.name,
                 style: TextStyle(
@@ -6098,8 +7938,6 @@ class ProductCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               SizedBox(height: 4),
-
-              // SKU
               if (product.sku.isNotEmpty)
                 Text(
                   product.sku,
@@ -6110,10 +7948,30 @@ class ProductCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-
+              if (product.categories.isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Wrap(
+                    spacing: 4,
+                    children: product.categories.take(2).map((category) {
+                      return Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          category.name,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
               Spacer(),
-
-              // Price and Stock
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -6135,8 +7993,6 @@ class ProductCard extends StatelessWidget {
                 ],
               ),
               SizedBox(height: 8),
-
-              // Add to Cart Button
               SizedBox(
                 width: double.infinity,
                 height: 32,
@@ -6163,7 +8019,6 @@ class ProductCard extends StatelessWidget {
     );
   }
 }
-
 // Recent Product Card (Horizontal List)
 class RecentProductCard extends StatelessWidget {
   final Product product;
@@ -6527,8 +8382,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             ],
           ),
           SizedBox(height: 16),
-
-          // Category Filter
           Text('Category', style: TextStyle(fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
           Wrap(
@@ -6554,8 +8407,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             ],
           ),
           SizedBox(height: 16),
-
-          // Stock Filter
           Row(
             children: [
               Checkbox(
@@ -6568,8 +8419,6 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
             ],
           ),
           SizedBox(height: 24),
-
-          // Apply Button
           SizedBox(
             width: double.infinity,
             height: 50,
@@ -8377,32 +10226,49 @@ class _AddProductScreenState extends State<AddProductScreen> {
   final TextEditingController _descriptionController = TextEditingController();
   final List<XFile> _selectedImages = [];
   final ImagePicker _imagePicker = ImagePicker();
+  final List<Category> _categories = [];
+  final List<String> _selectedCategoryIds = [];
   bool _isLoading = false;
   bool _isCheckingBarcode = false;
   String? _barcodeError;
+  bool _isLoadingCategories = false;
 
-  // Method to check if barcode already exists
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    setState(() => _isLoadingCategories = true);
+    try {
+      final categories = await _posService.getCategories();
+      setState(() {
+        _categories.clear();
+        _categories.addAll(categories);
+      });
+    } catch (e) {
+      print('Failed to load categories: $e');
+    } finally {
+      setState(() => _isLoadingCategories = false);
+    }
+  }
+
   Future<bool> _isBarcodeDuplicate(String barcode) async {
     if (barcode.isEmpty) return false;
-
     setState(() {
       _isCheckingBarcode = true;
       _barcodeError = null;
     });
-
     try {
-      // Check online first
       if (_posService.isOnline) {
         final onlineProducts = await _posService.searchProductsBySKU(barcode);
         if (onlineProducts.isNotEmpty) {
           return true;
         }
       }
-
-      // Check local database
       final LocalDatabase localDb = LocalDatabase();
       final localProduct = await localDb.getProductBySku(barcode);
-
       return localProduct != null;
     } catch (e) {
       print('Error checking barcode duplicate: $e');
@@ -8414,7 +10280,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
-  // Enhanced barcode scanning with duplicate check
   Future<void> _scanAndSetBarcode() async {
     final barcode = await UniversalScanningService.scanBarcode(context, purpose: 'add');
     if (barcode != null && barcode.isNotEmpty) {
@@ -8422,12 +10287,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _skuController.text = barcode;
         _barcodeError = null;
       });
-
-      // Check for duplicate after a short delay
       Future.delayed(Duration(milliseconds: 500), () {
         _validateBarcodeUniqueness(barcode);
       });
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Barcode scanned: $barcode'),
@@ -8438,12 +10300,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
-  // Validate barcode uniqueness
   Future<void> _validateBarcodeUniqueness(String barcode) async {
     if (barcode.isEmpty) return;
-
     final isDuplicate = await _isBarcodeDuplicate(barcode);
-
     if (mounted) {
       setState(() {
         if (isDuplicate) {
@@ -8455,13 +10314,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
-  // Enhanced form validation
   Future<bool> _validateForm() async {
     if (!_formKey.currentState!.validate()) {
       return false;
     }
-
-    // Check for duplicate barcode
     final barcode = _skuController.text.trim();
     if (barcode.isNotEmpty) {
       final isDuplicate = await _isBarcodeDuplicate(barcode);
@@ -8469,8 +10325,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
         setState(() {
           _barcodeError = 'This barcode is already used by another product';
         });
-
-        // Scroll to barcode field and show error
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Please use a unique barcode'),
@@ -8481,7 +10335,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
         return false;
       }
     }
-
     return true;
   }
 
@@ -8496,13 +10349,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
   }
 
+  void _removeImage(int index) {
+    setState(() {
+      _selectedImages.removeAt(index);
+    });
+  }
+
   Future<void> _submitProduct() async {
-    // Use enhanced validation
     if (!await _validateForm()) return;
-
     setState(() => _isLoading = true);
-
     try {
+      final selectedCategories = _categories
+          .where((cat) => _selectedCategoryIds.contains(cat.id))
+          .toList();
+
       final product = Product(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text,
@@ -8513,10 +10373,10 @@ class _AddProductScreenState extends State<AddProductScreen> {
         stockStatus: 'instock',
         description: _descriptionController.text,
         status: 'publish',
+        categories: selectedCategories,
       );
 
       await _posService.addProduct(product, _selectedImages);
-
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -8534,101 +10394,6 @@ class _AddProductScreenState extends State<AddProductScreen> {
     } finally {
       setState(() => _isLoading = false);
     }
-  }
-
-  // Remove image from selection
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Add New Product')),
-      body: Padding(
-        padding: EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              // Image Picker with removal option
-              _buildImagePickerSection(),
-              SizedBox(height: 16),
-
-              // Product Name
-              TextFormField(
-                controller: _nameController,
-                decoration: InputDecoration(
-                  labelText: 'Product Name',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.shopping_bag),
-                ),
-                validator: (value) => value?.isEmpty ?? true ? 'Please enter product name' : null,
-              ),
-              SizedBox(height: 16),
-
-              // SKU/Barcode with duplicate checking
-              _buildBarcodeField(),
-              SizedBox(height: 16),
-
-              // Price
-              TextFormField(
-                controller: _priceController,
-                decoration: InputDecoration(
-                  labelText: 'Price',
-                  border: OutlineInputBorder(),
-                  prefixText: Constants.CURRENCY_NAME,
-                  prefixIcon: Icon(Icons.attach_money),
-                ),
-                keyboardType: TextInputType.numberWithOptions(decimal: true),
-                validator: (value) {
-                  if (value?.isEmpty ?? true) return 'Please enter price';
-                  if (double.tryParse(value!) == null) return 'Please enter valid price';
-                  if (double.parse(value) <= 0) return 'Price must be greater than 0';
-                  return null;
-                },
-              ),
-              SizedBox(height: 16),
-
-              // Stock Quantity
-              TextFormField(
-                controller: _stockController,
-                decoration: InputDecoration(
-                  labelText: 'Stock Quantity',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.inventory),
-                ),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value?.isEmpty ?? true) return 'Please enter stock quantity';
-                  if (int.tryParse(value!) == null) return 'Please enter valid quantity';
-                  if (int.parse(value) < 0) return 'Stock cannot be negative';
-                  return null;
-                },
-              ),
-              SizedBox(height: 16),
-
-              // Description
-              TextFormField(
-                controller: _descriptionController,
-                decoration: InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.description),
-                ),
-                maxLines: 3,
-              ),
-              SizedBox(height: 24),
-
-              // Submit Button
-              _buildSubmitButton(),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildImagePickerSection() {
@@ -8712,6 +10477,54 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  Widget _buildCategorySelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Categories',
+          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+        ),
+        SizedBox(height: 8),
+        _isLoadingCategories
+            ? CircularProgressIndicator()
+            : _categories.isEmpty
+            ? Text(
+          'No categories available. Add categories in settings.',
+          style: TextStyle(color: Colors.grey, fontSize: 14),
+        )
+            : Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _categories.map((category) {
+            final isSelected = _selectedCategoryIds.contains(category.id);
+            return FilterChip(
+              label: Text(category.name),
+              selected: isSelected,
+              onSelected: (selected) {
+                setState(() {
+                  if (selected) {
+                    _selectedCategoryIds.add(category.id);
+                  } else {
+                    _selectedCategoryIds.remove(category.id);
+                  }
+                });
+              },
+              selectedColor: Colors.blue[100],
+              checkmarkColor: Colors.blue[800],
+            );
+          }).toList(),
+        ),
+        SizedBox(height: 8),
+        if (_selectedCategoryIds.isNotEmpty)
+          Text(
+            'Selected: ${_selectedCategoryIds.length} categor${_selectedCategoryIds.length == 1 ? 'y' : 'ies'}',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+      ],
+    );
+  }
+
   Widget _buildBarcodeField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -8739,12 +10552,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
             errorText: _barcodeError,
           ),
           onChanged: (value) {
-            // Clear error when user starts typing
             if (_barcodeError != null && value != _skuController.text) {
               setState(() => _barcodeError = null);
             }
-
-            // Check for duplicates after user stops typing (debounce)
             if (value.isNotEmpty && value.length >= 3) {
               Future.delayed(Duration(milliseconds: 1000), () {
                 if (mounted && value == _skuController.text) {
@@ -8830,6 +10640,83 @@ class _AddProductScreenState extends State<AddProductScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Add New Product')),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Form(
+          key: _formKey,
+          child: ListView(
+            children: [
+              _buildImagePickerSection(),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: 'Product Name',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.shopping_bag),
+                ),
+                validator: (value) => value?.isEmpty ?? true ? 'Please enter product name' : null,
+              ),
+              SizedBox(height: 16),
+              _buildCategorySelection(),
+              SizedBox(height: 16),
+              _buildBarcodeField(),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _priceController,
+                decoration: InputDecoration(
+                  labelText: 'Price',
+                  border: OutlineInputBorder(),
+                  prefixText: Constants.CURRENCY_NAME,
+                  prefixIcon: Icon(Icons.attach_money),
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                validator: (value) {
+                  if (value?.isEmpty ?? true) return 'Please enter price';
+                  if (double.tryParse(value!) == null) return 'Please enter valid price';
+                  if (double.parse(value) <= 0) return 'Price must be greater than 0';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _stockController,
+                decoration: InputDecoration(
+                  labelText: 'Stock Quantity',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.inventory),
+                ),
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value?.isEmpty ?? true) return 'Please enter stock quantity';
+                  if (int.tryParse(value!) == null) return 'Please enter valid quantity';
+                  if (int.parse(value) < 0) return 'Stock cannot be negative';
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.description),
+                ),
+                maxLines: 3,
+              ),
+              SizedBox(height: 24),
+              _buildSubmitButton(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -11150,28 +13037,72 @@ class _CustomerSelectionScreenState extends State<CustomerSelectionScreen> {
   }
 
   Widget _buildLoadingState() {
+    final _posService = EnhancedPOSService();
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
-            height: 60,
             width: 60,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            height: 60,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation(Colors.blue[700]!),
+            ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: 20),
           Text(
-            'Loading customers...',
+            'Loading Real Business Data...',
             style: TextStyle(
               fontSize: 16,
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
             ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Fetching live data from Firestore',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey[500],
+            ),
+          ),
+          SizedBox(height: 16),
+          StreamBuilder<bool>(
+            stream: _posService.onlineStatusStream,
+            builder: (context, snapshot) {
+              final isOnline = snapshot.data ?? false;
+              return Container(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isOnline ? Colors.green[50] : Colors.orange[50],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isOnline ? Icons.cloud_done : Icons.cloud_off,
+                      size: 14,
+                      color: isOnline ? Colors.green : Colors.orange,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      isOnline ? 'Online - Live Data' : 'Offline - Local Data',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isOnline ? Colors.green[700] : Colors.orange[700],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ],
       ),
     );
   }
-
   Widget _buildCustomerList() {
     final displayCustomers = _showSearchResults ? _searchResults : _customers;
 

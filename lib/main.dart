@@ -4,12 +4,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mpcm/app.dart';
+import 'package:mpcm/theme_provider.dart';
+import 'package:mpcm/theme_selector_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import 'constants.dart';
 import 'firebase_options.dart';
 
 
@@ -1786,7 +1789,709 @@ class SuperAdminHome extends StatelessWidget {
     );
   }
 }
+class SuperAdminAnalyticsScreen extends StatefulWidget {
+  const SuperAdminAnalyticsScreen({super.key});
 
+  @override
+  _SuperAdminAnalyticsScreenState createState() => _SuperAdminAnalyticsScreenState();
+}
+
+class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
+    with SingleTickerProviderStateMixin {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  List<TenantAnalytics> _tenantsAnalytics = [];
+  OverallAnalytics _overallAnalytics = OverallAnalytics.empty();
+  bool _isLoading = true;
+  String _timeFilter = '7days'; // 7days, 30days, 90days, 1year
+
+  @override
+  void initState() {
+    super.initState();
+    _initAnimations();
+    _loadSuperAdminAnalytics();
+  }
+
+  void _initAnimations() {
+    _animationController = AnimationController(
+      duration: Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _animationController.forward();
+  }
+
+  Future<void> _loadSuperAdminAnalytics() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final overall = await _fetchOverallAnalytics();
+      final tenants = await _fetchTenantsAnalytics();
+
+      if (mounted) {
+        setState(() {
+          _overallAnalytics = overall;
+          _tenantsAnalytics = tenants;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading super admin analytics: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<OverallAnalytics> _fetchOverallAnalytics() async {
+    try {
+      // Get all tenants
+      final tenantsSnapshot = await _firestore.collection('tenants').get();
+      final allTenants = tenantsSnapshot.docs;
+
+      DateTime startDate;
+      final now = DateTime.now();
+      switch (_timeFilter) {
+        case '7days':
+          startDate = now.subtract(Duration(days: 7));
+          break;
+        case '30days':
+          startDate = now.subtract(Duration(days: 30));
+          break;
+        case '90days':
+          startDate = now.subtract(Duration(days: 90));
+          break;
+        case '1year':
+          startDate = DateTime(now.year - 1, now.month, now.day);
+          break;
+        default:
+          startDate = now.subtract(Duration(days: 7));
+      }
+
+      double totalRevenue = 0.0;
+      int totalOrders = 0;
+      int totalProducts = 0;
+      int totalCustomers = 0;
+      int activeTenants = 0;
+      int expiredTenants = 0;
+
+      // Aggregate data from all tenants
+      for (final tenant in allTenants) {
+        final tenantId = tenant.id;
+        final tenantData = tenant.data();
+
+        // Check tenant subscription status
+        final subscriptionExpiry = tenantData['subscriptionExpiry'];
+        if (subscriptionExpiry is Timestamp) {
+          if (subscriptionExpiry.toDate().isAfter(now)) {
+            activeTenants++;
+          } else {
+            expiredTenants++;
+          }
+        }
+
+        // Get tenant orders
+        final ordersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('orders')
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .get();
+
+        // Get tenant products
+        final productsSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('products')
+            .where('status', isEqualTo: 'publish')
+            .get();
+
+        // Get tenant customers
+        final customersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('customers')
+            .get();
+
+        // Calculate tenant metrics
+        double tenantRevenue = 0.0;
+        for (final order in ordersSnapshot.docs) {
+          final orderData = order.data();
+          tenantRevenue += (orderData['total'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        totalRevenue += tenantRevenue;
+        totalOrders += ordersSnapshot.docs.length;
+        totalProducts += productsSnapshot.docs.length;
+        totalCustomers += customersSnapshot.docs.length;
+      }
+
+      return OverallAnalytics(
+        totalRevenue: totalRevenue,
+        totalOrders: totalOrders,
+        totalProducts: totalProducts,
+        totalCustomers: totalCustomers,
+        activeTenants: activeTenants,
+        expiredTenants: expiredTenants,
+        totalTenants: allTenants.length,
+        averageRevenuePerTenant: allTenants.isNotEmpty ? totalRevenue / allTenants.length : 0.0,
+        timePeriod: _timeFilter,
+      );
+    } catch (e) {
+      print('Error fetching overall analytics: $e');
+      return OverallAnalytics.empty();
+    }
+  }
+
+  Future<List<TenantAnalytics>> _fetchTenantsAnalytics() async {
+    try {
+      final tenantsSnapshot = await _firestore.collection('tenants').get();
+      final List<TenantAnalytics> tenantsAnalytics = [];
+
+      for (final tenant in tenantsSnapshot.docs) {
+        final tenantId = tenant.id;
+        final tenantData = tenant.data();
+
+        // Get time range based on filter
+        DateTime startDate;
+        final now = DateTime.now();
+        switch (_timeFilter) {
+          case '7days':
+            startDate = now.subtract(Duration(days: 7));
+            break;
+          case '30days':
+            startDate = now.subtract(Duration(days: 30));
+            break;
+          case '90days':
+            startDate = now.subtract(Duration(days: 90));
+            break;
+          case '1year':
+            startDate = DateTime(now.year - 1, now.month, now.day);
+            break;
+          default:
+            startDate = now.subtract(Duration(days: 7));
+        }
+
+        // Fetch tenant-specific data
+        final ordersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('orders')
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .get();
+
+        final productsSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('products')
+            .where('status', isEqualTo: 'publish')
+            .get();
+
+        final customersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('customers')
+            .get();
+
+        // Calculate metrics
+        double revenue = 0.0;
+        for (final order in ordersSnapshot.docs) {
+          final orderData = order.data();
+          revenue += (orderData['total'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        // Check subscription status
+        final subscriptionExpiry = tenantData['subscriptionExpiry'];
+        final bool isActive = subscriptionExpiry is Timestamp &&
+            subscriptionExpiry.toDate().isAfter(now);
+
+        final analytics = TenantAnalytics(
+          tenantId: tenantId,
+          businessName: tenantData['businessName']?.toString() ?? 'Unknown Business',
+          subscriptionPlan: tenantData['subscriptionPlan']?.toString() ?? 'Unknown',
+          isActive: isActive,
+          revenue: revenue,
+          ordersCount: ordersSnapshot.docs.length,
+          productsCount: productsSnapshot.docs.length,
+          customersCount: customersSnapshot.docs.length,
+          subscriptionExpiry: subscriptionExpiry is Timestamp ?
+          subscriptionExpiry.toDate() : null,
+        );
+
+        tenantsAnalytics.add(analytics);
+      }
+
+      // Sort by revenue descending
+      tenantsAnalytics.sort((a, b) => b.revenue.compareTo(a.revenue));
+      return tenantsAnalytics;
+    } catch (e) {
+      print('Error fetching tenants analytics: $e');
+      return [];
+    }
+  }
+
+  void _onTimeFilterChanged(String? filter) {
+    if (filter != null) {
+      setState(() {
+        _timeFilter = filter;
+        _loadSuperAdminAnalytics();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: Text('Super Admin Analytics'),
+        backgroundColor: Colors.purple[700],
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: _onTimeFilterChanged,
+            itemBuilder: (context) => [
+              PopupMenuItem(value: '7days', child: Text('Last 7 Days')),
+              PopupMenuItem(value: '30days', child: Text('Last 30 Days')),
+              PopupMenuItem(value: '90days', child: Text('Last 90 Days')),
+              PopupMenuItem(value: '1year', child: Text('Last 1 Year')),
+            ],
+            child: Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  Text(_getTimeFilterDisplayName()),
+                  Icon(Icons.arrow_drop_down),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadSuperAdminAnalytics,
+            tooltip: 'Refresh Analytics',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? _buildLoadingState()
+          : AnimatedBuilder(
+        animation: _animationController,
+        builder: (context, child) {
+          return Opacity(
+            opacity: _fadeAnimation.value,
+            child: CustomScrollView(
+              slivers: [
+                _buildOverallStats(),
+                _buildTenantsList(),
+                SliverToBoxAdapter(child: SizedBox(height: 20)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation(Colors.purple[700]!),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Loading Super Admin Analytics...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverallStats() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'Overall Platform Analytics',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+              children: [
+                _buildStatCard(
+                  'Total Revenue',
+                  '${Constants.CURRENCY_NAME}${_overallAnalytics.totalRevenue.toStringAsFixed(0)}',
+                  Icons.attach_money,
+                  Colors.green,
+                  'Across all tenants',
+                ),
+                _buildStatCard(
+                  'Total Orders',
+                  _overallAnalytics.totalOrders.toString(),
+                  Icons.shopping_cart,
+                  Colors.blue,
+                  'Completed orders',
+                ),
+                _buildStatCard(
+                  'Active Tenants',
+                  '${_overallAnalytics.activeTenants}/${_overallAnalytics.totalTenants}',
+                  Icons.business,
+                  _overallAnalytics.activeTenants > 0 ? Colors.green : Colors.orange,
+                  'Active subscriptions',
+                ),
+                _buildStatCard(
+                  'Platform Customers',
+                  _overallAnalytics.totalCustomers.toString(),
+                  Icons.people,
+                  Colors.purple,
+                  'Total customers',
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+              children: [
+                _buildStatCard(
+                  'Total Products',
+                  _overallAnalytics.totalProducts.toString(),
+                  Icons.inventory_2,
+                  Colors.orange,
+                  'Across platform',
+                ),
+                _buildStatCard(
+                  'Avg Revenue/Tenant',
+                  '${Constants.CURRENCY_NAME}${_overallAnalytics.averageRevenuePerTenant.toStringAsFixed(0)}',
+                  Icons.trending_up,
+                  Colors.teal,
+                  'Average performance',
+                ),
+                _buildStatCard(
+                  'Subscription Health',
+                  '${((_overallAnalytics.activeTenants / _overallAnalytics.totalTenants) * 100).toStringAsFixed(1)}%',
+                  Icons.health_and_safety,
+                  _overallAnalytics.activeTenants / _overallAnalytics.totalTenants > 0.7
+                      ? Colors.green : Colors.orange,
+                  'Active rate',
+                ),
+                _buildStatCard(
+                  'Time Period',
+                  _getTimeFilterDisplayName(),
+                  Icons.calendar_today,
+                  Colors.indigo,
+                  'Analysis period',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, String subtitle) {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 24, color: color),
+            ),
+            SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTenantsList() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tenant Performance Ranking',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Sorted by revenue (${_getTimeFilterDisplayName()})',
+              style: TextStyle(
+                color: Colors.grey[600],
+              ),
+            ),
+            SizedBox(height: 16),
+            ..._tenantsAnalytics.asMap().entries.map((entry) {
+              final index = entry.key;
+              final tenant = entry.value;
+              return _buildTenantCard(tenant, index + 1);
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTenantCard(TenantAnalytics tenant, int rank) {
+    return Card(
+      margin: EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Rank
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: rank <= 3 ? Colors.amber : Colors.grey[300],
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  rank.toString(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: rank <= 3 ? Colors.white : Colors.grey[700],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            // Tenant Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          tenant.businessName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: tenant.isActive ? Colors.green[100] : Colors.red[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          tenant.isActive ? 'Active' : 'Expired',
+                          style: TextStyle(
+                            color: tenant.isActive ? Colors.green[800] : Colors.red[800],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Plan: ${tenant.subscriptionPlan}',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                  if (tenant.subscriptionExpiry != null)
+                    Text(
+                      'Expires: ${DateFormat('MMM dd, yyyy').format(tenant.subscriptionExpiry!)}',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(width: 12),
+            // Performance Metrics
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${Constants.CURRENCY_NAME}${tenant.revenue.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.green[700],
+                  ),
+                ),
+                Text(
+                  '${tenant.ordersCount} orders',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                Text(
+                  '${tenant.productsCount} products',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                Text(
+                  '${tenant.customersCount} customers',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getTimeFilterDisplayName() {
+    switch (_timeFilter) {
+      case '7days': return 'Last 7 Days';
+      case '30days': return 'Last 30 Days';
+      case '90days': return 'Last 90 Days';
+      case '1year': return 'Last 1 Year';
+      default: return 'Last 7 Days';
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+}
+
+// Analytics Data Models
+class OverallAnalytics {
+  final double totalRevenue;
+  final int totalOrders;
+  final int totalProducts;
+  final int totalCustomers;
+  final int activeTenants;
+  final int expiredTenants;
+  final int totalTenants;
+  final double averageRevenuePerTenant;
+  final String timePeriod;
+
+  const OverallAnalytics({
+    required this.totalRevenue,
+    required this.totalOrders,
+    required this.totalProducts,
+    required this.totalCustomers,
+    required this.activeTenants,
+    required this.expiredTenants,
+    required this.totalTenants,
+    required this.averageRevenuePerTenant,
+    required this.timePeriod,
+  });
+
+  factory OverallAnalytics.empty() {
+    return OverallAnalytics(
+      totalRevenue: 0.0,
+      totalOrders: 0,
+      totalProducts: 0,
+      totalCustomers: 0,
+      activeTenants: 0,
+      expiredTenants: 0,
+      totalTenants: 0,
+      averageRevenuePerTenant: 0.0,
+      timePeriod: '7days',
+    );
+  }
+}
+
+class TenantAnalytics {
+  final String tenantId;
+  final String businessName;
+  final String subscriptionPlan;
+  final bool isActive;
+  final double revenue;
+  final int ordersCount;
+  final int productsCount;
+  final int customersCount;
+  final DateTime? subscriptionExpiry;
+
+  const TenantAnalytics({
+    required this.tenantId,
+    required this.businessName,
+    required this.subscriptionPlan,
+    required this.isActive,
+    required this.revenue,
+    required this.ordersCount,
+    required this.productsCount,
+    required this.customersCount,
+    this.subscriptionExpiry,
+  });
+}
 // Update the _ActionCard widget for better styling
 class _ActionCard extends StatelessWidget {
   final String title;
@@ -3178,6 +3883,9 @@ class TenantProvider with ChangeNotifier {
 // =============================
 // WIDGETS - CORE UI COMPONENTS
 // =============================
+
+
+
 class MultiTenantSaaSApp extends StatelessWidget {
   const MultiTenantSaaSApp({super.key});
 
@@ -3187,15 +3895,33 @@ class MultiTenantSaaSApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => TenantProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..loadSavedTheme()),
       ],
-      child: MaterialApp(
-        title: 'Multi-Tenant SaaS',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: AuthWrapper(),
-        debugShowCheckedModeBanner: false,
+      // 👇 Use Builder to get a new context with access to the providers
+      child: Builder(
+        builder: (context) {
+          final themeProvider = context.watch<ThemeProvider>();
+
+          return MaterialApp(
+            title: 'Multi-Tenant SaaS',
+            theme: ThemeData.light().copyWith(
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+              useMaterial3: true,
+            ),
+            darkTheme: ThemeData.dark().copyWith(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.blue,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+            ),
+            themeMode: themeProvider.useSystemTheme
+                ? ThemeMode.system
+                : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light),
+            home: const AuthWrapper(),
+            debugShowCheckedModeBanner: false,
+          );
+        },
       ),
     );
   }
@@ -3291,7 +4017,7 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
@@ -3311,20 +4037,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1000),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Interval(0.0, 0.5, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
       ),
     );
 
     _slideAnimation = Tween<double>(begin: 30.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Interval(0.3, 1.0, curve: Curves.easeOut),
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
       ),
     );
 
@@ -3334,488 +4060,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     _animationController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final size = MediaQuery.of(context).size;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-              Color(0xFF0F2027),
-              Color(0xFF203A43),
-              Color(0xFF2C5364),
-            ]
-                : [
-              Color(0xFF667EEA),
-              Color(0xFF764BA2),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Container(
-            constraints: BoxConstraints(maxWidth: 500),
-            margin: EdgeInsets.all(20),
-            child: AnimatedBuilder(
-              animation: _animationController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _slideAnimation.value),
-                  child: Opacity(
-                    opacity: _fadeAnimation.value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Card(
-                elevation: 24,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: SingleChildScrollView(
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Logo with modern design
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 20,
-                                  offset: Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.rocket_launch_rounded,
-                              color: Colors.white,
-                              size: 40,
-                            ),
-                          ),
-
-                          SizedBox(height: 32),
-
-                          // Welcome text
-                          Text(
-                            'Welcome Back',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w800,
-                              color: isDark ? Colors.white : Color(0xFF2D3748),
-                            ),
-                          ),
-
-                          SizedBox(height: 8),
-
-                          Text(
-                            'Sign in to continue your journey',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: isDark ? Colors.white70 : Color(0xFF718096),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-
-                          SizedBox(height: 32),
-
-                          // Error message with modern design
-                          if (authProvider.error != null)
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.all(16),
-                              margin: EdgeInsets.only(bottom: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: Colors.red.withOpacity(0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.error_outline,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      authProvider.error!,
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    // onTap: () => authProvider.clearError(),
-                                    child: Icon(
-                                      Icons.close,
-                                      color: Colors.red,
-                                      size: 18,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // Email field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: TextFormField(
-                              controller: _emailController,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              decoration: InputDecoration(
-                                labelText: 'Email Address',
-                                labelStyle: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                                prefixIcon: Container(
-                                  margin: EdgeInsets.only(right: 12, left: 16),
-                                  child: Icon(
-                                    Icons.email_rounded,
-                                    color: Color(0xFF667EEA),
-                                  ),
-                                ),
-                                filled: true,
-                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              ),
-                              keyboardType: TextInputType.emailAddress,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your email';
-                                }
-                                if (!AppUtils.isEmailValid(value)) {
-                                  return 'Please enter a valid email';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Password field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: TextFormField(
-                              controller: _passwordController,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              obscureText: _obscurePassword,
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                labelStyle: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                                prefixIcon: Container(
-                                  margin: EdgeInsets.only(right: 12, left: 16),
-                                  child: Icon(
-                                    Icons.lock_rounded,
-                                    color: Color(0xFF667EEA),
-                                  ),
-                                ),
-                                suffixIcon: GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
-                                  child: Container(
-                                    margin: EdgeInsets.only(right: 16),
-                                    child: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_rounded
-                                          : Icons.visibility_off_rounded,
-                                      color: Color(0xFF718096),
-                                    ),
-                                  ),
-                                ),
-                                filled: true,
-                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your password';
-                                }
-                                if (value.length < 6) {
-                                  return 'Password must be at least 6 characters';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-
-                          SizedBox(height: 24),
-
-                          // Sign In button
-                          MouseRegion(
-                            onEnter: (_) => setState(() => _isHovering = true),
-                            onExit: (_) => setState(() => _isHovering = false),
-                            child: AnimatedContainer(
-                              duration: Duration(milliseconds: 300),
-                              width: double.infinity,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: _isHovering
-                                    ? [
-                                  BoxShadow(
-                                    color: Color(0xFF667EEA).withOpacity(0.4),
-                                    blurRadius: 20,
-                                    offset: Offset(0, 10),
-                                  ),
-                                ]
-                                    : [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 10,
-                                    offset: Offset(0, 5),
-                                  ),
-                                ],
-                              ),
-                              child: ElevatedButton(
-                                onPressed: authProvider.isLoading
-                                    ? null
-                                    : () async {
-                                  if (_formKey.currentState!.validate()) {
-                                    await authProvider.login(
-                                      _emailController.text.trim(),
-                                      _passwordController.text,
-                                    );
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                child: authProvider.isLoading
-                                    ? SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                    : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Sign In',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Icon(
-                                      Icons.arrow_forward_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: 24),
-
-                          // Sign up link
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'New to our platform?',
-                                style: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  PageRouteBuilder(
-                                    pageBuilder: (_, __, ___) => ClientSignupScreen(),
-                                    transitionsBuilder: (_, animation, __, child) {
-                                      return FadeTransition(
-                                        opacity: animation,
-                                        child: child,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                child: Text(
-                                  'Create account',
-                                  style: TextStyle(
-                                    color: Color(0xFF667EEA),
-                                    fontWeight: FontWeight.w600,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Divider
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Divider(
-                                  color: isDark ? Colors.white24 : Colors.grey[300],
-                                ),
-                              ),
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text(
-                                  'or',
-                                  style: TextStyle(
-                                    color: isDark ? Colors.white54 : Color(0xFF718096),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Divider(
-                                  color: isDark ? Colors.white24 : Colors.grey[300],
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Social login buttons
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSocialButton(
-                                icon: Icons.g_mobiledata_rounded,
-                                color: Colors.red,
-                                onTap: () {},
-                              ),
-                              SizedBox(width: 16),
-                              _buildSocialButton(
-                                icon: Icons.facebook_rounded,
-                                color: Colors.blue,
-                                onTap: () {},
-                              ),
-                              SizedBox(width: 16),
-                              _buildSocialButton(
-                                icon: Icons.apple_rounded,
-                                color: Colors.black,
-                                onTap: () {},
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+  void _showThemeSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => const ThemeSelectorBottomSheet(),
     );
   }
 
@@ -3827,14 +4082,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         height: 50,
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
-              ? Color(0xFF2D3748)
+              ? const Color(0xFF2D3748)
               : Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
-              offset: Offset(0, 5),
+              offset: const Offset(0, 5),
             ),
           ],
         ),
@@ -3846,6 +4101,479 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
+    final gradientColors = themeProvider.getCurrentGradientColors();
+    final isDark = themeProvider.isDarkMode;
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: gradientColors,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                margin: const EdgeInsets.all(20),
+                child: AnimatedBuilder(
+                  animation: _animationController,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(0, _slideAnimation.value),
+                      child: Opacity(
+                        opacity: _fadeAnimation.value,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Card(
+                    elevation: 24,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: SingleChildScrollView(
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: IconButton(
+                                      onPressed: () => _showThemeSelector(context),
+                                      icon: const Icon(
+                                        Icons.palette_rounded,
+                                        color: Colors.white,
+                                      ),
+                                      tooltip: 'Change Theme',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: gradientColors,
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.rocket_launch_rounded,
+                                  color: Colors.white,
+                                  size: 40,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              Text(
+                                'Welcome Back',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : const Color(0xFF2D3748),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Sign in to continue your journey',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              if (authProvider.error != null)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  margin: const EdgeInsets.only(bottom: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.red.withOpacity(0.3),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.error_outline,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          authProvider.error!,
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      GestureDetector(
+                                        // onTap: () => authProvider.clearError(),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.red,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: TextFormField(
+                                  controller: _emailController,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Email Address',
+                                    labelStyle: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                    prefixIcon: Container(
+                                      margin: const EdgeInsets.only(right: 12, left: 16),
+                                      child: const Icon(
+                                        Icons.email_rounded,
+                                        color: Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF667EEA),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  ),
+                                  keyboardType: TextInputType.emailAddress,
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter your email';
+                                    }
+                                    if (!AppUtils.isEmailValid(value)) {
+                                      return 'Please enter a valid email';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: TextFormField(
+                                  controller: _passwordController,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  obscureText: _obscurePassword,
+                                  decoration: InputDecoration(
+                                    labelText: 'Password',
+                                    labelStyle: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                    prefixIcon: Container(
+                                      margin: const EdgeInsets.only(right: 12, left: 16),
+                                      child: const Icon(
+                                        Icons.lock_rounded,
+                                        color: Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                    suffixIcon: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
+                                      child: Container(
+                                        margin: const EdgeInsets.only(right: 16),
+                                        child: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_rounded
+                                              : Icons.visibility_off_rounded,
+                                          color: const Color(0xFF718096),
+                                        ),
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF667EEA),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter your password';
+                                    }
+                                    if (value.length < 6) {
+                                      return 'Password must be at least 6 characters';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              MouseRegion(
+                                onEnter: (_) => setState(() => _isHovering = true),
+                                onExit: (_) => setState(() => _isHovering = false),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  width: double.infinity,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [const Color(0xFF667EEA), const Color(0xFF764BA2)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: _isHovering
+                                        ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF667EEA).withOpacity(0.4),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ]
+                                        : [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ElevatedButton(
+                                    onPressed: authProvider.isLoading
+                                        ? null
+                                        : () async {
+                                      if (_formKey.currentState!.validate()) {
+                                        await authProvider.login(
+                                          _emailController.text.trim(),
+                                          _passwordController.text,
+                                        );
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                    child: authProvider.isLoading
+                                        ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                        : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          'Sign In',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        SizedBox(width: 8),
+                                        Icon(
+                                          Icons.arrow_forward_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'New to our platform?',
+                                    style: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      PageRouteBuilder(
+                                        pageBuilder: (_, __, ___) => const ClientSignupScreen(),
+                                        transitionsBuilder: (_, animation, __, child) {
+                                          return FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Create account',
+                                      style: TextStyle(
+                                        color: Color(0xFF667EEA),
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Divider(
+                                      color: isDark ? Colors.white24 : Colors.grey[300],
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text(
+                                      'or',
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white54 : const Color(0xFF718096),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Divider(
+                                      color: isDark ? Colors.white24 : Colors.grey[300],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    icon: Icons.g_mobiledata_rounded,
+                                    color: Colors.red,
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    icon: Icons.facebook_rounded,
+                                    color: Colors.blue,
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    icon: Icons.apple_rounded,
+                                    color: Colors.black,
+                                    onTap: () {},
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class AccountDisabledScreen extends StatelessWidget {
@@ -3853,6 +4581,16 @@ class AccountDisabledScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
+    final gradientColors = themeProvider.getCurrentGradientColors();
+
+    // Handle system theme
+    final brightness = MediaQuery.of(context).platformBrightness;
+    final isDark = themeProvider.useSystemTheme
+        ? brightness == Brightness.dark
+        : themeProvider.isDarkMode;
     return Scaffold(
       body: Center(
         child: Padding(
@@ -4775,8 +5513,10 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider=Provider.of<AuthProvider>(context);
     return Scaffold(
       backgroundColor: Colors.blue[50],
+      appBar: AppBar(actions: [       ],),
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
@@ -5145,8 +5885,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       /////////
       SuperAdminHome(),
       TenantsManagementScreen(),
-      SystemAnalyticsScreen(),
-      SuperAdminTicketsScreen(),
+SuperAdminAnalyticsScreen(),      SuperAdminTicketsScreen(),
       SuperAdminManagementScreen(), // Make sure this is included
     ];
 
