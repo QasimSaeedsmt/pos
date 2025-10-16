@@ -264,7 +264,7 @@ class AnalyticsService {
       final totalSales = orders.fold(0.0, (sum, order) => sum + order.total);
       final totalOrders = orders.length;
       final totalItemsSold = orders.fold(0, (sum, order) {
-        return sum + (order.lineItems as List).fold(0, (itemSum, item) {
+        return sum + (order.lineItems).fold(0, (itemSum, item) {
           final itemMap = item as Map<String, dynamic>;
           return itemSum + (itemMap['quantity'] as int);
         });
@@ -414,8 +414,9 @@ class AnalyticsService {
         final data = doc.data();
         final customer = Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
         String tier = 'Bronze';
-        if (customer.totalSpent > 1000) tier = 'Platinum';
-        else if (customer.totalSpent > 500) tier = 'Gold';
+        if (customer.totalSpent > 1000) {
+          tier = 'Platinum';
+        } else if (customer.totalSpent > 500) tier = 'Gold';
         else if (customer.totalSpent > 100) tier = 'Silver';
 
         return TopCustomer(
@@ -575,6 +576,8 @@ class AnalyticsService {
 
 // Analytics Dashboard Screen
 class AnalyticsDashboardScreen extends StatefulWidget {
+  const AnalyticsDashboardScreen({super.key});
+
   @override
   _AnalyticsDashboardScreenState createState() => _AnalyticsDashboardScreenState();
 }
@@ -800,7 +803,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         ),
         _buildMetricCard(
           title: 'Avg Order',
-          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
+          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue.toStringAsFixed(0) ?? '0'}',
           icon: Icons.analytics,
           color: Colors.purple,
         ),
@@ -990,7 +993,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           children: [
             Text('Sales Trends', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 200,
               child: Center(
                 child: Text(
@@ -1017,7 +1020,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           children: [
             Text('Sales by Hour', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 300,
               child: SfCartesianChart(
                 primaryXAxis: CategoryAxis(),
@@ -1049,7 +1052,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           children: [
             Text('Sales by Day', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 300,
               child: SfCartesianChart(
                 primaryXAxis: CategoryAxis(),
@@ -1166,7 +1169,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           children: [
             Text('Product Revenue Distribution', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 300,
               child: SfCircularChart(
                 series: <PieSeries<ChartData, String>>[
@@ -1344,7 +1347,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               ],
             ),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 200,
               child: _customerAnalytics?.customerSegmentation != null
                   ? SfCircularChart(
@@ -1507,7 +1510,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             ),
             SizedBox(height: 16),
             if (_customerAnalytics?.acquisitionData != null)
-              Container(
+              SizedBox(
                 height: 250,
                 child: SfCartesianChart(
                   primaryXAxis: CategoryAxis(),
@@ -1532,7 +1535,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 ),
               )
             else
-              Container(
+              SizedBox(
                 height: 200,
                 child: Center(child: Text('No acquisition data available', style: TextStyle(color: Colors.grey[600]))),
               ),
@@ -1630,7 +1633,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 }).toList(),
               )
             else
-              Container(
+              SizedBox(
                 height: 100,
                 child: Center(child: Text('No location data available', style: TextStyle(color: Colors.grey[600]))),
               ),

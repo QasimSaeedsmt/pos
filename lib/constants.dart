@@ -1,4 +1,3 @@
-import 'package:mpcm/products/currency_provider.dart';
 
 class Constants{
   static String CURRENCY_NAME ="R";

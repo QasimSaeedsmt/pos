@@ -2,13 +2,17 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:mpcm/firebase_options.dart';
+import 'package:mpcm/printing/bottom_sheet.dart';
+import 'package:mpcm/printing/invoice_model.dart';
+import 'package:mpcm/printing/invoice_service.dart';
+import 'package:mpcm/printing/printing_setting_screen.dart';
+import 'package:mpcm/sales/sales_management_screen.dart';
 import 'package:mpcm/settings.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -25,6 +29,8 @@ import 'app_theme.dart';
 import 'constants.dart';
 import 'main.dart';
 class ProfileScreen extends StatelessWidget {
+  const ProfileScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -134,7 +140,7 @@ void main() async {
 }
 class AddUserDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
-  AddUserDialog({required this.onSave});
+  const AddUserDialog({super.key, required this.onSave});
 
   @override
   _AddUserDialogState createState() => _AddUserDialogState();
@@ -157,7 +163,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
           ),
           SizedBox(height: 20),
           DropdownButtonFormField(
-            value: _selectedRole,
+            initialValue: _selectedRole,
             items: [
               DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
               DropdownMenuItem(
@@ -190,6 +196,8 @@ class _AddUserDialogState extends State<AddUserDialog> {
 
 // REPLACE the ProductSearchDialog class:
 class UsersScreen extends StatelessWidget {
+  const UsersScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -257,7 +265,7 @@ class UsersScreen extends StatelessWidget {
 class ProductSearchDialog extends StatefulWidget {
   final EnhancedPOSService posService;
 
-  const ProductSearchDialog({Key? key, required this.posService}) : super(key: key);
+  const ProductSearchDialog({super.key, required this.posService});
 
   @override
   _ProductSearchDialogState createState() => _ProductSearchDialogState();
@@ -1013,7 +1021,7 @@ class FirestoreService {
     try {
       final snapshot = await ordersRef
           .where('number', isGreaterThanOrEqualTo: query)
-          .where('number', isLessThanOrEqualTo: query + '\uf8ff')
+          .where('number', isLessThanOrEqualTo: '$query\uf8ff')
           .orderBy('number')
           .limit(20)
           .get();
@@ -1485,6 +1493,81 @@ class EnhancedPOSService {
   void setTenantContext(String tenantId) {
     _firestore.setTenantId(tenantId);
   }
+  Future<OrderCreationResult> createOrderWithCustomer(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? additionalData,
+      }) async {
+    if (_isOnline) {
+      try {
+        final order = await _firestore.createOrderWithCustomer(cartItems, customerSelection);
+
+        // Apply additional data if provided
+        if (additionalData != null) {
+          await _firestore.ordersRef.doc(order.id).update({
+            'additionalData': additionalData,
+            'dateModified': FieldValue.serverTimestamp(),
+          });
+        }
+
+        return OrderCreationResult.success(order);
+      } catch (e) {
+        print('Online order creation failed, saving locally: $e');
+        return await _createOfflineOrderWithCustomer(cartItems, customerSelection, additionalData: additionalData);
+      }
+    } else {
+      return await _createOfflineOrderWithCustomer(cartItems, customerSelection, additionalData: additionalData);
+    }
+  }
+
+  Future<OrderCreationResult> _createOfflineOrderWithCustomer(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? additionalData,
+      }) async {
+    try {
+      // Update local stock quantities
+      for (final item in cartItems) {
+        await _updateLocalProductStock(item.product.id, -item.quantity);
+      }
+
+      final pendingOrderId = await _localDb.savePendingOrderWithCustomer(
+        cartItems,
+        customerSelection,
+        additionalData: additionalData,
+      );
+      await _localDb.clearCart();
+      return OrderCreationResult.offline(pendingOrderId);
+    } catch (e) {
+      return OrderCreationResult.error('Failed to save order locally: $e');
+    }
+  }
+  // Get invoice settings
+  Future<Map<String, dynamic>> getInvoiceSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'defaultTemplate': prefs.getString('default_invoice_template') ?? 'traditional',
+      'taxRate': prefs.getDouble('tax_rate') ?? 0.0,
+      'discountRate': prefs.getDouble('discount_rate') ?? 0.0,
+      'autoPrint': prefs.getBool('auto_print') ?? false,
+      'includeCustomerDetails': prefs.getBool('include_customer_details') ?? true,
+      'defaultNotes': prefs.getString('default_notes') ?? 'Thank you for your business!',
+    };
+  }
+
+  // Get business info
+  Future<Map<String, dynamic>> getBusinessInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'name': prefs.getString('business_name') ?? 'Your Business Name',
+      'address': prefs.getString('business_address') ?? '',
+      'phone': prefs.getString('business_phone') ?? '',
+      'email': prefs.getString('business_email') ?? '',
+      'website': prefs.getString('business_website') ?? '',
+      'tagline': prefs.getString('business_tagline') ?? '',
+      'taxNumber': prefs.getString('business_tax_number') ?? '',
+    };
+  }
   static final EnhancedPOSService _instance = EnhancedPOSService._internal();
   factory EnhancedPOSService() => _instance;
   EnhancedPOSService._internal();
@@ -1691,40 +1774,8 @@ class EnhancedPOSService {
   }
 
   // Enhanced order creation
-  Future<OrderCreationResult> createOrderWithCustomer(
-      List<CartItem> cartItems,
-      CustomerSelection customerSelection
-      ) async {
-    if (_isOnline) {
-      try {
-        final order = await _firestore.createOrderWithCustomer(cartItems, customerSelection);
-        return OrderCreationResult.success(order);
-      } catch (e) {
-        print('Online order creation failed, saving locally: $e');
-        return await _createOfflineOrderWithCustomer(cartItems, customerSelection);
-      }
-    } else {
-      return await _createOfflineOrderWithCustomer(cartItems, customerSelection);
-    }
-  }
 
-  Future<OrderCreationResult> _createOfflineOrderWithCustomer(
-      List<CartItem> cartItems,
-      CustomerSelection customerSelection
-      ) async {
-    try {
-      // Update local stock quantities
-      for (final item in cartItems) {
-        await _updateLocalProductStock(item.product.id, -item.quantity);
-      }
 
-      final pendingOrderId = await _localDb.savePendingOrderWithCustomer(cartItems, customerSelection);
-      await _localDb.clearCart();
-      return OrderCreationResult.offline(pendingOrderId);
-    } catch (e) {
-      return OrderCreationResult.error('Failed to save order locally: $e');
-    }
-  }
   final LocalDatabase _localDb = LocalDatabase();
   final Connectivity _connectivity = Connectivity();
   final Lock _syncLock = Lock();
@@ -2336,15 +2387,31 @@ class Product {
 class CartItem {
   final Product product;
   int quantity;
+  double? manualDiscount; // Manual discount amount for this specific item
+  double? manualDiscountPercent; // Manual discount percentage for this specific item
 
   CartItem({
     required this.product,
     required this.quantity,
+    this.manualDiscount,
+    this.manualDiscountPercent,
   });
 
-  double get subtotal => product.price * quantity;
-}
+  double get baseSubtotal => product.price * quantity;
 
+  double get discountAmount {
+    if (manualDiscount != null) {
+      return manualDiscount! * quantity;
+    } else if (manualDiscountPercent != null) {
+      return (product.price * manualDiscountPercent! / 100) * quantity;
+    }
+    return 0.0;
+  }
+
+  double get subtotal => baseSubtotal - discountAmount;
+
+  bool get hasManualDiscount => manualDiscount != null || manualDiscountPercent != null;
+}
 class Category {
   final String id;
   final String name;
@@ -2643,7 +2710,11 @@ class LocalDatabase {
     }
   }
 
-  Future<int> savePendingOrderWithCustomer(List<CartItem> cartItems, CustomerSelection customerSelection) async {
+  Future<int> savePendingOrderWithCustomer(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? additionalData,
+      }) async {
     final prefs = await _prefs;
     final pendingOrdersJson = prefs.getString(_pendingOrdersKey);
     final List<dynamic> pendingOrders = pendingOrdersJson != null
@@ -2651,6 +2722,29 @@ class LocalDatabase {
         : [];
 
     final orderId = pendingOrders.length + 1;
+
+    // Calculate enhanced pricing data
+    final subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
+    final itemDiscounts = cartItems.fold(0.0, (sum, item) => sum + item.discountAmount);
+
+    // Extract cart-level discounts from additionalData
+    final cartDiscount = additionalData?['cartData']?['cartDiscount'] ?? 0.0;
+    final cartDiscountPercent = additionalData?['cartData']?['cartDiscountPercent'] ?? 0.0;
+    final cartDiscountAmount = cartDiscount + (subtotal * cartDiscountPercent / 100);
+
+    final totalDiscount = itemDiscounts + cartDiscountAmount;
+    final taxableAmount = subtotal - totalDiscount;
+
+    // Extract tax rate from additionalData or use default
+    final taxRate = additionalData?['cartData']?['taxRate'] ?? 0.0;
+    final taxAmount = taxableAmount * taxRate / 100;
+
+    // Extract additional charges
+    final additionalDiscount = additionalData?['additionalDiscount'] ?? 0.0;
+    final shippingAmount = additionalData?['shippingAmount'] ?? 0.0;
+    final tipAmount = additionalData?['tipAmount'] ?? 0.0;
+
+    final finalTotal = taxableAmount + taxAmount + shippingAmount + tipAmount - additionalDiscount;
 
     final orderData = {
       'id': orderId,
@@ -2661,8 +2755,31 @@ class LocalDatabase {
           'product_sku': item.product.sku,
           'quantity': item.quantity,
           'price': item.product.price,
+          'base_price': item.product.price, // Original price
+          'manual_discount': item.manualDiscount,
+          'manual_discount_percent': item.manualDiscountPercent,
+          'discount_amount': item.discountAmount,
+          'base_subtotal': item.baseSubtotal,
+          'final_subtotal': item.subtotal,
+          'has_manual_discount': item.hasManualDiscount,
         }).toList(),
-        'total': cartItems.fold(0.0, (sum, item) => sum + item.subtotal),
+        'pricing_breakdown': {
+          'subtotal': subtotal,
+          'item_discounts': itemDiscounts,
+          'cart_discount': cartDiscount,
+          'cart_discount_percent': cartDiscountPercent,
+          'cart_discount_amount': cartDiscountAmount,
+          'additional_discount': additionalDiscount,
+          'total_discount': totalDiscount + additionalDiscount,
+          'taxable_amount': taxableAmount - additionalDiscount,
+          'tax_rate': taxRate,
+          'tax_amount': taxAmount,
+          'shipping_amount': shippingAmount,
+          'tip_amount': tipAmount,
+          'final_total': finalTotal,
+        },
+        'total': finalTotal, // Use the calculated final total
+        'original_total': subtotal, // Original total without any discounts
       },
       'customer_data': customerSelection.hasCustomer ? {
         'customerId': customerSelection.customer!.id,
@@ -2672,17 +2789,49 @@ class LocalDatabase {
         'phone': customerSelection.customer!.phone,
         'company': customerSelection.customer!.company,
       } : null,
+      'payment_data': {
+        'method': additionalData?['paymentMethod'] ?? 'cash',
+        'amount_paid': finalTotal,
+        'status': 'completed',
+      },
+      'discount_summary': {
+        'applied_discounts': cartItems.where((item) => item.hasManualDiscount).map((item) => {
+          'product_id': item.product.id,
+          'product_name': item.product.name,
+          'discount_type': item.manualDiscount != null ? 'amount' : 'percent',
+          'discount_value': item.manualDiscount ?? item.manualDiscountPercent,
+          'discount_amount': item.discountAmount,
+        }).toList(),
+        'cart_level_discount': {
+          'type': cartDiscount > 0 ? 'amount' : 'percent',
+          'value': cartDiscount > 0 ? cartDiscount : cartDiscountPercent,
+          'amount': cartDiscountAmount,
+        },
+        'additional_discount': additionalDiscount,
+      },
+      'settings_used': {
+        'tax_rate': taxRate,
+        'default_discount_rate': additionalData?['invoiceSettings']?['discountRate'] ?? 0.0,
+        'business_info_used': additionalData?['businessInfo'] != null,
+      },
       'created_at': DateTime.now().toIso8601String(),
       'sync_status': 'pending',
       'sync_attempts': 0,
+      'version': '2.0', // Version to identify enhanced order format
     };
+
+    // Add additional data if provided
+    if (additionalData != null) {
+      orderData['additional_data'] = additionalData;
+    }
 
     pendingOrders.add(orderData);
     await prefs.setString(_pendingOrdersKey, json.encode(pendingOrders));
 
+    print('Saved enhanced pending order #$orderId with total: ${Constants.CURRENCY_NAME}$finalTotal');
+
     return orderId;
-  }
-  // Product operations
+  }  // Product operations
 // In LocalDatabase class - REPLACE the saveProducts method
   Future<void> saveProducts(List<Product> products) async {
     final prefs = await _prefs;
@@ -3020,28 +3169,70 @@ class EnhancedCartManager {
   final List<CartItem> _items = [];
   final StreamController<List<CartItem>> _cartController = StreamController<List<CartItem>>.broadcast();
   final StreamController<int> _itemCountController = StreamController<int>.broadcast();
+  final StreamController<double> _totalController = StreamController<double>.broadcast();
   final LocalDatabase _localDb = LocalDatabase();
   bool _isInitialized = false;
 
+  // Cart-level discounts
+  double _cartDiscount = 0.0;
+  double _cartDiscountPercent = 0.0;
+  double _taxRate = 0.0;
+
   Stream<List<CartItem>> get cartStream => _cartController.stream;
   Stream<int> get itemCountStream => _itemCountController.stream;
+  Stream<double> get totalStream => _totalController.stream;
 
   List<CartItem> get items => List.unmodifiable(_items);
 
-  double get totalAmount {
-    return _items.fold(0.0, (sum, item) => sum + item.subtotal);
+  // Getters for discounts
+  double get cartDiscount => _cartDiscount;
+  double get cartDiscountPercent => _cartDiscountPercent;
+  double get taxRate => _taxRate;
+
+  // Enhanced total calculations
+  double get subtotal {
+    return _items.fold(0.0, (sum, item) => sum + item.baseSubtotal);
   }
 
+  double get totalDiscount {
+    final itemDiscounts = _items.fold(0.0, (sum, item) => sum + item.discountAmount);
+    final cartDiscountAmount = _cartDiscount + (subtotal * _cartDiscountPercent / 100);
+    return itemDiscounts + cartDiscountAmount;
+  }
+
+  double get taxableAmount {
+    return subtotal - totalDiscount;
+  }
+
+  double get taxAmount {
+    return taxableAmount * _taxRate / 100;
+  }
+
+  double get totalAmount {
+    return taxableAmount + taxAmount;
+  }
+
+  // Load settings when initializing
   Future<void> initialize() async {
     if (_isInitialized) return;
 
     final savedCartItems = await _localDb.getCartItems();
     _items.clear();
     _items.addAll(savedCartItems);
+
+    // Load tax rate from settings
+    await _loadTaxRate();
+
     _notifyListeners();
     _isInitialized = true;
   }
 
+  Future<void> _loadTaxRate() async {
+    final prefs = await SharedPreferences.getInstance();
+    _taxRate = prefs.getDouble('tax_rate') ?? 0.0;
+  }
+
+  // Enhanced add to cart with settings integration
   Future<void> addToCart(Product product) async {
     final existingIndex = _items.indexWhere((item) => item.product.id == product.id);
 
@@ -3063,6 +3254,97 @@ class EnhancedCartManager {
     }
     _notifyListeners();
   }
+
+  // Apply manual discount to specific item
+  Future<void> applyItemDiscount(String productId, {double? discountAmount, double? discountPercent}) async {
+    final itemIndex = _items.indexWhere((item) => item.product.id == productId);
+    if (itemIndex >= 0) {
+      _items[itemIndex].manualDiscount = discountAmount;
+      _items[itemIndex].manualDiscountPercent = discountPercent;
+      await _localDb.saveCartItems(_items);
+      _notifyListeners();
+    }
+  }
+
+  // Remove manual discount from specific item
+  Future<void> removeItemDiscount(String productId) async {
+    final itemIndex = _items.indexWhere((item) => item.product.id == productId);
+    if (itemIndex >= 0) {
+      _items[itemIndex].manualDiscount = null;
+      _items[itemIndex].manualDiscountPercent = null;
+      await _localDb.saveCartItems(_items);
+      _notifyListeners();
+    }
+  }
+
+  // Apply cart-level discount
+  Future<void> applyCartDiscount({double? discountAmount, double? discountPercent}) async {
+    _cartDiscount = discountAmount ?? 0.0;
+    _cartDiscountPercent = discountPercent ?? 0.0;
+    _notifyListeners();
+  }
+
+  // Remove cart-level discount
+  Future<void> removeCartDiscount() async {
+    _cartDiscount = 0.0;
+    _cartDiscountPercent = 0.0;
+    _notifyListeners();
+  }
+
+  // Update tax rate
+  Future<void> updateTaxRate(double newTaxRate) async {
+    _taxRate = newTaxRate;
+    _notifyListeners();
+  }
+
+  // Enhanced checkout items with discount information
+  List<CartItem> getCheckoutItems() {
+    return _items.map((item) => CartItem(
+      product: item.product,
+      quantity: item.quantity,
+      manualDiscount: item.manualDiscount,
+      manualDiscountPercent: item.manualDiscountPercent,
+    )).toList();
+  }
+
+  // Enhanced cart data for order creation
+  Map<String, dynamic> getCartDataForOrder() {
+    return {
+      'items': _items.map((item) => {
+        'productId': item.product.id,
+        'productName': item.product.name,
+        'quantity': item.quantity,
+        'price': item.product.price,
+        'manualDiscount': item.manualDiscount,
+        'manualDiscountPercent': item.manualDiscountPercent,
+        'subtotal': item.subtotal,
+        'baseSubtotal': item.baseSubtotal,
+        'discountAmount': item.discountAmount,
+      }).toList(),
+      'subtotal': subtotal,
+      'totalDiscount': totalDiscount,
+      'taxableAmount': taxableAmount,
+      'taxRate': _taxRate,
+      'taxAmount': taxAmount,
+      'totalAmount': totalAmount,
+      'cartDiscount': _cartDiscount,
+      'cartDiscountPercent': _cartDiscountPercent,
+    };
+  }
+
+  void _notifyListeners() {
+    if (!_cartController.isClosed) {
+      _cartController.add(List.from(_items));
+    }
+    if (!_itemCountController.isClosed) {
+      _itemCountController.add(_items.length);
+    }
+    if (!_totalController.isClosed) {
+      _totalController.add(totalAmount);
+    }
+  }
+
+
 
   Future<void> updateQuantity(String productId, int newQuantity) async {
     if (newQuantity <= 0) {
@@ -3095,21 +3377,6 @@ class EnhancedCartManager {
     _notifyListeners();
   }
 
-  List<CartItem> getCheckoutItems() {
-    return _items.map((item) => CartItem(
-        product: item.product,
-        quantity: item.quantity
-    )).toList();
-  }
-
-  void _notifyListeners() {
-    if (!_cartController.isClosed) {
-      _cartController.add(List.from(_items));
-    }
-    if (!_itemCountController.isClosed) {
-      _itemCountController.add(_items.length);
-    }
-  }
 
   void dispose() {
     _cartController.close();
@@ -3119,6 +3386,8 @@ class EnhancedCartManager {
 
 // Main Application
 class POSApp extends StatefulWidget {
+  const POSApp({super.key});
+
   @override
   State<POSApp> createState() => _POSAppState();
 }
@@ -3185,6 +3454,8 @@ class _POSAppState extends State<POSApp> {
   }
 }
 class TicketsScreen extends StatelessWidget {
+  const TicketsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -3198,10 +3469,12 @@ class TicketsScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
+          }
 
           final tickets = snapshot.data!.docs;
 
@@ -3281,6 +3554,8 @@ class TicketsScreen extends StatelessWidget {
 }
 
 class CreateTicketDialog extends StatefulWidget {
+  const CreateTicketDialog({super.key});
+
   @override
   _CreateTicketDialogState createState() => _CreateTicketDialogState();
 }
@@ -3337,7 +3612,7 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
 class TicketDetailsDialog extends StatelessWidget {
   final String ticketId;
   final Map<String, dynamic> ticket;
-  TicketDetailsDialog({required this.ticketId, required this.ticket});
+  const TicketDetailsDialog({super.key, required this.ticketId, required this.ticket});
 
   @override
   Widget build(BuildContext context) {
@@ -3359,7 +3634,7 @@ class TicketDetailsDialog extends StatelessWidget {
                   child: Text('- ${reply['message']}'),
                 ),
               )
-                  .toList(),
+                  ,
             ],
           ],
         ),
@@ -3375,6 +3650,8 @@ class TicketDetailsDialog extends StatelessWidget {
 }
 // Modern Dashboard Screen
 class ModernDashboardScreen extends StatefulWidget {
+  const ModernDashboardScreen({super.key});
+
   @override
   _ModernDashboardScreenState createState() => _ModernDashboardScreenState();
 }
@@ -3814,7 +4091,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen> with Sing
             ],
           ),
           SizedBox(height: 16),
-          Container(
+          SizedBox(
             height: 200,
             child: SfCartesianChart(
               margin: EdgeInsets.zero,
@@ -4221,11 +4498,10 @@ class _QuickStatItem extends StatelessWidget {
   final IconData icon;
 
   const _QuickStatItem({
-    Key? key,
     required this.value,
     required this.label,
     required this.icon,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4271,14 +4547,13 @@ class _StatCard extends StatelessWidget {
   final double trend;
 
   const _StatCard({
-    Key? key,
     required this.title,
     required this.value,
     required this.subtitle,
     required this.icon,
     required this.color,
     required this.trend,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4378,13 +4653,12 @@ class _QuickActionTile extends StatelessWidget {
   final VoidCallback onTap;
 
   const _QuickActionTile({
-    Key? key,
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4426,7 +4700,7 @@ class _QuickActionTile extends StatelessWidget {
 class _LowStockItem extends StatelessWidget {
   final Product product;
 
-  const _LowStockItem({Key? key, required this.product}) : super(key: key);
+  const _LowStockItem({required this.product});
 
   @override
   Widget build(BuildContext context) {
@@ -4507,7 +4781,7 @@ class _LowStockItem extends StatelessWidget {
 class _RecentOrderItem extends StatelessWidget {
   final Order order;
 
-  const _RecentOrderItem({Key? key, required this.order}) : super(key: key);
+  const _RecentOrderItem({required this.order});
 
   @override
   Widget build(BuildContext context) {
@@ -4566,6 +4840,8 @@ class _RecentOrderItem extends StatelessWidget {
 }
 // Main POS Screen
 class MainPOSScreen extends StatefulWidget {
+  const MainPOSScreen({super.key});
+
   @override
   _MainPOSScreenState createState() => _MainPOSScreenState();
 }
@@ -4857,30 +5133,18 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
       ),
     );
   }
+
+
+
   @override
   Widget build(BuildContext context) {
     final authProvider= Provider.of<AuthProvider>(context);
     return Scaffold(
-      appBar: AppBar( flexibleSpace: Container(
-        decoration: AppTheme().getAppBarGradient(),
-      ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${Constants.TANENT_NAME} POS'),
-            if (_connectionStatus.isNotEmpty)
-              Text(
-                _connectionStatus,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _isOnline ? Colors.green[200] : Colors.orange[200],
-                ),
-              ),
-          ],
-        ),
-        backgroundColor: _isOnline ? Colors.blue[700] : Colors.orange[700],
-        elevation: 0,
+      appBar: AppBar(
         actions: [
+          ElevatedButton(onPressed: (){
+            Navigator.push(context, MaterialPageRoute(builder: (context) => InvoiceSettingsScreen(),));
+          }, child: Text("Print")),
           if (_isTestingConnection)
             Padding(
               padding: EdgeInsets.only(right: 16),
@@ -4932,7 +5196,56 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
               onPressed: _testConnection,
               tooltip: 'Check Connection',
             ),
+          IconButton(
+            icon: Icon(Icons.analytics),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => SalesManagementScreen()),
+              );
+            },
+          ),
+          if (authProvider.currentUser!.canManageUsers)
+            IconButton(
+              icon: Icon(Icons.people),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => EnhancedUsersScreen()),
+                );
+              },
+            ),
+          IconButton(
+            icon: Icon(Icons.person),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => EnhancedProfileScreen()),
+              );
+            },
+          ),
         ],
+        flexibleSpace: Container(
+        decoration: AppTheme().getAppBarGradient(),
+      ),
+
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${Constants.TANENT_NAME} POS'),
+            if (_connectionStatus.isNotEmpty)
+              Text(
+                _connectionStatus,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _isOnline ? Colors.green[200] : Colors.orange[200],
+                ),
+              ),
+          ],
+        ),
+        backgroundColor: _isOnline ? Colors.blue[700] : Colors.orange[700],
+        elevation: 0,
+
       ),
       body: _clientAdminScreens.isEmpty
           ? Center(child: CircularProgressIndicator())
@@ -5200,7 +5513,7 @@ class _MainPOSScreenState extends State<MainPOSScreen> {
 class ProductSellingScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
 
-  const ProductSellingScreen({Key? key, required this.cartManager}) : super(key: key);
+  const ProductSellingScreen({super.key, required this.cartManager});
 
   @override
   _ProductSellingScreenState createState() => _ProductSellingScreenState();
@@ -5222,8 +5535,8 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   final List<Category> _categories = [];
   String _selectedCategoryId = 'all';
   bool _inStockOnly = false;
-  double _minPrice = 0;
-  double _maxPrice = double.infinity;
+  final double _minPrice = 0;
+  final double _maxPrice = double.infinity;
 
   @override
   void initState() {
@@ -5731,11 +6044,11 @@ class ProductCard extends StatelessWidget {
   final VoidCallback onAddToCart;
 
   const ProductCard({
-    Key? key,
+    super.key,
     required this.product,
     required this.onTap,
     required this.onAddToCart,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -5857,10 +6170,10 @@ class RecentProductCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const RecentProductCard({
-    Key? key,
+    super.key,
     required this.product,
     required this.onTap,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -5946,10 +6259,10 @@ class ProductDetailBottomSheet extends StatefulWidget {
   final VoidCallback onAddToCart;
 
   const ProductDetailBottomSheet({
-    Key? key,
+    super.key,
     required this.product,
     required this.onAddToCart,
-  }) : super(key: key);
+  });
 
   @override
   _ProductDetailBottomSheetState createState() => _ProductDetailBottomSheetState();
@@ -6091,7 +6404,7 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
                       onPressed: _decrementQuantity,
                       padding: EdgeInsets.zero,
                     ),
-                    Container(
+                    SizedBox(
                       width: 40,
                       child: Text(
                         _quantity.toString(),
@@ -6158,12 +6471,12 @@ class FilterBottomSheet extends StatefulWidget {
   final Function(String, bool) onFiltersChanged;
 
   const FilterBottomSheet({
-    Key? key,
+    super.key,
     required this.categories,
     required this.selectedCategoryId,
     required this.inStockOnly,
     required this.onFiltersChanged,
-  }) : super(key: key);
+  });
 
   @override
   _FilterBottomSheetState createState() => _FilterBottomSheetState();
@@ -6237,7 +6550,7 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
                     setState(() => _selectedCategoryId = category.id);
                   },
                 );
-              }).toList(),
+              }),
             ],
           ),
           SizedBox(height: 16),
@@ -6297,6 +6610,8 @@ _clientAdminScreens.addAll([
 
 // Similarly update for _clientSalesManagerScreens and _clientCashierScreens
 class HardwareScannerScreen extends StatefulWidget {
+  const HardwareScannerScreen({super.key});
+
   @override
   _HardwareScannerScreenState createState() => _HardwareScannerScreenState();
 }
@@ -6364,11 +6679,11 @@ class _HardwareScannerScreenState extends State<HardwareScannerScreen> {
 }
 
 
-// Cart Screen
+// Enhanced CartScreen with discount support
 class CartScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
 
-  const CartScreen({Key? key, required this.cartManager}) : super(key: key);
+  const CartScreen({super.key, required this.cartManager});
 
   @override
   _CartScreenState createState() => _CartScreenState();
@@ -6376,27 +6691,230 @@ class CartScreen extends StatefulWidget {
 
 class _CartScreenState extends State<CartScreen> {
   List<CartItem> _currentCartItems = [];
+  double _totalAmount = 0.0;
+  double _subtotal = 0.0;
+  double _discountAmount = 0.0;
+  double _taxAmount = 0.0;
+  double _taxRate = 0.0;
 
   @override
   void initState() {
     super.initState();
     _currentCartItems = List.from(widget.cartManager.items);
+    _updateTotals();
+
     widget.cartManager.cartStream.listen((cartItems) {
       if (mounted) {
         setState(() {
           _currentCartItems = List.from(cartItems);
+          _updateTotals();
+        });
+      }
+    });
+
+    widget.cartManager.totalStream.listen((total) {
+      if (mounted) {
+        setState(() {
+          _totalAmount = total;
+          _updateTotals();
         });
       }
     });
   }
 
+  void _updateTotals() {
+    _subtotal = widget.cartManager.subtotal;
+    _discountAmount = widget.cartManager.totalDiscount;
+    _taxAmount = widget.cartManager.taxAmount;
+    _taxRate = widget.cartManager.taxRate;
+    _totalAmount = widget.cartManager.totalAmount;
+  }
+
+  void _showManualDiscountDialog(CartItem item) {
+    final discountAmountController = TextEditingController();
+    final discountPercentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Apply Discount to ${item.product.name}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Original Price: ${Constants.CURRENCY_NAME}${item.product.price.toStringAsFixed(2)}'),
+            Text('Quantity: ${item.quantity}'),
+            Text('Subtotal: ${Constants.CURRENCY_NAME}${item.baseSubtotal.toStringAsFixed(2)}'),
+            SizedBox(height: 16),
+            TextField(
+              controller: discountAmountController,
+              decoration: InputDecoration(
+                labelText: 'Discount Amount (${Constants.CURRENCY_NAME})',
+                prefixText: Constants.CURRENCY_NAME,
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (value) {
+                if (value.isNotEmpty) {
+                  discountPercentController.clear();
+                }
+              },
+            ),
+            SizedBox(height: 8),
+            Text('OR'),
+            SizedBox(height: 8),
+            TextField(
+              controller: discountPercentController,
+              decoration: InputDecoration(
+                labelText: 'Discount Percentage (%)',
+                suffixText: '%',
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (value) {
+                if (value.isNotEmpty) {
+                  discountAmountController.clear();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          if (item.hasManualDiscount)
+            TextButton(
+              onPressed: () {
+                widget.cartManager.removeItemDiscount(item.product.id);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Discount removed from ${item.product.name}')),
+                );
+              },
+              child: Text('Remove Discount', style: TextStyle(color: Colors.red)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final discountAmount = double.tryParse(discountAmountController.text);
+              final discountPercent = double.tryParse(discountPercentController.text);
+
+              if (discountAmount != null || discountPercent != null) {
+                widget.cartManager.applyItemDiscount(
+                  item.product.id,
+                  discountAmount: discountAmount,
+                  discountPercent: discountPercent,
+                );
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Discount applied to ${item.product.name}')),
+                );
+              }
+            },
+            child: Text('Apply Discount'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCartDiscountDialog() {
+    final discountAmountController = TextEditingController();
+    final discountPercentController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Apply Cart Discount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Cart Subtotal: ${Constants.CURRENCY_NAME}${_subtotal.toStringAsFixed(2)}'),
+            SizedBox(height: 16),
+            TextField(
+              controller: discountAmountController,
+              decoration: InputDecoration(
+                labelText: 'Discount Amount (${Constants.CURRENCY_NAME})',
+                prefixText: Constants.CURRENCY_NAME,
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (value) {
+                if (value.isNotEmpty) {
+                  discountPercentController.clear();
+                }
+              },
+            ),
+            SizedBox(height: 8),
+            Text('OR'),
+            SizedBox(height: 8),
+            TextField(
+              controller: discountPercentController,
+              decoration: InputDecoration(
+                labelText: 'Discount Percentage (%)',
+                suffixText: '%',
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (value) {
+                if (value.isNotEmpty) {
+                  discountAmountController.clear();
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          if (widget.cartManager.cartDiscount > 0 || widget.cartManager.cartDiscountPercent > 0)
+            TextButton(
+              onPressed: () {
+                widget.cartManager.removeCartDiscount();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Cart discount removed')),
+                );
+              },
+              child: Text('Remove Discount', style: TextStyle(color: Colors.red)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final discountAmount = double.tryParse(discountAmountController.text);
+              final discountPercent = double.tryParse(discountPercentController.text);
+
+              if (discountAmount != null || discountPercent != null) {
+                widget.cartManager.applyCartDiscount(
+                  discountAmount: discountAmount,
+                  discountPercent: discountPercent,
+                );
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Cart discount applied')),
+                );
+              }
+            },
+            child: Text('Apply Discount'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEmpty = _currentCartItems.isEmpty;
-    final totalAmount = _currentCartItems.fold(0.0, (sum, item) => sum + item.subtotal);
 
     return Scaffold(
-      appBar: AppBar(title: Text('Your Cart')),
+      appBar: AppBar(
+        title: Text('Your Cart'),
+        actions: [
+          if (!isEmpty)
+            IconButton(
+              icon: Icon(Icons.discount),
+              onPressed: _showCartDiscountDialog,
+              tooltip: 'Apply Cart Discount',
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -6414,11 +6932,14 @@ class _CartScreenState extends State<CartScreen> {
                   onRemove: () {
                     _removeItem(item.product.id);
                   },
+                  onApplyDiscount: () {
+                    _showManualDiscountDialog(item);
+                  },
                 );
               },
             ),
           ),
-          _buildCheckoutSection(totalAmount, isEmpty),
+          _buildCheckoutSection(isEmpty),
         ],
       ),
     );
@@ -6437,7 +6958,7 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildCheckoutSection(double totalAmount, bool isEmpty) {
+  Widget _buildCheckoutSection(bool isEmpty) {
     return Container(
       padding: EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -6446,14 +6967,8 @@ class _CartScreenState extends State<CartScreen> {
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Total:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-              Text('${Constants.CURRENCY_NAME}${totalAmount.toStringAsFixed(0)}',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green[700])),
-            ],
-          ),
+          // Price Breakdown
+          _buildPriceBreakdown(),
           SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
@@ -6461,6 +6976,47 @@ class _CartScreenState extends State<CartScreen> {
             child: ElevatedButton(
               onPressed: isEmpty ? null : _proceedToCheckout,
               child: Text('PROCEED TO CHECKOUT', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPriceBreakdown() {
+    return Column(
+      children: [
+        _buildPriceRow('Subtotal', _subtotal),
+        if (_discountAmount > 0)
+          _buildPriceRow('Discount', -_discountAmount, isDiscount: true),
+        if (_taxRate > 0)
+          _buildPriceRow('Tax (${_taxRate.toStringAsFixed(1)}%)', _taxAmount),
+        Divider(),
+        _buildPriceRow('TOTAL', _totalAmount, isTotal: true),
+      ],
+    );
+  }
+
+  Widget _buildPriceRow(String label, double amount, {bool isDiscount = false, bool isTotal = false}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: isTotal ? 16 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : Colors.black,
+            ),
+          ),
+          Text(
+            '${isDiscount ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: isTotal ? 18 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : (isTotal ? Colors.green[700] : Colors.black),
             ),
           ),
         ],
@@ -6501,19 +7057,23 @@ class _CartScreenState extends State<CartScreen> {
   }
 }
 
+
 // Cart Item Card
 // Cart Item Card
+
 class CartItemCard extends StatelessWidget {
   final CartItem item;
   final Function(int) onUpdateQuantity;
   final VoidCallback onRemove;
+  final VoidCallback onApplyDiscount;
 
   const CartItemCard({
-    Key? key,
+    super.key,
     required this.item,
     required this.onUpdateQuantity,
     required this.onRemove,
-  }) : super(key: key);
+    required this.onApplyDiscount,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -6544,18 +7104,71 @@ class CartItemCard extends StatelessWidget {
                 children: [
                   Text(item.product.name, style: TextStyle(fontWeight: FontWeight.w600)),
                   SizedBox(height: 4),
-                  Text('${Constants.CURRENCY_NAME}${item.product.price.toStringAsFixed(0)} each'),
+                  Text('${Constants.CURRENCY_NAME}${item.product.price.toStringAsFixed(2)} each'),
+                  if (item.hasManualDiscount) ...[
+                    SizedBox(height: 2),
+                    Text(
+                      'Discount: ${Constants.CURRENCY_NAME}${item.discountAmount.toStringAsFixed(2)}',
+                      style: TextStyle(color: Colors.green, fontSize: 12),
+                    ),
+                  ],
                   SizedBox(height: 8),
                   Row(
                     children: [
                       _buildQuantityControls(),
                       Spacer(),
-                      Text('${Constants.CURRENCY_NAME}${item.subtotal.toStringAsFixed(0)}',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (item.hasManualDiscount)
+                            Text(
+                              '${Constants.CURRENCY_NAME}${item.baseSubtotal.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                decoration: TextDecoration.lineThrough,
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                          Text(
+                            '${Constants.CURRENCY_NAME}${item.subtotal.toStringAsFixed(2)}',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
                       SizedBox(width: 12),
-                      IconButton(
-                        icon: Icon(Icons.delete, color: Colors.red),
-                        onPressed: onRemove,
+                      PopupMenuButton(
+                        itemBuilder: (context) => [
+                          PopupMenuItem(
+                            value: 'discount',
+                            child: Row(
+                              children: [
+                                Icon(Icons.discount, size: 20),
+                                SizedBox(width: 8),
+                                Text('Apply Discount'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'remove',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, size: 20, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text('Remove', style: TextStyle(color: Colors.red)),
+                              ],
+                            ),
+                          ),
+                        ],
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'discount':
+                              onApplyDiscount();
+                              break;
+                            case 'remove':
+                              onRemove();
+                              break;
+                          }
+                        },
                       ),
                     ],
                   ),
@@ -6595,15 +7208,16 @@ class CartItemCard extends StatelessWidget {
 // Checkout Screen
 // Checkout Screen
 // Update your CheckoutScreen to include customer selection
+// Enhanced CheckoutScreen with full settings integration
 class CheckoutScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
   final List<CartItem> cartItems;
 
   const CheckoutScreen({
-    Key? key,
+    super.key,
     required this.cartManager,
     required this.cartItems,
-  }) : super(key: key);
+  });
 
   @override
   _CheckoutScreenState createState() => _CheckoutScreenState();
@@ -6616,6 +7230,85 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int? _pendingOrderId;
   String? _errorMessage;
   CustomerSelection _customerSelection = CustomerSelection(useDefault: true);
+
+  // Settings data
+  Map<String, dynamic> _invoiceSettings = {};
+  Map<String, dynamic> _businessInfo = {};
+  bool _isLoadingSettings = true;
+
+  // Payment methods
+  final List<String> _paymentMethods = ['cash', 'card', 'mobile_money', 'credit'];
+  String _selectedPaymentMethod = 'cash';
+
+  // Additional charges/discounts
+  final TextEditingController _additionalDiscountController = TextEditingController();
+  final TextEditingController _shippingController = TextEditingController();
+  final TextEditingController _tipController = TextEditingController();
+
+  double _additionalDiscount = 0.0;
+  double _shippingAmount = 0.0;
+  double _tipAmount = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+    _setupCartListeners();
+  }
+
+  void _setupCartListeners() {
+    widget.cartManager.totalStream.listen((total) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  Future<void> _loadSettings() async {
+    setState(() => _isLoadingSettings = true);
+
+    try {
+      final settings = await _posService.getInvoiceSettings();
+      final businessInfo = await _posService.getBusinessInfo();
+
+      if (mounted) {
+        setState(() {
+          _invoiceSettings = settings;
+          _businessInfo = businessInfo;
+          _isLoadingSettings = false;
+        });
+
+        // Apply default discount rate from settings if no manual discount is set
+        final defaultDiscountRate = _invoiceSettings['discountRate'] ?? 0.0;
+        if (defaultDiscountRate > 0 && widget.cartManager.cartDiscountPercent == 0) {
+          widget.cartManager.applyCartDiscount(discountPercent: defaultDiscountRate);
+        }
+
+        // Apply tax rate from settings
+        final taxRate = _invoiceSettings['taxRate'] ?? 0.0;
+        widget.cartManager.updateTaxRate(taxRate);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingSettings = false;
+        });
+      }
+    }
+  }
+
+  void _showInvoiceOptions(Order order) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => InvoiceOptionsBottomSheet(
+        order: order,
+        customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
+        businessInfo: _businessInfo,
+        invoiceSettings: _invoiceSettings,
+      ),
+    );
+  }
 
   Future<void> _selectCustomer() async {
     final result = await Navigator.push<CustomerSelection>(
@@ -6635,16 +7328,171 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+  void _showAdditionalDiscountDialog() {
+    final controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Additional Discount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Current taxable amount: ${Constants.CURRENCY_NAME}${_taxableAmount.toStringAsFixed(2)}'),
+            SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: InputDecoration(
+                labelText: 'Discount Amount (${Constants.CURRENCY_NAME})',
+                prefixText: Constants.CURRENCY_NAME,
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+        actions: [
+          if (_additionalDiscount > 0)
+            TextButton(
+              onPressed: () {
+                setState(() => _additionalDiscount = 0.0);
+                _additionalDiscountController.clear();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Additional discount removed')),
+                );
+              },
+              child: Text('Remove Discount', style: TextStyle(color: Colors.red)),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final discount = double.tryParse(controller.text);
+              if (discount != null && discount > 0) {
+                setState(() => _additionalDiscount = discount);
+                _additionalDiscountController.text = discount.toStringAsFixed(2);
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Additional discount applied')),
+                );
+              }
+            },
+            child: Text('Apply Discount'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showShippingDialog() {
+    final controller = TextEditingController(text: _shippingAmount.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Shipping Amount'),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: 'Shipping Amount (${Constants.CURRENCY_NAME})',
+            prefixText: Constants.CURRENCY_NAME,
+          ),
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final shipping = double.tryParse(controller.text) ?? 0.0;
+              setState(() => _shippingAmount = shipping);
+              _shippingController.text = shipping.toStringAsFixed(2);
+              Navigator.pop(context);
+            },
+            child: Text('Apply Shipping'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTipDialog() {
+    final controller = TextEditingController(text: _tipAmount.toStringAsFixed(2));
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Tip Amount'),
+        content: TextField(
+          controller: controller,
+          decoration: InputDecoration(
+            labelText: 'Tip Amount (${Constants.CURRENCY_NAME})',
+            prefixText: Constants.CURRENCY_NAME,
+          ),
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final tip = double.tryParse(controller.text) ?? 0.0;
+              setState(() => _tipAmount = tip);
+              _tipController.text = tip.toStringAsFixed(2);
+              Navigator.pop(context);
+            },
+            child: Text('Apply Tip'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Enhanced total calculations with additional charges/discounts
+  double get _subtotal => widget.cartManager.subtotal;
+  double get _itemDiscounts => widget.cartManager.items.fold(0.0, (sum, item) => sum + item.discountAmount);
+  double get _cartDiscount => widget.cartManager.cartDiscount + (_subtotal * widget.cartManager.cartDiscountPercent / 100);
+  double get _totalDiscount => _itemDiscounts + _cartDiscount + _additionalDiscount;
+  double get _taxableAmount => _subtotal - _totalDiscount;
+  double get _taxAmount => _taxableAmount * widget.cartManager.taxRate / 100;
+  double get _finalTotal => _taxableAmount + _taxAmount + _shippingAmount + _tipAmount;
+
   Future<void> _processOrder() async {
+    if (widget.cartItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cart is empty')),
+      );
+      return;
+    }
+
     setState(() {
       _isProcessing = true;
       _errorMessage = null;
     });
 
     try {
+      // Create enhanced order data with all discount information
+      final orderData = {
+        'cartData': widget.cartManager.getCartDataForOrder(),
+        'additionalDiscount': _additionalDiscount,
+        'shippingAmount': _shippingAmount,
+        'tipAmount': _tipAmount,
+        'finalTotal': _finalTotal,
+        'paymentMethod': _selectedPaymentMethod,
+        'invoiceSettings': _invoiceSettings,
+        'businessInfo': _businessInfo,
+      };
+
       final result = await _posService.createOrderWithCustomer(
-          widget.cartItems,
-          _customerSelection
+        widget.cartItems,
+        _customerSelection,
+        additionalData: orderData,
       );
 
       if (result.success) {
@@ -6652,12 +7500,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
         if (result.isOffline) {
           setState(() => _pendingOrderId = result.pendingOrderId);
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Order saved offline. Will sync when online.'),
               backgroundColor: Colors.orange,
             ),
           );
+
+          if (result.order != null) {
+            _showInvoiceOptions(result.order!);
+          }
         } else {
           setState(() => _completedOrder = result.order);
           ScaffoldMessenger.of(context).showSnackBar(
@@ -6666,13 +7519,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               backgroundColor: Colors.green,
             ),
           );
+
+          if (result.order != null) {
+            _showInvoiceOptions(result.order!);
+          }
         }
 
-        Future.delayed(Duration(seconds: 2), () {
-          if (mounted) {
-            Navigator.of(context).popUntil((route) => route.isFirst);
-          }
-        });
       } else {
         setState(() => _errorMessage = result.error);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -6693,123 +7545,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     } finally {
       setState(() => _isProcessing = false);
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final totalAmount = widget.cartManager.totalAmount;
-    final isOnline = _posService.isOnline;
-
-    return SafeArea(
-      child: Scaffold(
-        appBar: AppBar(title: Text('Checkout')),
-        body: Padding(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (!isOnline)
-                Container(
-                  padding: EdgeInsets.all(12),
-                  margin: EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    border: Border.all(color: Colors.orange),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.cloud_off, color: Colors.orange),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Offline Mode - Order will be saved locally and synced when online',
-                          style: TextStyle(color: Colors.orange[800]),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Customer Selection Section
-              _buildCustomerSection(),
-
-              Text('Order Summary', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-              SizedBox(height: 16),
-
-              if (_errorMessage != null)
-                Container(
-                  padding: EdgeInsets.all(12),
-                  margin: EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.red[50],
-                    border: Border.all(color: Colors.red),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(_errorMessage!, style: TextStyle(color: Colors.red[700])),
-                ),
-
-              Expanded(
-                child: ListView.builder(
-                  itemCount: widget.cartItems.length,
-                  itemBuilder: (context, index) {
-                    final item = widget.cartItems[index];
-                    return ListTile(
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: item.product.imageUrl != null
-                            ? Image.network(item.product.imageUrl!, fit: BoxFit.cover)
-                            : Icon(Icons.shopping_bag),
-                      ),
-                      title: Text(item.product.name),
-                      subtitle: Text('Qty: ${item.quantity}'),
-                      trailing: Text('${Constants.CURRENCY_NAME}${item.subtotal.toStringAsFixed(0)}'),
-                    );
-                  },
-                ),
-              ),
-
-              Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('Total Amount:', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text('${Constants.CURRENCY_NAME}${totalAmount.toStringAsFixed(0)}',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.green[700])),
-                ],
-              ),
-              SizedBox(height: 24),
-
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: _isProcessing
-                    ? ElevatedButton(
-                  onPressed: null,
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  ),
-                )
-                    : ElevatedButton(
-                  onPressed: _processOrder,
-                  child: Text(
-                    isOnline ? 'PROCESS PAYMENT' : 'SAVE OFFLINE ORDER',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   Widget _buildCustomerSection() {
@@ -6868,9 +7603,499 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
+
+  Widget _buildOrderSummary() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Order Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 12),
+            ListView.builder(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              itemCount: widget.cartItems.length,
+              itemBuilder: (context, index) {
+                final item = widget.cartItems[index];
+                return Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          item.product.name,
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'Qty: ${item.quantity}',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          '${Constants.CURRENCY_NAME}${item.subtotal.toStringAsFixed(2)}',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                          textAlign: TextAlign.right,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceBreakdown() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text('Price Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 12),
+            _buildPriceRow('Subtotal', _subtotal),
+            if (_itemDiscounts > 0)
+              _buildPriceRow('Item Discounts', -_itemDiscounts, isDiscount: true),
+            if (_cartDiscount > 0)
+              _buildPriceRow('Cart Discount', -_cartDiscount, isDiscount: true),
+            if (_additionalDiscount > 0)
+              _buildPriceRow('Additional Discount', -_additionalDiscount, isDiscount: true),
+            if (widget.cartManager.taxRate > 0)
+              _buildPriceRow('Tax (${widget.cartManager.taxRate.toStringAsFixed(1)}%)', _taxAmount),
+            if (_shippingAmount > 0)
+              _buildPriceRow('Shipping', _shippingAmount),
+            if (_tipAmount > 0)
+              _buildPriceRow('Tip', _tipAmount),
+            Divider(),
+            _buildPriceRow('TOTAL', _finalTotal, isTotal: true),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceRow(String label, double amount, {bool isDiscount = false, bool isTotal = false}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: isTotal ? 16 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : Colors.black,
+            ),
+          ),
+          Text(
+            '${isDiscount ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: isTotal ? 18 : 14,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : (isTotal ? Colors.green[700] : Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAdditionalOptions() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Additional Options', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildAdditionalOptionButton(
+                    'Additional Discount',
+                    _additionalDiscount > 0 ? '${Constants.CURRENCY_NAME}${_additionalDiscount.toStringAsFixed(2)}' : 'Add',
+                    _showAdditionalDiscountDialog,
+                    color: _additionalDiscount > 0 ? Colors.green : null,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: _buildAdditionalOptionButton(
+                    'Shipping',
+                    _shippingAmount > 0 ? '${Constants.CURRENCY_NAME}${_shippingAmount.toStringAsFixed(2)}' : 'Add',
+                    _showShippingDialog,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildAdditionalOptionButton(
+                    'Tip',
+                    _tipAmount > 0 ? '${Constants.CURRENCY_NAME}${_tipAmount.toStringAsFixed(2)}' : 'Add',
+                    _showTipDialog,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Container(), // Empty for alignment
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAdditionalOptionButton(String title, String value, VoidCallback onTap, {Color? color}) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: color ?? Colors.blue[700],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPaymentSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Payment Method', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _paymentMethods.map((method) {
+                final isSelected = _selectedPaymentMethod == method;
+                return ChoiceChip(
+                  label: Text(_getPaymentMethodName(method)),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedPaymentMethod = method);
+                    }
+                  },
+                  selectedColor: Colors.blue[100],
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.blue[800] : Colors.grey[800],
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getPaymentMethodName(String method) {
+    switch (method) {
+      case 'cash': return 'Cash';
+      case 'card': return 'Credit Card';
+      case 'mobile_money': return 'Mobile Money';
+      case 'credit': return 'Store Credit';
+      default: return method;
+    }
+  }
+
+  Widget _buildActionButtons() {
+    final isOnline = _posService.isOnline;
+
+    return Container(
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey[200]!)),
+      ),
+      child: Column(
+        children: [
+          if (_errorMessage != null)
+            Container(
+              padding: EdgeInsets.all(12),
+              margin: EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                border: Border.all(color: Colors.red),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(_errorMessage!, style: TextStyle(color: Colors.red[700]))),
+                ],
+              ),
+            ),
+
+          if (!isOnline)
+            Container(
+              padding: EdgeInsets.all(12),
+              margin: EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                border: Border.all(color: Colors.orange),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.cloud_off, color: Colors.orange, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Offline Mode - Order will be saved locally and synced when online',
+                      style: TextStyle(color: Colors.orange[800]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: _isProcessing
+                ? ElevatedButton(
+              onPressed: null,
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            )
+                : ElevatedButton(
+              onPressed: _processOrder,
+              child: Text(
+                isOnline ? 'PROCESS PAYMENT' : 'SAVE OFFLINE ORDER',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoadingSettings) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Checkout')),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading settings...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Checkout'),
+        backgroundColor: _posService.isOnline ? Colors.blue[700] : Colors.orange[700],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  // Customer Section
+                  _buildCustomerSection(),
+                  SizedBox(height: 16),
+
+                  // Order Summary
+                  _buildOrderSummary(),
+                  SizedBox(height: 16),
+
+                  // Additional Options
+                  _buildAdditionalOptions(),
+                  SizedBox(height: 16),
+
+                  // Price Breakdown
+                  _buildPriceBreakdown(),
+                  SizedBox(height: 16),
+
+                  // Payment Section
+                  _buildPaymentSection(),
+                  SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+
+          // Action Buttons
+          _buildActionButtons(),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _additionalDiscountController.dispose();
+    _shippingController.dispose();
+    _tipController.dispose();
+    super.dispose();
+  }
 }
+
+// Enhanced InvoiceOptionsBottomSheet to use settings
+class InvoiceOptionsBottomSheet extends StatelessWidget {
+  final Order order;
+  final Customer? customer;
+  final Map<String, dynamic> businessInfo;
+  final Map<String, dynamic> invoiceSettings;
+
+  const InvoiceOptionsBottomSheet({
+    super.key,
+    required this.order,
+    this.customer,
+    required this.businessInfo,
+    required this.invoiceSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Order Completed!',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Order #${order.number} has been processed successfully',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 16),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Total: ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green[700]),
+          ),
+          SizedBox(height: 24),
+
+          // Invoice Options
+          if (invoiceSettings['autoPrint'] ?? false)
+            ListTile(
+              leading: Icon(Icons.print, color: Colors.blue),
+              title: Text('Auto-printing invoice...'),
+              trailing: CircularProgressIndicator(),
+            )
+          else
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      // Generate and print invoice
+                      _printInvoice(context);
+                    },
+                    icon: Icon(Icons.print),
+                    label: Text('Print Invoice'),
+                    style: ElevatedButton.styleFrom(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    icon: Icon(Icons.done),
+                    label: Text('Continue'),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _printInvoice(BuildContext context) {
+    // Use business info and invoice settings for printing
+    final invoice = Invoice.fromOrder(
+      order,
+      customer,
+      businessInfo,
+      invoiceSettings,
+      templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
+    );
+
+    // Print the invoice
+    InvoiceService().printInvoice(invoice);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Invoice sent to printer')),
+    );
+
+    Navigator.pop(context);
+  }
+}
+
 // Product Management Screen
 class ProductManagementScreen extends StatefulWidget {
+  const ProductManagementScreen({super.key});
+
   @override
   _ProductManagementScreenState createState() => _ProductManagementScreenState();
 }
@@ -6889,7 +8114,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 
 // In ProductManagementScreen - UPDATE the _loadProducts method
   Future<void> _loadProducts() async {
-    final LocalDatabase _localDb = LocalDatabase();
+    final LocalDatabase localDb = LocalDatabase();
     try {
       List<Product> products;
 
@@ -6898,7 +8123,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
         products = await _posService.fetchProducts(limit: 100);
       } else {
         // Load ALL products from local database, not just limited ones
-        products = await _localDb.getAllProducts();
+        products = await localDb.getAllProducts();
       }
 
       setState(() {
@@ -7065,12 +8290,12 @@ class ProductManagementCard extends StatelessWidget {
   final VoidCallback onRestock;
 
   const ProductManagementCard({
-    Key? key,
+    super.key,
     required this.product,
     required this.onEdit,
     required this.onDelete,
     required this.onRestock,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -7136,6 +8361,8 @@ class ProductManagementCard extends StatelessWidget {
 
 // Add Product Screen
 class AddProductScreen extends StatefulWidget {
+  const AddProductScreen({super.key});
+
   @override
   _AddProductScreenState createState() => _AddProductScreenState();
 }
@@ -7352,7 +8579,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 decoration: InputDecoration(
                   labelText: 'Price',
                   border: OutlineInputBorder(),
-                  prefixText: '${Constants.CURRENCY_NAME}',
+                  prefixText: Constants.CURRENCY_NAME,
                   prefixIcon: Icon(Icons.attach_money),
                 ),
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
@@ -7618,6 +8845,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
 }
 // Restock Product Screen
 class RestockProductScreen extends StatefulWidget {
+  const RestockProductScreen({super.key});
+
   @override
   _RestockProductScreenState createState() => _RestockProductScreenState();
 }
@@ -7628,7 +8857,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
   final TextEditingController _quantityController = TextEditingController();
   final List<Product> _allProducts = [];
   Product? _selectedProduct;
-  bool _isScanning = false;
+  final bool _isScanning = false;
   bool _isLoading = false;
   bool _isLoadingProducts = false;
   final FocusNode _quantityFocusNode = FocusNode();
@@ -7649,7 +8878,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
 // In RestockProductScreen - UPDATE the _loadAllProducts method
   Future<void> _loadAllProducts() async {
     setState(() => _isLoadingProducts = true);
-    final LocalDatabase _localDb = LocalDatabase();
+    final LocalDatabase localDb = LocalDatabase();
     try {
       List<Product> products;
 
@@ -7657,7 +8886,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
         products = await _posService.fetchProducts(limit: 1000);
       } else {
         // Load ALL products when offline
-        products = await _localDb.getAllProducts();
+        products = await localDb.getAllProducts();
       }
 
       setState(() {
@@ -7861,7 +9090,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
                     SizedBox(height: 12),
                     DropdownButtonFormField<Product>(
 
-                      value: _selectedProduct,
+                      initialValue: _selectedProduct,
                       decoration: InputDecoration(
                         labelText: 'Choose Product',
                         border: OutlineInputBorder(),
@@ -8226,6 +9455,8 @@ class BarcodeScanResult {
 
 // Barcode Scanner Screen
 class BarcodeScannerScreen extends StatefulWidget {
+  const BarcodeScannerScreen({super.key});
+
   @override
   _BarcodeScannerScreenState createState() => _BarcodeScannerScreenState();
 }
@@ -8290,7 +9521,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
 class BarcodeManualInputDialog extends StatefulWidget {
   final Function(String) onBarcodeScanned;
 
-  const BarcodeManualInputDialog({Key? key, required this.onBarcodeScanned}) : super(key: key);
+  const BarcodeManualInputDialog({super.key, required this.onBarcodeScanned});
 
   @override
   _BarcodeManualInputDialogState createState() => _BarcodeManualInputDialogState();
@@ -8513,6 +9744,7 @@ class UniversalScanningService {
             onTap: () async {
               final result = await _startCameraBarcodeScan(context, purpose: purpose);
               Navigator.of(context).pop(result);
+              return null;
             },
             onSetDefault: () => _setDefaultScanningOption(context, ScanningOption.camera),
           ),
@@ -8523,6 +9755,7 @@ class UniversalScanningService {
             onTap: () async {
               final result = await _navigateToHardwareScannerScreen(context, purpose: purpose);
               Navigator.of(context).pop(result);
+              return null;
             },
             onSetDefault: () => _setDefaultScanningOption(context, ScanningOption.hardware),
           ),
@@ -8533,6 +9766,7 @@ class UniversalScanningService {
             onTap: () async {
               final result = await _showManualBarcodeInput(context, purpose: purpose);
               Navigator.of(context).pop(result);
+              return null;
             },
             onSetDefault: () => _setDefaultScanningOption(context, ScanningOption.manual),
           ),
@@ -8659,7 +9893,7 @@ class UniversalScanningService {
                       _showDefaultOptionStatus(context, value);
                     }
                   },
-                  activeColor: Colors.blue,
+                  activeThumbColor: Colors.blue,
                 ),
               ],
             ),
@@ -8913,7 +10147,7 @@ enum ScanningOption {
 }
 // Global Scanning Settings Screen
 class ScanningSettingsScreen extends StatefulWidget {
-  const ScanningSettingsScreen({Key? key}) : super(key: key);
+  const ScanningSettingsScreen({super.key});
 
   @override
   _ScanningSettingsScreenState createState() => _ScanningSettingsScreenState();
@@ -9237,10 +10471,10 @@ class AddCustomerScreen extends StatefulWidget {
   final Function(Customer)? onCustomerAdded;
 
   const AddCustomerScreen({
-    Key? key,
+    super.key,
     required this.posService,
     this.onCustomerAdded,
-  }) : super(key: key);
+  });
 
   @override
   _AddCustomerScreenState createState() => _AddCustomerScreenState();
@@ -9376,7 +10610,7 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
         ),
         elevation: 0,
         backgroundColor: Colors.transparent,
-        foregroundColor: Theme.of(context).colorScheme.onBackground,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       body: Padding(
         padding: const EdgeInsets.all(20),
@@ -9702,10 +10936,10 @@ class CustomerSelectionScreen extends StatefulWidget {
   final CustomerSelection? initialSelection;
 
   const CustomerSelectionScreen({
-    Key? key,
+    super.key,
     required this.posService,
     this.initialSelection,
-  }) : super(key: key);
+  });
 
   @override
   _CustomerSelectionScreenState createState() => _CustomerSelectionScreenState();
@@ -10122,6 +11356,8 @@ class _CustomerSelectionScreenState extends State<CustomerSelectionScreen> {
 
 // REPLACE the entire ReturnsManagementScreen class:
 class ReturnsManagementScreen extends StatefulWidget {
+  const ReturnsManagementScreen({super.key});
+
   @override
   _ReturnsManagementScreenState createState() => _ReturnsManagementScreenState();
 }
@@ -10378,7 +11614,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
 class EnhancedReturnRequestCard extends StatelessWidget {
   final ReturnRequest returnRequest;
 
-  const EnhancedReturnRequestCard({Key? key, required this.returnRequest}) : super(key: key);
+  const EnhancedReturnRequestCard({super.key, required this.returnRequest});
 
   @override
   Widget build(BuildContext context) {
@@ -10490,7 +11726,7 @@ class CreateReturnScreen extends StatefulWidget {
 class ReturnDetailsScreen extends StatelessWidget {
   final ReturnRequest returnRequest;
 
-  const ReturnDetailsScreen({Key? key, required this.returnRequest}) : super(key: key);
+  const ReturnDetailsScreen({super.key, required this.returnRequest});
 
   @override
   Widget build(BuildContext context) {
@@ -10729,7 +11965,7 @@ class _CreateReturnScreenState extends State<CreateReturnScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Add Items to Return'),
-        content: Container(
+        content: SizedBox(
           width: double.maxFinite,
           child: ListView.builder(
             shrinkWrap: true,
@@ -11047,7 +12283,7 @@ class _CreateReturnScreenState extends State<CreateReturnScreen> {
                 child: Column(
                   children: [
                     DropdownButtonFormField(
-                      value: _returnReason,
+                      initialValue: _returnReason,
                       items: _returnReasons.map((reason) {
                         return DropdownMenuItem(
                           value: reason.id,
@@ -11069,7 +12305,7 @@ class _CreateReturnScreenState extends State<CreateReturnScreen> {
                     ),
                     SizedBox(height: 12),
                     DropdownButtonFormField(
-                      value: _refundMethod,
+                      initialValue: _refundMethod,
                       items: _refundMethods.map((method) {
                         return DropdownMenuItem(
                           value: method,
@@ -11160,7 +12396,7 @@ class _CreateReturnScreenState extends State<CreateReturnScreen> {
 class ReturnRequestCard extends StatelessWidget {
   final ReturnRequest returnRequest;
 
-  const ReturnRequestCard({Key? key, required this.returnRequest}) : super(key: key);
+  const ReturnRequestCard({super.key, required this.returnRequest});
 
   @override
   Widget build(BuildContext context) {
@@ -11230,6 +12466,8 @@ class ReturnRequestCard extends StatelessWidget {
   }
 }// Search Order for Return Screen
 class SearchOrderForReturnScreen extends StatefulWidget {
+  const SearchOrderForReturnScreen({super.key});
+
   @override
   _SearchOrderForReturnScreenState createState() => _SearchOrderForReturnScreenState();
 }
@@ -11412,6 +12650,8 @@ class _SearchOrderForReturnScreenState extends State<SearchOrderForReturnScreen>
 // REPLACE the entire ReturnAnyProductScreen class:
 
 class ReturnAnyProductScreen extends StatefulWidget {
+  const ReturnAnyProductScreen({super.key});
+
   @override
   _ReturnAnyProductScreenState createState() => _ReturnAnyProductScreenState();
 }
@@ -11563,7 +12803,7 @@ class _ReturnAnyProductScreenState extends State<ReturnAnyProductScreen> {
         builder: (context, setDialogState) {
           return AlertDialog(
             title: Text('Return ${product.name}'),
-            content: Container(
+            content: SizedBox(
               width: MediaQuery.of(context).size.width * 0.8,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -11621,14 +12861,14 @@ class _ReturnAnyProductScreenState extends State<ReturnAnyProductScreen> {
                     decoration: InputDecoration(
                       labelText: 'Refund Price',
                       border: OutlineInputBorder(),
-                      prefixText: '${Constants.CURRENCY_NAME}',
+                      prefixText: Constants.CURRENCY_NAME,
                       prefixIcon: Icon(Icons.attach_money),
                     ),
                     keyboardType: TextInputType.numberWithOptions(decimal: true),
                   ),
                   SizedBox(height: 12),
                   DropdownButtonFormField(
-                    value: _returnReason,
+                    initialValue: _returnReason,
                     items: _returnReasons.map((reason) {
                       return DropdownMenuItem(
                         value: reason.id,
@@ -11999,7 +13239,7 @@ class _ReturnAnyProductScreenState extends State<ReturnAnyProductScreen> {
                     child: Column(
                       children: [
                         DropdownButtonFormField(
-                          value: _returnReason,
+                          initialValue: _returnReason,
                           items: _returnReasons.map((reason) {
                             return DropdownMenuItem(
                               value: reason.id,
@@ -12024,7 +13264,7 @@ class _ReturnAnyProductScreenState extends State<ReturnAnyProductScreen> {
                         ),
                         SizedBox(height: 12),
                         DropdownButtonFormField(
-                          value: _refundMethod,
+                          initialValue: _refundMethod,
                           items: _refundMethods.map((method) {
                             return DropdownMenuItem(
                               value: method,
@@ -12127,10 +13367,10 @@ class OrderCard extends StatelessWidget {
   final VoidCallback onSelect;
 
   const OrderCard({
-    Key? key,
+    super.key,
     required this.order,
     required this.onSelect,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -12150,7 +13390,7 @@ class OrderCard extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${DateFormat('MMM dd, yyyy - HH:mm').format(order.dateCreated)}'),
+            Text(DateFormat('MMM dd, yyyy - HH:mm').format(order.dateCreated)),
             Text('${order.lineItems.length} items • ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}'),
           ],
         ),
