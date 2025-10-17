@@ -200,7 +200,7 @@ class SalesManagementScreen extends StatefulWidget {
 class _SalesManagementScreenState extends State<SalesManagementScreen>
     with SingleTickerProviderStateMixin {
   final EnhancedPOSService _posService = EnhancedPOSService();
-  final AuthProvider _authProvider = AuthProvider();
+  final MyAuthProvider _authProvider = MyAuthProvider();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   late AnimationController _animationController;

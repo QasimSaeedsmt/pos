@@ -55,7 +55,7 @@ class EnhancedUsersScreen extends StatelessWidget {
       context: context,
       builder: (context) => EnhancedAddUserDialog(
         onSave: (userData) async {
-          final authProvider = context.read<AuthProvider>();
+          final authProvider = context.read<MyAuthProvider>();
           await FirebaseService.createUserWithDetails(
             tenantId: authProvider.currentUser!.tenantId,
             email: userData['email'],
@@ -74,7 +74,7 @@ class EnhancedUsersScreen extends StatelessWidget {
 class _UsersListTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -262,7 +262,7 @@ class _UsersListTab extends StatelessWidget {
   }
 
   void _toggleUserStatus(BuildContext context, AppUser user, bool isActive) async {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
 
     try {
       await FirebaseService.updateUserStatus(
@@ -325,7 +325,7 @@ class _UsersListTab extends StatelessWidget {
           ElevatedButton(
             onPressed: () async {
               try {
-                final authProvider = context.read<AuthProvider>();
+                final authProvider = context.read<MyAuthProvider>();
                 await FirebaseFirestore.instance
                     .collection('tenants')
                     .doc(authProvider.currentUser!.tenantId)
@@ -366,7 +366,7 @@ class _UsersListTab extends StatelessWidget {
 class _ActivityLogTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseService.getUserActivities(
@@ -788,7 +788,7 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -1102,7 +1102,7 @@ class EnhancedProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     final user = authProvider.currentUser!;
     final tenant = authProvider.currentTenant!;
 
@@ -3623,7 +3623,7 @@ enum TicketStatus { open, inProgress, closed }
 // ENHANCED AUTH PROVIDER
 // =============================
 // Enhanced AuthProvider with proper casting
-class AuthProvider with ChangeNotifier {
+class MyAuthProvider with ChangeNotifier {
   AppUser? _currentUser;
   Tenant? _currentTenant;
   bool _isLoading = false;
@@ -3893,7 +3893,7 @@ class MultiTenantSaaSApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => MyAuthProvider()),
         ChangeNotifierProvider(create: (_) => TenantProvider()),
         ChangeNotifierProvider(create: (_) => ThemeProvider()..loadSavedTheme()),
       ],
@@ -3932,7 +3932,7 @@ class AuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return FutureBuilder<bool>(
       future: _checkSuperAdminExists(),
@@ -4104,7 +4104,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     final gradientColors = themeProvider.getCurrentGradientColors();
@@ -4581,7 +4581,7 @@ class AccountDisabledScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     final themeProvider = Provider.of<ThemeProvider>(context);
 
     final gradientColors = themeProvider.getCurrentGradientColors();
@@ -4613,7 +4613,7 @@ class AccountDisabledScreen extends StatelessWidget {
               SizedBox(height: 30),
               ElevatedButton(
                 onPressed: () =>
-                    Provider.of<AuthProvider>(context, listen: false).logout(),
+                    Provider.of<MyAuthProvider>(context, listen: false).logout(),
                 child: Text('Return to Login'),
               ),
             ],
@@ -5321,7 +5321,7 @@ class UsersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       body: StreamBuilder<QuerySnapshot>(
@@ -5388,7 +5388,7 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     final tenant = authProvider.currentTenant;
 
     return Padding(
@@ -5436,7 +5436,7 @@ class ProfileScreen extends StatelessWidget {
           ),
 
           ElevatedButton(onPressed: (){
-            final authProvider = Provider.of<AuthProvider>(context,listen: false);
+            final authProvider = Provider.of<MyAuthProvider>(context,listen: false);
             authProvider.logout();
 
           }, child: Text("Logout")),
@@ -5513,7 +5513,7 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider=Provider.of<AuthProvider>(context);
+    final authProvider=Provider.of<MyAuthProvider>(context);
     return Scaffold(
       backgroundColor: Colors.blue[50],
       appBar: AppBar(actions: [       ],),
@@ -5764,7 +5764,7 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
       );
 
       // Auto-login the new super admin
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
       await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
@@ -5907,7 +5907,7 @@ SuperAdminAnalyticsScreen(),      SuperAdminTicketsScreen(),
           IconButton(
             icon: Icon(Icons.logout),
             onPressed: () =>
-                Provider.of<AuthProvider>(context, listen: false).logout(),
+                Provider.of<MyAuthProvider>(context, listen: false).logout(),
           ),
         ],
       ),
@@ -6797,7 +6797,7 @@ class TicketsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Support Tickets')),
@@ -6905,7 +6905,7 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return AlertDialog(
       title: Text('Create Support Ticket'),
@@ -7197,7 +7197,7 @@ class _BrandingScreenState extends State<BrandingScreen> {
   }
 
   void _loadCurrentSettings() {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
     final branding = authProvider.currentTenant?.branding ?? {};
 
     _primaryColorController.text = branding['primaryColor'] ?? '#2196F3';
@@ -7258,7 +7258,7 @@ class _BrandingScreenState extends State<BrandingScreen> {
   }
 
   void _saveSettings() {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
 
     FirebaseFirestore.instance
         .collection('tenants')
@@ -7283,7 +7283,7 @@ class AnalyticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Analytics & Reports')),
@@ -7408,7 +7408,7 @@ class NotificationsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Notifications')),
@@ -7476,7 +7476,7 @@ class NotificationsScreen extends StatelessWidget {
   }
 
   void _markAsRead(String notificationId, BuildContext context) {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
 
     FirebaseFirestore.instance
         .collection('tenants')

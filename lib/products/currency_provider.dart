@@ -45,7 +45,7 @@ class CurrencyService extends ChangeNotifier {
     }
   }
 
-  Future<void> updateCurrency(AuthProvider authProvider ,String newCurrency) async {
+  Future<void> updateCurrency(MyAuthProvider authProvider ,String newCurrency) async {
     _isLoading = true;
     _error = null;
     notifyListeners();

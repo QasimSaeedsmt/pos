@@ -10,7 +10,7 @@ import 'constants.dart';
 import 'app.dart';
 import 'main.dart';
 
-// Analytics Data Models
+// Enhanced Analytics Data Models
 class SalesAnalytics {
   final double totalSales;
   final int totalOrders;
@@ -21,6 +21,19 @@ class SalesAnalytics {
   final List<ProductPerformance> topProducts;
   final List<CategoryPerformance> topCategories;
 
+  // New financial breakdown fields
+  final double subtotalAmount;
+  final double totalDiscounts;
+  final double itemDiscounts;
+  final double cartDiscounts;
+  final double additionalDiscounts;
+  final double taxAmount;
+  final double shippingAmount;
+  final double tipAmount;
+  final double taxableAmount;
+  final Map<String, double> discountTypes;
+  final Map<String, double> paymentMethodDistribution;
+
   SalesAnalytics({
     required this.totalSales,
     required this.totalOrders,
@@ -30,6 +43,67 @@ class SalesAnalytics {
     required this.salesByDay,
     required this.topProducts,
     required this.topCategories,
+
+    // New financial breakdown
+    required this.subtotalAmount,
+    required this.totalDiscounts,
+    required this.itemDiscounts,
+    required this.cartDiscounts,
+    required this.additionalDiscounts,
+    required this.taxAmount,
+    required this.shippingAmount,
+    required this.tipAmount,
+    required this.taxableAmount,
+    required this.discountTypes,
+    required this.paymentMethodDistribution,
+  });
+}
+
+class FinancialBreakdown {
+  final double subtotal;
+  final double discounts;
+  final double taxes;
+  final double shipping;
+  final double tips;
+  final double total;
+
+  FinancialBreakdown({
+    required this.subtotal,
+    required this.discounts,
+    required this.taxes,
+    required this.shipping,
+    required this.tips,
+    required this.total,
+  });
+}
+
+class DiscountAnalytics {
+  final double totalDiscounts;
+  final double averageDiscountPerOrder;
+  final double discountRate;
+  final Map<String, double> discountByType;
+  final List<Order> highestDiscountOrders;
+
+  DiscountAnalytics({
+    required this.totalDiscounts,
+    required this.averageDiscountPerOrder,
+    required this.discountRate,
+    required this.discountByType,
+    required this.highestDiscountOrders,
+  });
+}
+
+class TaxAnalytics {
+  final double totalTaxCollected;
+  final double averageTaxPerOrder;
+  final double effectiveTaxRate;
+  final Map<String, double> taxByType;
+
+  TaxAnalytics({
+    required this.totalTaxCollected,
+    required this.averageTaxPerOrder,
+    required this.effectiveTaxRate,
+    required this.taxByType,
   });
 }
 
@@ -38,12 +112,16 @@ class ProductPerformance {
   final int quantitySold;
   final double revenue;
   final double percentage;
+  final double discountAmount;
+  final double netRevenue;
 
   ProductPerformance({
     required this.product,
     required this.quantitySold,
     required this.revenue,
     required this.percentage,
+    required this.discountAmount,
+    required this.netRevenue,
   });
 }
 
@@ -52,12 +130,14 @@ class CategoryPerformance {
   final int quantitySold;
   final double revenue;
   final double percentage;
+  final double discountAmount;
 
   CategoryPerformance({
     required this.category,
     required this.quantitySold,
     required this.revenue,
     required this.percentage,
+    required this.discountAmount,
   });
 }
 
@@ -220,7 +300,7 @@ class TimePeriods {
   static final allPeriods = [today, yesterday, thisWeek, lastWeek, thisMonth, lastMonth];
 }
 
-// Analytics Service with Tenant Isolation
+// Enhanced Analytics Service with Financial Breakdown
 class AnalyticsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   String? _currentTenantId;
@@ -261,6 +341,62 @@ class AnalyticsService {
         return Order.fromFirestore(data, doc.id);
       }).toList();
 
+      // Calculate comprehensive financial metrics
+      double subtotalAmount = 0.0;
+      double totalDiscounts = 0.0;
+      double itemDiscounts = 0.0;
+      double cartDiscounts = 0.0;
+      double additionalDiscounts = 0.0;
+      double taxAmount = 0.0;
+      double shippingAmount = 0.0;
+      double tipAmount = 0.0;
+      double taxableAmount = 0.0;
+      final discountTypes = <String, double>{};
+      final paymentMethodDistribution = <String, double>{};
+
+      for (final order in orders) {
+        // Extract financial data from order
+        final orderData = order.toFirestore();
+
+        // Subtotal
+        subtotalAmount += orderData['subtotal'] ?? order.total;
+
+        // Discounts
+        final orderDiscounts = (orderData['totalDiscount'] ?? 0.0) as double;
+        totalDiscounts += orderDiscounts;
+
+        // Item discounts
+        itemDiscounts += (orderData['itemDiscounts'] ?? 0.0) as double;
+
+        // Cart discounts
+        cartDiscounts += (orderData['cartDiscount'] ?? 0.0) as double;
+
+        // Additional discounts
+        additionalDiscounts += (orderData['additionalDiscount'] ?? 0.0) as double;
+
+        // Taxes
+        taxAmount += (orderData['taxAmount'] ?? 0.0) as double;
+
+        // Shipping
+        shippingAmount += (orderData['shippingAmount'] ?? 0.0) as double;
+
+        // Tips
+        tipAmount += (orderData['tipAmount'] ?? 0.0) as double;
+
+        // Taxable amount
+        taxableAmount += (orderData['taxableAmount'] ?? (orderData['subtotal'] ?? order.total) - orderDiscounts) as double;
+
+        // Payment method distribution
+        final paymentMethod = orderData['paymentMethod'] ?? 'cash';
+        paymentMethodDistribution[paymentMethod] =
+            (paymentMethodDistribution[paymentMethod] ?? 0.0) + order.total;
+
+        // Discount types (simplified - you might have more detailed discount tracking)
+        if (orderDiscounts > 0) {
+          discountTypes['Total Discounts'] = (discountTypes['Total Discounts'] ?? 0.0) + orderDiscounts;
+        }
+      }
+
       final totalSales = orders.fold(0.0, (sum, order) => sum + order.total);
       final totalOrders = orders.length;
       final totalItemsSold = orders.fold(0, (sum, order) {
@@ -298,17 +434,20 @@ class AnalyticsService {
           final productId = itemMap['productId'].toString();
           final quantity = itemMap['quantity'] as int;
           final price = (itemMap['price'] as num).toDouble();
+          final discount = (itemMap['discountAmount'] ?? 0.0) as double;
 
           if (!productSales.containsKey(productId)) {
             productSales[productId] = {
               'product': await _getProductById(productId),
               'quantity': 0,
               'revenue': 0.0,
+              'discount': 0.0,
             };
           }
 
           productSales[productId]!['quantity'] += quantity;
           productSales[productId]!['revenue'] += quantity * price;
+          productSales[productId]!['discount'] += discount;
         }
       }
 
@@ -319,6 +458,8 @@ class AnalyticsService {
         quantitySold: data['quantity'] as int,
         revenue: data['revenue'] as double,
         percentage: totalSales > 0 ? (data['revenue'] as double) / totalSales * 100 : 0,
+        discountAmount: data['discount'] as double,
+        netRevenue: (data['revenue'] as double) - (data['discount'] as double),
       ))
           .toList()
         ..sort((a, b) => b.revenue.compareTo(a.revenue));
@@ -334,12 +475,83 @@ class AnalyticsService {
         salesByDay: salesByDay,
         topProducts: topProducts.take(5).toList(),
         topCategories: topCategories,
+
+        // New financial breakdown
+        subtotalAmount: subtotalAmount,
+        totalDiscounts: totalDiscounts,
+        itemDiscounts: itemDiscounts,
+        cartDiscounts: cartDiscounts,
+        additionalDiscounts: additionalDiscounts,
+        taxAmount: taxAmount,
+        shippingAmount: shippingAmount,
+        tipAmount: tipAmount,
+        taxableAmount: taxableAmount,
+        discountTypes: discountTypes,
+        paymentMethodDistribution: paymentMethodDistribution,
       );
     } catch (e) {
       throw Exception('Failed to fetch analytics: $e');
     }
   }
 
+  Future<FinancialBreakdown> getFinancialBreakdown(TimePeriod period) async {
+    final analytics = await getSalesAnalytics(period);
+
+    return FinancialBreakdown(
+      subtotal: analytics.subtotalAmount,
+      discounts: analytics.totalDiscounts,
+      taxes: analytics.taxAmount,
+      shipping: analytics.shippingAmount,
+      tips: analytics.tipAmount,
+      total: analytics.totalSales,
+    );
+  }
+
+  Future<DiscountAnalytics> getDiscountAnalytics(TimePeriod period) async {
+    final analytics = await getSalesAnalytics(period);
+
+    return DiscountAnalytics(
+      totalDiscounts: analytics.totalDiscounts,
+      averageDiscountPerOrder: analytics.totalOrders > 0 ? analytics.totalDiscounts / analytics.totalOrders : 0.0,
+      discountRate: analytics.subtotalAmount > 0 ? (analytics.totalDiscounts / analytics.subtotalAmount) * 100 : 0.0,
+      discountByType: analytics.discountTypes,
+      highestDiscountOrders: await _getHighestDiscountOrders(period),
+    );
+  }
+
+  Future<TaxAnalytics> getTaxAnalytics(TimePeriod period) async {
+    final analytics = await getSalesAnalytics(period);
+
+    return TaxAnalytics(
+      totalTaxCollected: analytics.taxAmount,
+      averageTaxPerOrder: analytics.totalOrders > 0 ? analytics.taxAmount / analytics.totalOrders : 0.0,
+      effectiveTaxRate: analytics.taxableAmount > 0 ? (analytics.taxAmount / analytics.taxableAmount) * 100 : 0.0,
+      taxByType: {}, // You can expand this with different tax types if available
+    );
+  }
+
+  Future<List<Order>> _getHighestDiscountOrders(TimePeriod period) async {
+    final ordersSnapshot = await ordersRef
+        .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
+        .where('dateCreated', isLessThanOrEqualTo: period.endDate)
+        .get();
+
+    final orders = ordersSnapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return Order.fromFirestore(data, doc.id);
+    }).toList();
+
+    // Sort by discount amount (descending)
+    orders.sort((a, b) {
+      final aDiscount = (a.toFirestore()['totalDiscount'] ?? 0.0) as double;
+      final bDiscount = (b.toFirestore()['totalDiscount'] ?? 0.0) as double;
+      return bDiscount.compareTo(aDiscount);
+    });
+
+    return orders.take(5).toList();
+  }
+
+  // Existing customer analytics methods
   Future<CustomerAnalytics> getCustomerAnalytics(TimePeriod period) async {
     try {
       if (_currentTenantId == null) {
@@ -554,11 +766,17 @@ class AnalyticsService {
 
   Future<Map<String, dynamic>> getCashSummary(TimePeriod period) async {
     final analytics = await getSalesAnalytics(period);
+    final financial = await getFinancialBreakdown(period);
     return {
       'totalCash': analytics.totalSales,
       'cashOrders': analytics.totalOrders,
       'averageTransaction': analytics.averageOrderValue,
       'peakHour': _findPeakHour(analytics.salesByHour),
+      'subtotal': financial.subtotal,
+      'discounts': financial.discounts,
+      'taxes': financial.taxes,
+      'shipping': financial.shipping,
+      'tips': financial.tips,
     };
   }
 
@@ -574,7 +792,7 @@ class AnalyticsService {
   }
 }
 
-// Analytics Dashboard Screen
+// Enhanced Analytics Dashboard Screen with Financial Tabs
 class AnalyticsDashboardScreen extends StatefulWidget {
   const AnalyticsDashboardScreen({super.key});
 
@@ -589,6 +807,9 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   List<Order> _recentOrders = [];
   Map<String, dynamic> _cashSummary = {};
   CustomerAnalytics? _customerAnalytics;
+  FinancialBreakdown? _financialBreakdown;
+  DiscountAnalytics? _discountAnalytics;
+  TaxAnalytics? _taxAnalytics;
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
@@ -597,13 +818,13 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _setTenantContext();
     _loadAnalytics();
   }
 
   void _setTenantContext() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
     final tenantId = authProvider.currentUser?.tenantId;
 
     if (tenantId != null && tenantId != 'super_admin') {
@@ -623,6 +844,9 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         _analyticsService.getRecentOrders(),
         _analyticsService.getCashSummary(_selectedPeriod),
         _analyticsService.getCustomerAnalytics(_selectedPeriod),
+        _analyticsService.getFinancialBreakdown(_selectedPeriod),
+        _analyticsService.getDiscountAnalytics(_selectedPeriod),
+        _analyticsService.getTaxAnalytics(_selectedPeriod),
       ]);
 
       setState(() {
@@ -630,6 +854,9 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         _recentOrders = results[1] as List<Order>;
         _cashSummary = results[2] as Map<String, dynamic>;
         _customerAnalytics = results[3] as CustomerAnalytics;
+        _financialBreakdown = results[4] as FinancialBreakdown;
+        _discountAnalytics = results[5] as DiscountAnalytics;
+        _taxAnalytics = results[6] as TaxAnalytics;
         _isLoading = false;
       });
     } catch (e) {
@@ -721,11 +948,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               indicatorColor: Colors.white,
               indicatorWeight: 3,
               indicatorSize: TabBarIndicatorSize.tab,
+              isScrollable: true,
               labelStyle: const TextStyle(fontWeight: FontWeight.w600),
               unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal),
               tabs: const [
                 Tab(text: 'Overview'),
                 Tab(text: 'Sales'),
+                Tab(text: 'Financials'),
+                Tab(text: 'Discounts'),
                 Tab(text: 'Products'),
                 Tab(text: 'Customers'),
               ],
@@ -749,6 +979,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               children: [
                 _buildOverviewTab(),
                 _buildSalesTab(),
+                _buildFinancialsTab(),
+                _buildDiscountsTab(),
                 _buildProductsTab(),
                 _buildCustomersTab(),
               ],
@@ -767,6 +999,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         children: [
           _buildKeyMetrics(),
           SizedBox(height: 20),
+          _buildFinancialSummary(),
+          SizedBox(height: 20),
           _buildRecentOrders(),
           SizedBox(height: 20),
           _buildCashSummary(),
@@ -776,6 +1010,11 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   }
 
   Widget _buildKeyMetrics() {
+    // Calculate net sales (total after all adjustments)
+    final netSales = _financialBreakdown?.total ?? _analytics?.totalSales ?? 0.0;
+    final grossSales = _financialBreakdown?.subtotal ?? _analytics?.subtotalAmount ?? 0.0;
+    final totalDiscounts = _financialBreakdown?.discounts ?? _analytics?.totalDiscounts ?? 0.0;
+
     return GridView.count(
       shrinkWrap: true,
       physics: NeverScrollableScrollPhysics(),
@@ -784,28 +1023,32 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
       mainAxisSpacing: 16,
       children: [
         _buildMetricCard(
-          title: 'Total Sales',
-          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.totalSales.toStringAsFixed(0) ?? '0'}',
+          title: 'Net Sales',
+          value: '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}',
+          subtitle: 'After all adjustments',
           icon: Icons.attach_money,
           color: Colors.green,
         ),
         _buildMetricCard(
-          title: 'Total Orders',
-          value: '${_analytics?.totalOrders ?? 0}',
-          icon: Icons.shopping_cart,
+          title: 'Gross Sales',
+          value: '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}',
+          subtitle: 'Before adjustments',
+          icon: Icons.bar_chart,
           color: Colors.blue,
         ),
         _buildMetricCard(
-          title: 'Items Sold',
-          value: '${_analytics?.totalItemsSold ?? 0}',
-          icon: Icons.inventory,
+          title: 'Total Orders',
+          value: '${_analytics?.totalOrders ?? 0}',
+          subtitle: 'Completed orders',
+          icon: Icons.shopping_cart,
           color: Colors.orange,
         ),
         _buildMetricCard(
-          title: 'Avg Order',
-          value: '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue.toStringAsFixed(0) ?? '0'}',
-          icon: Icons.analytics,
-          color: Colors.purple,
+          title: 'Total Discounts',
+          value: '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}',
+          subtitle: 'Discounts given',
+          icon: Icons.discount,
+          color: Colors.red,
         ),
       ],
     );
@@ -814,6 +1057,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   Widget _buildMetricCard({
     required String title,
     required String value,
+    required String subtitle,
     required IconData icon,
     required Color color,
   }) {
@@ -840,14 +1084,23 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             SizedBox(height: 12),
             Text(title, style: TextStyle(fontSize: 14, color: Colors.grey[600], fontWeight: FontWeight.w500)),
             SizedBox(height: 4),
-            Text(value, style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+            Text(value, style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.grey[800])),
+            SizedBox(height: 4),
+            Text(subtitle, style: TextStyle(fontSize: 11, color: Colors.grey[500])),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildRecentOrders() {
+  Widget _buildFinancialSummary() {
+    final netSales = _financialBreakdown?.total ?? _analytics?.totalSales ?? 0.0;
+    final grossSales = _financialBreakdown?.subtotal ?? _analytics?.subtotalAmount ?? 0.0;
+    final totalDiscounts = _financialBreakdown?.discounts ?? _analytics?.totalDiscounts ?? 0.0;
+    final taxes = _financialBreakdown?.taxes ?? _analytics?.taxAmount ?? 0.0;
+    final shipping = _financialBreakdown?.shipping ?? _analytics?.shippingAmount ?? 0.0;
+    final tips = _financialBreakdown?.tips ?? _analytics?.tipAmount ?? 0.0;
+
     return Card(
       elevation: 4,
       child: Padding(
@@ -857,112 +1110,156 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           children: [
             Row(
               children: [
-                Icon(Icons.receipt, color: Colors.blue),
+                Icon(Icons.pie_chart, color: Colors.purple),
                 SizedBox(width: 8),
-                Text('Recent Orders', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                Spacer(),
-                Text('${_recentOrders.length} orders', style: TextStyle(color: Colors.grey[600])),
+                Text('Financial Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               ],
             ),
             SizedBox(height: 16),
-            ..._recentOrders.take(5).map((order) => _buildOrderListItem(order)),
+
+            // Net Sales Highlight
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[100]!),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('NET SALES', style: TextStyle(fontSize: 12, color: Colors.green[700], fontWeight: FontWeight.bold)),
+                      SizedBox(height: 4),
+                      Text('Final amount after all adjustments', style: TextStyle(fontSize: 10, color: Colors.green[600])),
+                    ],
+                  ),
+                  Text(
+                    '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green[700]),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // Breakdown Grid
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              children: [
+                _buildFinancialMetric(
+                  'Gross Sales',
+                  '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}',
+                  'Before adjustments',
+                  Colors.blue,
+                ),
+                _buildFinancialMetric(
+                  'Total Discounts',
+                  '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}',
+                  'Discounts applied',
+                  Colors.red,
+                ),
+                _buildFinancialMetric(
+                  'Taxes',
+                  '${Constants.DEFAULT_CURRENCY}${taxes.toStringAsFixed(0)}',
+                  'Tax collected',
+                  Colors.orange,
+                ),
+                _buildFinancialMetric(
+                  'Shipping',
+                  '${Constants.DEFAULT_CURRENCY}${shipping.toStringAsFixed(0)}',
+                  'Shipping charges',
+                  Colors.green,
+                ),
+                if (tips > 0)
+                  _buildFinancialMetric(
+                    'Tips',
+                    '${Constants.DEFAULT_CURRENCY}${tips.toStringAsFixed(0)}',
+                    'Tips received',
+                    Colors.purple,
+                  ),
+              ],
+            ),
+
+            // Net Sales Calculation Breakdown
+            SizedBox(height: 16),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Text('Net Sales Calculation', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[700])),
+                  SizedBox(height: 8),
+                  _buildCalculationRow('Gross Sales', '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Discounts', '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Taxes', '+${Constants.DEFAULT_CURRENCY}${taxes.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Shipping', '+${Constants.DEFAULT_CURRENCY}${shipping.toStringAsFixed(0)}'),
+                  if (tips > 0)
+                    _buildCalculationRow('Tips', '+${Constants.DEFAULT_CURRENCY}${tips.toStringAsFixed(0)}'),
+                  Divider(height: 16),
+                  _buildCalculationRow('Net Sales', '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}', isTotal: true),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildOrderListItem(Order order) {
+  Widget _buildFinancialMetric(String label, String value, String subtitle, Color color) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey[50],
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.green[100],
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(Icons.receipt_long, color: Colors.green),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Order #${order.number}', style: TextStyle(fontWeight: FontWeight.w600)),
-                SizedBox(height: 4),
-                Text(
-                  DateFormat('MMM dd, yyyy - HH:mm').format(order.dateCreated),
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
-          ),
+          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color)),
+          SizedBox(height: 4),
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+          SizedBox(height: 2),
+          Text(subtitle, style: TextStyle(fontSize: 10, color: Colors.grey[500])),
         ],
       ),
     );
   }
 
-  Widget _buildCashSummary() {
-    return Card(
-      elevation: 4,
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.money, color: Colors.green),
-                SizedBox(width: 8),
-                Text('Cash Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ],
+  Widget _buildCalculationRow(String label, String value, {bool isTotal = false}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: isTotal ? 14 : 12,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isTotal ? Colors.green[700] : Colors.grey[700],
             ),
-            SizedBox(height: 16),
-            Row(
-              children: [
-                _buildCashMetric('Total Cash', '${Constants.DEFAULT_CURRENCY}${_cashSummary['totalCash']?.toStringAsFixed(0) ?? '0'}'),
-                _buildCashMetric('Transactions', '${_cashSummary['cashOrders'] ?? 0}'),
-              ],
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: isTotal ? 16 : 12,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isTotal ? Colors.green[700] : Colors.grey[700],
             ),
-            SizedBox(height: 12),
-            Row(
-              children: [
-                _buildCashMetric('Avg Transaction', '${Constants.DEFAULT_CURRENCY}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
-                _buildCashMetric('Peak Hour', _cashSummary['peakHour'] ?? 'N/A'),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCashMetric(String label, String value) {
-    return Expanded(
-      child: Container(
-        margin: EdgeInsets.all(4),
-        padding: EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.grey[50], borderRadius: BorderRadius.circular(8)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), textAlign: TextAlign.center),
-            SizedBox(height: 4),
-            Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1069,6 +1366,426 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Financials Tab
+  Widget _buildFinancialsTab() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildRevenueBreakdown(),
+          SizedBox(height: 20),
+          _buildTaxAnalytics(),
+          SizedBox(height: 20),
+          _buildPaymentMethodDistribution(),
+          SizedBox(height: 20),
+          _buildFinancialEfficiency(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRevenueBreakdown() {
+    final data = [
+      ChartData('Subtotal', _financialBreakdown?.subtotal ?? 0),
+      ChartData('Discounts', -(_financialBreakdown?.discounts ?? 0)),
+      ChartData('Taxes', _financialBreakdown?.taxes ?? 0),
+      ChartData('Shipping', _financialBreakdown?.shipping ?? 0),
+      ChartData('Tips', _financialBreakdown?.tips ?? 0),
+    ].where((item) => item.y != 0).toList();
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Revenue Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: SfCartesianChart(
+                primaryXAxis: CategoryAxis(),
+                series: <BarSeries<ChartData, String>>[
+                  BarSeries<ChartData, String>(
+                    dataSource: data,
+                    xValueMapper: (ChartData data, _) => data.x,
+                    yValueMapper: (ChartData data, _) => data.y,
+                    dataLabelSettings: DataLabelSettings(isVisible: true),
+                    color: Colors.blue[400],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaxAnalytics() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tax Analytics', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              children: [
+                _buildTaxMetric(
+                  'Total Tax Collected',
+                  '${Constants.DEFAULT_CURRENCY}${_taxAnalytics?.totalTaxCollected.toStringAsFixed(0) ?? '0'}',
+                  Colors.red,
+                ),
+                _buildTaxMetric(
+                  'Avg Tax per Order',
+                  '${Constants.DEFAULT_CURRENCY}${_taxAnalytics?.averageTaxPerOrder.toStringAsFixed(2) ?? '0'}',
+                  Colors.orange,
+                ),
+                _buildTaxMetric(
+                  'Effective Tax Rate',
+                  '${_taxAnalytics?.effectiveTaxRate.toStringAsFixed(1) ?? '0'}%',
+                  Colors.purple,
+                ),
+                _buildTaxMetric(
+                  'Taxable Amount',
+                  '${Constants.DEFAULT_CURRENCY}${_analytics?.taxableAmount.toStringAsFixed(0) ?? '0'}',
+                  Colors.blue,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaxMetric(String label, String value, Color color) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), textAlign: TextAlign.center),
+          SizedBox(height: 4),
+          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color), textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentMethodDistribution() {
+    final paymentData = _analytics?.paymentMethodDistribution.entries
+        .map((entry) => ChartData(_getPaymentMethodName(entry.key), entry.value))
+        .toList() ?? [];
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Payment Methods', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: SfCircularChart(
+                series: <PieSeries<ChartData, String>>[
+                  PieSeries<ChartData, String>(
+                    dataSource: paymentData,
+                    xValueMapper: (ChartData data, _) => data.x,
+                    yValueMapper: (ChartData data, _) => data.y,
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
+                    dataLabelSettings: DataLabelSettings(isVisible: true),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFinancialEfficiency() {
+    final discountRate = ((_financialBreakdown?.subtotal ?? 0) > 0)
+        ? ((_financialBreakdown?.discounts ?? 0) / _financialBreakdown!.subtotal) * 100
+        : 0;
+
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Financial Efficiency', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                _buildEfficiencyMetric(
+                  'Discount Rate',
+                  '${discountRate.toStringAsFixed(1)}%',
+                  discountRate > 10 ? Colors.orange : Colors.green,
+                ),
+                SizedBox(width: 12),
+                _buildEfficiencyMetric(
+                  'Tax Efficiency',
+                  '${_taxAnalytics?.effectiveTaxRate.toStringAsFixed(1) ?? '0'}%',
+                  Colors.blue,
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                _buildEfficiencyMetric(
+                  'Avg Order Value',
+                  '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue.toStringAsFixed(0) ?? '0'}',
+                  Colors.purple,
+                ),
+                SizedBox(width: 12),
+                _buildEfficiencyMetric(
+                  'Items per Order',
+                  '${((_analytics?.totalOrders ?? 0) > 0
+                      ? (_analytics!.totalItemsSold / _analytics!.totalOrders).toStringAsFixed(1)
+                      : '0')}',
+                  Colors.teal,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEfficiencyMetric(String label, String value, Color color) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Column(
+          children: [
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            SizedBox(height: 8),
+            Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Discounts Tab
+  Widget _buildDiscountsTab() {
+    return SingleChildScrollView(
+      padding: EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _buildDiscountOverview(),
+          SizedBox(height: 20),
+          _buildDiscountBreakdown(),
+          SizedBox(height: 20),
+          _buildHighestDiscountOrders(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscountOverview() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Discount Overview', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              children: [
+                _buildDiscountMetric(
+                  'Total Discounts',
+                  '-${Constants.DEFAULT_CURRENCY}${_discountAnalytics?.totalDiscounts.toStringAsFixed(0) ?? '0'}',
+                  Colors.red,
+                ),
+                _buildDiscountMetric(
+                  'Avg Discount/Order',
+                  '${Constants.DEFAULT_CURRENCY}${_discountAnalytics?.averageDiscountPerOrder.toStringAsFixed(2) ?? '0'}',
+                  Colors.orange,
+                ),
+                _buildDiscountMetric(
+                  'Discount Rate',
+                  '${_discountAnalytics?.discountRate.toStringAsFixed(1) ?? '0'}%',
+                  Colors.purple,
+                ),
+                _buildDiscountMetric(
+                  'Item Discounts',
+                  '-${Constants.DEFAULT_CURRENCY}${_analytics?.itemDiscounts.toStringAsFixed(0) ?? '0'}',
+                  Colors.blue,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscountMetric(String label, String value, Color color) {
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), textAlign: TextAlign.center),
+          SizedBox(height: 4),
+          Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: color), textAlign: TextAlign.center),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiscountBreakdown() {
+    final discountData = [
+      ChartData('Item Discounts', _analytics?.itemDiscounts ?? 0),
+      ChartData('Cart Discounts', _analytics?.cartDiscounts ?? 0),
+      ChartData('Additional Discounts', _analytics?.additionalDiscounts ?? 0),
+    ].where((item) => item.y > 0).toList();
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Discount Breakdown', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: SfCircularChart(
+                series: <PieSeries<ChartData, String>>[
+                  PieSeries<ChartData, String>(
+                    dataSource: discountData,
+                    xValueMapper: (ChartData data, _) => data.x,
+                    yValueMapper: (ChartData data, _) => data.y,
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
+                    dataLabelSettings: DataLabelSettings(isVisible: true),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHighestDiscountOrders() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Highest Discount Orders', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            SizedBox(height: 16),
+            ..._discountAnalytics?.highestDiscountOrders.map((order) => _buildDiscountOrderItem(order)) ?? [
+              Center(child: Text('No discount data available', style: TextStyle(color: Colors.grey[600]))),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscountOrderItem(Order order) {
+    final orderData = order.toFirestore();
+    final discount = (orderData['totalDiscount'] ?? 0.0) as double;
+
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.red[100],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(Icons.discount, color: Colors.red, size: 20),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Order #${order.number}', style: TextStyle(fontWeight: FontWeight.w600)),
+                SizedBox(height: 4),
+                Text(
+                  DateFormat('MMM dd, yyyy - HH:mm').format(order.dateCreated),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '-${Constants.DEFAULT_CURRENCY}${discount.toStringAsFixed(0)}',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red[700]),
+              ),
+              SizedBox(height: 2),
+              Text(
+                '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -1333,67 +2050,66 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
 
   Widget _buildCustomerSegmentation() {
     return Card(
-      elevation: 4,
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.analytics, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('Customer Segmentation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            SizedBox(height: 16),
-            SizedBox(
-              height: 200,
-              child: _customerAnalytics?.customerSegmentation != null
-                  ? SfCircularChart(
-                series: <PieSeries<CustomerSegment, String>>[
-                  PieSeries<CustomerSegment, String>(
-                    dataSource: _customerAnalytics!.customerSegmentation,
-                    xValueMapper: (CustomerSegment segment, _) => segment.segment,
-                    yValueMapper: (CustomerSegment segment, _) => segment.count.toDouble(),
-                    dataLabelMapper: (CustomerSegment segment, _) => '${segment.segment}\n${segment.count}',
-                    dataLabelSettings: DataLabelSettings(isVisible: true),
-                    explode: true,
-                    explodeIndex: 0,
-                  ),
+        elevation: 4,
+        child: Padding(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.analytics, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Text('Customer Segmentation', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 ],
-              )
-                  : Center(child: Text('No segmentation data available', style: TextStyle(color: Colors.grey[600]))),
-            ),
-            SizedBox(height: 16),
-            if (_customerAnalytics?.customerSegmentation != null)
-              ..._customerAnalytics!.customerSegmentation.map((segment) {
-                return Padding(
-                  padding: EdgeInsets.symmetric(vertical: 4),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(color: _getSegmentColor(segment.segment), shape: BoxShape.circle),
-                      ),
-                      SizedBox(width: 8),
-                      Expanded(child: Text(segment.segment, style: TextStyle(fontWeight: FontWeight.w500))),
-                      Text('${segment.count} customers', style: TextStyle(color: Colors.grey[600])),
-                      SizedBox(width: 8),
-                      Text(
-                        '${segment.percentage.toStringAsFixed(1)}%',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[700]),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
+              ),
+              SizedBox(height: 16),
+              SizedBox(
+                height: 200,
+                child: _customerAnalytics?.customerSegmentation != null
+                    ? SfCircularChart(
+                  series: <PieSeries<CustomerSegment, String>>[
+                    PieSeries<CustomerSegment, String>(
+                      dataSource: _customerAnalytics!.customerSegmentation,
+                      xValueMapper: (CustomerSegment segment, _) => segment.segment,
+                      yValueMapper: (CustomerSegment segment, _) => segment.count.toDouble(),
+                      dataLabelMapper: (CustomerSegment segment, _) => '${segment.segment}\n${segment.count}',
+                      dataLabelSettings: DataLabelSettings(isVisible: true),
+                      explode: true,
+                      explodeIndex: 0,
+                    ),
+                  ],
+                )
+                    : Center(child: Text('No segmentation data available', style: TextStyle(color: Colors.grey[600]))),
+              ),
+              SizedBox(height: 16),
+              if (_customerAnalytics?.customerSegmentation != null)
+                ..._customerAnalytics!.customerSegmentation.map((segment) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(vertical: 4),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 12,
+                          height: 12,
+                          decoration: BoxDecoration(color: _getSegmentColor(segment.segment), shape: BoxShape.circle),
+                        ),
+                        SizedBox(width: 8),
+                        Expanded(child: Text(segment.segment, style: TextStyle(fontWeight: FontWeight.w500))),
+                        Text('${segment.count} customers', style: TextStyle(color: Colors.grey[600])),
+                        SizedBox(width: 8),
+                        Text(
+                          '${segment.percentage.toStringAsFixed(1)}%',
+                          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue[700]),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ));
+    }
 
   Widget _buildTopCustomers() {
     return Card(
@@ -1641,6 +2357,166 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         ),
       ),
     );
+  }
+
+  // Recent Orders and Cash Summary
+  Widget _buildRecentOrders() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.receipt, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('Recent Orders', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Spacer(),
+                Text('${_recentOrders.length} orders', style: TextStyle(color: Colors.grey[600])),
+              ],
+            ),
+            SizedBox(height: 16),
+            ..._recentOrders.take(5).map((order) => _buildOrderListItem(order)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOrderListItem(Order order) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 12),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.green[100],
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(Icons.receipt_long, color: Colors.green),
+          ),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Order #${order.number}', style: TextStyle(fontWeight: FontWeight.w600)),
+                SizedBox(height: 4),
+                Text(
+                  DateFormat('MMM dd, yyyy - HH:mm').format(order.dateCreated),
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCashSummary() {
+    final netSales = _financialBreakdown?.total ?? _analytics?.totalSales ?? 0.0;
+    final grossSales = _financialBreakdown?.subtotal ?? _analytics?.subtotalAmount ?? 0.0;
+    final totalDiscounts = _financialBreakdown?.discounts ?? _analytics?.totalDiscounts ?? 0.0;
+
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.money, color: Colors.green),
+                SizedBox(width: 8),
+                Text('Sales Summary', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              ],
+            ),
+            SizedBox(height: 16),
+            Row(
+              children: [
+                _buildCashMetric('Net Sales', '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}'),
+                _buildCashMetric('Gross Sales', '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}'),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                _buildCashMetric('Total Discounts', '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}'),
+                _buildCashMetric('Transactions', '${_cashSummary['cashOrders'] ?? 0}'),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                _buildCashMetric('Avg Transaction', '${Constants.DEFAULT_CURRENCY}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
+                _buildCashMetric('Peak Hour', _cashSummary['peakHour'] ?? 'N/A'),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashMetric(String label, String value) {
+    final isDiscount = label.contains('Discount') && value.startsWith('-');
+    final isNetSales = label.contains('Net Sales');
+
+    return Expanded(
+      child: Container(
+        margin: EdgeInsets.all(4),
+        padding: EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isNetSales ? Colors.green[50] : Colors.grey[50],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isNetSales ? Colors.green[100]! : Colors.grey[300]!,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600]), textAlign: TextAlign.center),
+            SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isDiscount ? Colors.red[700] : (isNetSales ? Colors.green[700] : Colors.grey[800]),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper Methods
+  String _getPaymentMethodName(String method) {
+    switch (method) {
+      case 'cash': return 'Cash';
+      case 'card': return 'Card';
+      case 'mobile_money': return 'Mobile Money';
+      case 'credit': return 'Credit';
+      default: return method;
+    }
   }
 
   Color _getSegmentColor(String segment) {
