@@ -98,9 +98,9 @@ final Map<String, List<Color>> _gradientPalettes = {
 };
 class SettingsScreen extends StatefulWidget {
   // String tenantId;
-   SettingsScreen({Key? key,
+   const SettingsScreen({super.key,
      // required this.tenantId
-   }) : super(key: key);
+   });
 
   @override
   _SettingsScreenState createState() => _SettingsScreenState();
@@ -168,7 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return ListTile(
       title: Text(title, style: TextStyle(fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle, style: TextStyle(fontSize: 12)),
-      trailing: Container(
+      trailing: SizedBox(
         width: 200,
         height: 40,
         child: ListView.builder(
@@ -1665,7 +1665,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: Colors.blue,
+        activeThumbColor: Colors.blue,
       ),
     );
   }

@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'app.dart';
 
 class POSServiceProvider extends ChangeNotifier {
-  EnhancedPOSService _posService = EnhancedPOSService();
+  final EnhancedPOSService _posService = EnhancedPOSService();
 
   EnhancedPOSService get posService => _posService;
 

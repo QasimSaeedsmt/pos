@@ -4,15 +4,1541 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mpcm/app.dart';
+import 'package:mpcm/theme_provider.dart';
+import 'package:mpcm/theme_selector_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'dart:io';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
+import 'constants.dart';
 import 'firebase_options.dart';
 
+
+// =============================
+// ENHANCED USER MANAGEMENT SCREENS
+// =============================
+class EnhancedUsersScreen extends StatelessWidget {
+  const EnhancedUsersScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('User Management'),
+          bottom: TabBar(
+            tabs: [
+              Tab(text: 'Users'),
+              Tab(text: 'Activity Log'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _UsersListTab(),
+            _ActivityLogTab(),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () => _showAddUserDialog(context),
+          child: Icon(Icons.person_add),
+        ),
+      ),
+    );
+  }
+
+  void _showAddUserDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => EnhancedAddUserDialog(
+        onSave: (userData) async {
+          final authProvider = context.read<MyAuthProvider>();
+          await FirebaseService.createUserWithDetails(
+            tenantId: authProvider.currentUser!.tenantId,
+            email: userData['email'],
+            password: userData['password'],
+            displayName: userData['displayName'],
+            role: userData['role'],
+            createdBy: authProvider.currentUser!.uid,
+            phoneNumber: userData['phoneNumber'],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _UsersListTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(authProvider.currentUser!.tenantId)
+          .collection('users')
+          .orderBy('createdAt', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        final users = snapshot.data!.docs;
+
+        if (users.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people_outline, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No Users Found',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Add your first user to get started',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: users.length,
+          itemBuilder: (context, index) {
+            final userDoc = users[index];
+            final userData = userDoc.data() as Map<String, dynamic>? ?? {};
+            final user = AppUser.fromFirestore(userDoc);
+
+            return Card(
+              margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _getRoleColor(user.role),
+                  child: Text(
+                    user.formattedName[0].toUpperCase(),
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ),
+                title: Text(
+                  user.formattedName,
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(user.email),
+                    Row(
+                      children: [
+                        Chip(
+                          label: Text(
+                            user.role.toString().split('.').last,
+                            style: TextStyle(fontSize: 10, color: Colors.white),
+                          ),
+                          backgroundColor: _getRoleColor(user.role),
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        if (user.phoneNumber != null) ...[
+                          SizedBox(width: 8),
+                          Icon(Icons.phone, size: 12, color: Colors.grey),
+                          SizedBox(width: 4),
+                          Text(
+                            user.phoneNumber!,
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (user.lastLogin != null)
+                      Text(
+                        'Last login: ${DateFormat('MMM dd, yyyy HH:mm').format(user.lastLogin!)}',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Switch(
+                      value: user.isActive,
+                      onChanged: (value) => _toggleUserStatus(context, user, value),
+                    ),
+                    PopupMenuButton(
+                      icon: Icon(Icons.more_vert),
+                      itemBuilder: (context) => [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              Icon(Icons.edit, size: 18),
+                              SizedBox(width: 8),
+                              Text('Edit User'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'activity',
+                          child: Row(
+                            children: [
+                              Icon(Icons.history, size: 18),
+                              SizedBox(width: 8),
+                              Text('View Activity'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'password',
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_reset, size: 18),
+                              SizedBox(width: 8),
+                              Text('Reset Password'),
+                            ],
+                          ),
+                        ),
+                        if (!user.isActive) PopupMenuItem(
+                          value: 'delete',
+                          child: Row(
+                            children: [
+                              Icon(Icons.delete, size: 18, color: Colors.red),
+                              SizedBox(width: 8),
+                              Text('Delete User', style: TextStyle(color: Colors.red)),
+                            ],
+                          ),
+                        ),
+                      ],
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'edit':
+                            _editUser(context, user);
+                            break;
+                          case 'activity':
+                            _viewUserActivity(context, user);
+                            break;
+                          case 'password':
+                            _resetPassword(context, user);
+                            break;
+                          case 'delete':
+                            _deleteUser(context, user);
+                            break;
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Color _getRoleColor(UserRole role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return Colors.red;
+      case UserRole.clientAdmin:
+        return Colors.blue;
+      case UserRole.salesInventoryManager:
+        return Colors.purple;
+      case UserRole.cashier:
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  void _toggleUserStatus(BuildContext context, AppUser user, bool isActive) async {
+    final authProvider = context.read<MyAuthProvider>();
+
+    try {
+      await FirebaseService.updateUserStatus(
+        tenantId: authProvider.currentUser!.tenantId,
+        userId: user.uid,
+        isActive: isActive,
+        updatedBy: authProvider.currentUser!.uid,
+      );
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('User ${isActive ? 'activated' : 'deactivated'} successfully'),
+          backgroundColor: isActive ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating user: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _editUser(BuildContext context, AppUser user) {
+    showDialog(
+      context: context,
+      builder: (context) => EditUserDialog(user: user),
+    );
+  }
+
+  void _viewUserActivity(BuildContext context, AppUser user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserActivityScreen(user: user),
+      ),
+    );
+  }
+
+  void _resetPassword(BuildContext context, AppUser user) {
+    showDialog(
+      context: context,
+      builder: (context) => ResetPasswordDialog(user: user),
+    );
+  }
+
+  void _deleteUser(BuildContext context, AppUser user) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete User'),
+        content: Text('Are you sure you want to delete ${user.formattedName}? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              try {
+                final authProvider = context.read<MyAuthProvider>();
+                await FirebaseFirestore.instance
+                    .collection('tenants')
+                    .doc(authProvider.currentUser!.tenantId)
+                    .collection('users')
+                    .doc(user.uid)
+                    .delete();
+
+                // Also delete the auth user
+                // Note: In production, you might want to disable instead of delete
+                // await FirebaseAuth.instance.currentUser?.delete();
+
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('User deleted successfully'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              } catch (e) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Error deleting user: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityLogTab extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseService.getUserActivities(
+        authProvider.currentUser!.tenantId,
+        limit: 100,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(child: CircularProgressIndicator());
+        }
+
+        final activities = snapshot.data!.docs;
+
+        if (activities.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.history, size: 64, color: Colors.grey),
+                SizedBox(height: 16),
+                Text(
+                  'No Activities Yet',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'User activities will appear here',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: activities.length,
+          itemBuilder: (context, index) {
+            final activity = UserActivity.fromFirestore(activities[index]);
+
+            return Card(
+              margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: ListTile(
+                leading: Container(
+                  padding: EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: activity.moduleColor.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    activity.moduleIcon,
+                    color: activity.moduleColor,
+                    size: 20,
+                  ),
+                ),
+                title: Text(
+                  activity.description,
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${activity.userDisplayName} • ${DateFormat('MMM dd, yyyy HH:mm').format(activity.timestamp)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    if (activity.metadata.isNotEmpty) ...[
+                      SizedBox(height: 4),
+                      ..._buildMetadataWidgets(activity.metadata),
+                    ],
+                  ],
+                ),
+                trailing: Chip(
+                  label: Text(
+                    activity.action.toString().split('.').last.replaceAll('_', ' '),
+                    style: TextStyle(fontSize: 10, color: Colors.white),
+                  ),
+                  backgroundColor: _getActivityColor(activity.action),
+                ),
+                onTap: () => _showActivityDetails(context, activity),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildMetadataWidgets(Map<String, dynamic> metadata) {
+    return metadata.entries.map((entry) {
+      return Text(
+        '${entry.key}: ${entry.value}',
+        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+      );
+    }).toList();
+  }
+
+  void _showActivityDetails(BuildContext context, UserActivity activity) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(activity.moduleIcon, color: activity.moduleColor),
+            SizedBox(width: 8),
+            Text('Activity Details'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('Action', activity.action.toString().split('.').last.replaceAll('_', ' ')),
+              _buildDetailRow('Description', activity.description),
+              _buildDetailRow('User', '${activity.userDisplayName} (${activity.userEmail})'),
+              _buildDetailRow('Role', activity.userRole),
+              _buildDetailRow('Module', activity.module),
+              _buildDetailRow('Time', DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp)),
+
+              if (activity.metadata.isNotEmpty) ...[
+                SizedBox(height: 16),
+                Text('Details:', style: TextStyle(fontWeight: FontWeight.bold)),
+                ...activity.metadata.entries.map((entry) =>
+                    _buildDetailRow(entry.key, entry.value.toString())
+                ),
+              ],
+
+              if (activity.ipAddress.isNotEmpty)
+                _buildDetailRow('IP Address', activity.ipAddress),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _getActivityColor(ActivityType action) {
+    switch (action) {
+      case ActivityType.user_login:
+      case ActivityType.sale_created:
+      case ActivityType.payment_processed:
+        return Colors.green;
+      case ActivityType.user_created:
+      case ActivityType.product_created:
+        return Colors.blue;
+      case ActivityType.user_deactivated:
+      case ActivityType.sale_deleted:
+      case ActivityType.payment_failed:
+        return Colors.red;
+      case ActivityType.user_updated:
+      case ActivityType.product_updated:
+      case ActivityType.sale_updated:
+        return Colors.orange;
+      case ActivityType.low_stock_alert:
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
+  }
+}
+
+// Placeholder dialogs for edit and reset password
+class EditUserDialog extends StatelessWidget {
+  final AppUser user;
+  const EditUserDialog({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Edit User'),
+      content: Text('Edit user functionality to be implemented'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+class ResetPasswordDialog extends StatelessWidget {
+  final AppUser user;
+  const ResetPasswordDialog({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Reset Password'),
+      content: Text('Password reset functionality to be implemented'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+
+
+
+class EnhancedAddUserDialog extends StatefulWidget {
+  final Function(Map<String, dynamic>) onSave;
+  const EnhancedAddUserDialog({super.key, required this.onSave});
+
+  @override
+  _EnhancedAddUserDialogState createState() => _EnhancedAddUserDialogState();
+}
+
+class _EnhancedAddUserDialogState extends State<EnhancedAddUserDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _displayNameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  String _selectedRole = 'cashier';
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(Icons.person_add, color: Colors.blue),
+          SizedBox(width: 8),
+          Text('Add New User'),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: _displayNameController,
+                decoration: InputDecoration(
+                  labelText: 'Display Name *',
+                  hintText: 'Enter full name',
+                  prefixIcon: Icon(Icons.person),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter display name';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _emailController,
+                decoration: InputDecoration(
+                  labelText: 'Email Address *',
+                  hintText: 'user@company.com',
+                  prefixIcon: Icon(Icons.email),
+                ),
+                keyboardType: TextInputType.emailAddress,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter email address';
+                  }
+                  if (!AppUtils.isEmailValid(value)) {
+                    return 'Please enter a valid email address';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _phoneController,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number',
+                  hintText: '+1234567890',
+                  prefixIcon: Icon(Icons.phone),
+                ),
+                keyboardType: TextInputType.phone,
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                controller: _passwordController,
+                decoration: InputDecoration(
+                  labelText: 'Password *',
+                  hintText: 'Enter temporary password',
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                obscureText: true,
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter password';
+                  }
+                  if (value.length < 6) {
+                    return 'Password must be at least 6 characters';
+                  }
+                  return null;
+                },
+              ),
+              SizedBox(height: 16),
+              DropdownButtonFormField(
+                value: _selectedRole,
+                items: [
+                  DropdownMenuItem(
+                    value: 'cashier',
+                    child: Text('Cashier'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'salesInventoryManager',
+                    child: Text('Sales & Inventory Manager'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'clientAdmin',
+                    child: Text('Client Admin'),
+                  ),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    _selectedRole = value.toString();
+                  });
+                },
+                decoration: InputDecoration(
+                  labelText: 'Role',
+                  prefixIcon: Icon(Icons.assignment_ind),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _saveUser,
+          child: Text('Create User'),
+        ),
+      ],
+    );
+  }
+
+  void _saveUser() {
+    if (_formKey.currentState!.validate()) {
+      final userData = {
+        'email': _emailController.text.trim(),
+        'password': _passwordController.text,
+        'displayName': _displayNameController.text.trim(),
+        'role': _selectedRole,
+        'phoneNumber': _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+      };
+
+      widget.onSave(userData);
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    _displayNameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+}
+
+class UserActivityScreen extends StatefulWidget {
+  final AppUser user;
+  const UserActivityScreen({super.key, required this.user});
+
+  @override
+  _UserActivityScreenState createState() => _UserActivityScreenState();
+}
+
+class _UserActivityScreenState extends State<UserActivityScreen> {
+  String _selectedFilter = 'all';
+  final List<String> _filters = [
+    'all',
+    'user',
+    'product',
+    'sale',
+    'inventory',
+    'ticket',
+    'report',
+    'system'
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.user.formattedName} - Activity'),
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              setState(() {
+                _selectedFilter = value;
+              });
+            },
+            itemBuilder: (BuildContext context) {
+              return _filters.map((String filter) {
+                return PopupMenuItem<String>(
+                  value: filter,
+                  child: Row(
+                    children: [
+                      Icon(
+                        _getFilterIcon(filter),
+                        color: _getFilterColor(filter),
+                      ),
+                      SizedBox(width: 8),
+                      Text(filter.toUpperCase()),
+                    ],
+                  ),
+                );
+              }).toList();
+            },
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          // Filter Chips
+          Container(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            height: 60,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: _filters.map((filter) {
+                return Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4),
+                  child: FilterChip(
+                    label: Text(filter.toUpperCase()),
+                    selected: _selectedFilter == filter,
+                    onSelected: (bool selected) {
+                      setState(() {
+                        _selectedFilter = selected ? filter : 'all';
+                      });
+                    },
+                    backgroundColor: Colors.grey[200],
+                    selectedColor: _getFilterColor(filter),
+                    labelStyle: TextStyle(
+                      color: _selectedFilter == filter ? Colors.white : Colors.black,
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Divider(height: 1),
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseService.getUserActivities(
+                authProvider.currentUser!.tenantId,
+                userId: widget.user.uid,
+                limit: 100,
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text('Error: ${snapshot.error}'));
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return Center(child: CircularProgressIndicator());
+                }
+
+                final activities = snapshot.data!.docs;
+
+                // Filter activities
+                final filteredActivities = activities.where((doc) {
+                  if (_selectedFilter == 'all') return true;
+                  final activity = UserActivity.fromFirestore(doc);
+                  return activity.module == _selectedFilter;
+                }).toList();
+
+                if (filteredActivities.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.history, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text('No activities found'),
+                        Text(
+                          _selectedFilter == 'all'
+                              ? 'This user has no activities yet'
+                              : 'No ${_selectedFilter} activities found',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.builder(
+                  itemCount: filteredActivities.length,
+                  itemBuilder: (context, index) {
+                    final activity = UserActivity.fromFirestore(filteredActivities[index]);
+
+                    return Card(
+                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: ListTile(
+                        leading: Container(
+                          padding: EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: activity.moduleColor.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            activity.moduleIcon,
+                            color: activity.moduleColor,
+                            size: 20,
+                          ),
+                        ),
+                        title: Text(
+                          activity.description,
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'By ${activity.userDisplayName} • ${DateFormat('MMM dd, yyyy HH:mm').format(activity.timestamp)}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                            ),
+                            if (activity.metadata.isNotEmpty) ...[
+                              SizedBox(height: 4),
+                              ..._buildMetadataWidgets(activity.metadata),
+                            ],
+                          ],
+                        ),
+                        trailing: Chip(
+                          label: Text(
+                            activity.action.toString().split('.').last.replaceAll('_', ' '),
+                            style: TextStyle(fontSize: 10, color: Colors.white),
+                          ),
+                          backgroundColor: _getActivityColor(activity.action),
+                        ),
+                        onTap: () => _showActivityDetails(context, activity),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildMetadataWidgets(Map<String, dynamic> metadata) {
+    return metadata.entries.map((entry) {
+      return Text(
+        '${entry.key}: ${entry.value}',
+        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+      );
+    }).toList();
+  }
+
+  void _showActivityDetails(BuildContext context, UserActivity activity) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(activity.moduleIcon, color: activity.moduleColor),
+            SizedBox(width: 8),
+            Text('Activity Details'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('Action', activity.action.toString().split('.').last.replaceAll('_', ' ')),
+              _buildDetailRow('Description', activity.description),
+              _buildDetailRow('User', '${activity.userDisplayName} (${activity.userEmail})'),
+              _buildDetailRow('Role', activity.userRole),
+              _buildDetailRow('Module', activity.module),
+              _buildDetailRow('Time', DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp)),
+
+              if (activity.metadata.isNotEmpty) ...[
+                SizedBox(height: 16),
+                Text('Details:', style: TextStyle(fontWeight: FontWeight.bold)),
+                ...activity.metadata.entries.map((entry) =>
+                    _buildDetailRow(entry.key, entry.value.toString())
+                ),
+              ],
+
+              if (activity.ipAddress.isNotEmpty)
+                _buildDetailRow('IP Address', activity.ipAddress),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label:',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  IconData _getFilterIcon(String filter) {
+    switch (filter) {
+      case 'user':
+        return Icons.person;
+      case 'product':
+        return Icons.inventory;
+      case 'sale':
+        return Icons.point_of_sale;
+      case 'inventory':
+        return Icons.warehouse;
+      case 'ticket':
+        return Icons.support;
+      case 'report':
+        return Icons.analytics;
+      case 'system':
+        return Icons.settings;
+      default:
+        return Icons.all_inclusive;
+    }
+  }
+
+  Color _getFilterColor(String filter) {
+    switch (filter) {
+      case 'user':
+        return Colors.blue;
+      case 'product':
+        return Colors.purple;
+      case 'sale':
+        return Colors.green;
+      case 'inventory':
+        return Colors.orange;
+      case 'ticket':
+        return Colors.red;
+      case 'report':
+        return Colors.indigo;
+      case 'system':
+        return Colors.grey;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  Color _getActivityColor(ActivityType action) {
+    switch (action) {
+      case ActivityType.user_login:
+      case ActivityType.sale_created:
+      case ActivityType.payment_processed:
+        return Colors.green;
+      case ActivityType.user_created:
+      case ActivityType.product_created:
+        return Colors.blue;
+      case ActivityType.user_deactivated:
+      case ActivityType.sale_deleted:
+      case ActivityType.payment_failed:
+        return Colors.red;
+      case ActivityType.user_updated:
+      case ActivityType.product_updated:
+      case ActivityType.sale_updated:
+        return Colors.orange;
+      case ActivityType.low_stock_alert:
+        return Colors.amber;
+      default:
+        return Colors.grey;
+    }
+  }
+}
+// Placeholder dialogs for edit and reset password
+
+class EnhancedProfileScreen extends StatelessWidget {
+  const EnhancedProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+    final user = authProvider.currentUser!;
+    final tenant = authProvider.currentTenant!;
+
+    return Scaffold(
+      appBar: AppBar(title: Text('Profile')),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    CircleAvatar(
+                      radius: 40,
+                      backgroundColor: Colors.blue,
+                      child: Text(
+                        user.formattedName[0].toUpperCase(),
+                        style: TextStyle(fontSize: 24, color: Colors.white),
+                      ),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      user.formattedName,
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    SizedBox(height: 8),
+                    Text(user.email),
+                    if (user.phoneNumber != null) Text(user.phoneNumber!),
+                    SizedBox(height: 8),
+                    Chip(
+                      label: Text(
+                        user.role.toString().split('.').last,
+                        style: TextStyle(color: Colors.white),
+                      ),
+                      backgroundColor: Colors.blue,
+                    ),
+                    SizedBox(height: 16),
+                    if (user.lastLogin != null)
+                      Text(
+                        'Last login: ${DateFormat('MMM dd, yyyy HH:mm').format(user.lastLogin!)}',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 20),
+            Expanded(
+              child: ListView(
+                children: [
+                  ListTile(
+                    leading: Icon(Icons.business),
+                    title: Text('Business'),
+                    subtitle: Text(tenant.businessName),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.credit_card),
+                    title: Text('Subscription'),
+                    subtitle: Text('${tenant.subscriptionPlan} - ${DateFormat('MMM dd, yyyy').format(tenant.subscriptionExpiry)}'),
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.history),
+                    title: Text('View My Activity'),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => UserActivityScreen(user: user),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: Icon(Icons.logout),
+                    title: Text('Logout'),
+                    onTap: () => authProvider.logout(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }}
+
+enum ActivityType {
+  // Keep all existing types
+  user_login,
+  user_logout,
+  user_created,
+  user_updated,
+  user_deactivated,
+  sale_created,
+  sale_updated,
+  sale_deleted,
+  product_created,
+  product_updated,
+  product_deleted,
+  stock_updated,
+  tenant_created,
+  tenant_updated,
+  subscription_updated,
+  ticket_created,
+  ticket_updated,
+  payment_processed,
+  report_generated,
+
+  // Add new types for comprehensive tracking
+  user_password_changed,
+  user_profile_updated,
+  product_stock_updated,
+  product_category_created,
+  product_category_updated,
+  sale_refunded,
+  sale_cancelled,
+  inventory_checked,
+  inventory_adjusted,
+  low_stock_alert,
+  customer_created,
+  customer_updated,
+  customer_deleted,
+  report_exported,
+  settings_updated,
+  branding_updated,
+  ticket_closed,
+  ticket_replied,
+  payment_failed,
+  payment_refunded,
+}
+class Tenant {
+  final String id;
+  final String businessName;
+  final String subscriptionPlan;
+  final DateTime subscriptionExpiry;
+  final bool isActive;
+  final Map<String, dynamic> branding;
+
+  Tenant({
+    required this.id,
+    required this.businessName,
+    required this.subscriptionPlan,
+    required this.subscriptionExpiry,
+    required this.isActive,
+    required this.branding,
+  });
+
+  factory Tenant.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // Calculate expiry date with fallback
+    final subscriptionExpiry = data['subscriptionExpiry'] != null
+        ? (data['subscriptionExpiry'] as Timestamp).toDate()
+        : DateTime.now().add(Duration(days: 30)); // Default 30 days
+
+    return Tenant(
+      id: doc.id,
+      businessName: data['businessName']?.toString() ?? 'Unknown Business',
+      subscriptionPlan: data['subscriptionPlan']?.toString() ?? 'monthly',
+      subscriptionExpiry: subscriptionExpiry,
+      isActive: data['isActive'] ?? false,
+      branding: data['branding'] is Map
+          ? Map<String, dynamic>.from(data['branding'] as Map)
+          : {},
+    );
+  }
+
+  bool get isSubscriptionActive {
+    return isActive && subscriptionExpiry.isAfter(DateTime.now());
+  }
+}
+
+
+class AppUser {
+  final String uid;
+  final String email;
+  final String displayName;
+  final String? phoneNumber;
+  final UserRole role;
+  final String tenantId;
+  final bool isActive;
+  final DateTime createdAt;
+  final DateTime? lastLogin;
+  final String createdBy;
+  final Map<String, dynamic> profile;
+  final List<String> permissions;
+
+  AppUser({
+    required this.uid,
+    required this.email,
+    required this.displayName,
+    this.phoneNumber,
+    required this.role,
+    required this.tenantId,
+    required this.isActive,
+    required this.createdAt,
+    this.lastLogin,
+    required this.createdBy,
+    this.profile = const {},
+    this.permissions = const [],
+  });
+
+  factory AppUser.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // Extract email with fallback
+    final email = data['email']?.toString() ?? 'unknown@email.com';
+
+    // Extract display name with fallback
+    final displayName = data['displayName']?.toString() ??
+        email.split('@').first ??
+        'User';
+
+    // Parse role with fallback
+    final roleString = data['role']?.toString() ?? 'cashier';
+    final role = _parseUserRole(roleString);
+
+    // Extract tenant ID with fallback
+    final tenantId = data['tenantId']?.toString() ?? 'unknown_tenant';
+
+    // Parse dates with fallbacks
+    final createdAt = data['createdAt'] != null
+        ? (data['createdAt'] as Timestamp).toDate()
+        : DateTime.now();
+
+    final lastLogin = data['lastLogin'] != null
+        ? (data['lastLogin'] as Timestamp).toDate()
+        : null;
+
+    return AppUser(
+      uid: doc.id,
+      email: email,
+      displayName: displayName,
+      phoneNumber: data['phoneNumber']?.toString(),
+      role: role,
+      tenantId: tenantId,
+      isActive: data['isActive'] ?? false,
+      createdAt: createdAt,
+      lastLogin: lastLogin,
+      createdBy: data['createdBy']?.toString() ?? 'system',
+      profile: data['profile'] is Map ? Map<String, dynamic>.from(data['profile'] as Map) : {},
+      permissions: data['permissions'] is List
+          ? List<String>.from(data['permissions'] as List)
+          : [],
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'uid': uid,
+      'email': email,
+      'displayName': displayName,
+      'phoneNumber': phoneNumber,
+      'role': role.toString().split('.').last,
+      'tenantId': tenantId,
+      'isActive': isActive,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
+      'createdBy': createdBy,
+      'profile': profile,
+      'permissions': permissions,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  static UserRole _parseUserRole(String roleString) {
+    switch (roleString) {
+      case 'superAdmin':
+        return UserRole.superAdmin;
+      case 'clientAdmin':
+        return UserRole.clientAdmin;
+      case 'cashier':
+        return UserRole.cashier;
+      case 'salesInventoryManager':
+        return UserRole.salesInventoryManager;
+      default:
+        return UserRole.cashier; // Default fallback
+    }
+  }
+
+  bool get canManageProducts =>
+      role == UserRole.clientAdmin || role == UserRole.salesInventoryManager;
+  bool get canProcessSales =>
+      role == UserRole.clientAdmin ||
+          role == UserRole.cashier ||
+          role == UserRole.salesInventoryManager;
+  bool get canManageUsers => role == UserRole.clientAdmin;
+  bool get isSuperAdmin => role == UserRole.superAdmin;
+
+  String get formattedName => displayName.isNotEmpty ? displayName : email.split('@').first;
+}
+class UserActivity {
+  final String id;
+  final String tenantId;
+  final String userId;
+  final String userEmail;
+  final String userDisplayName;
+  final String userRole;
+  final ActivityType action;
+  final String description;
+  final Map<String, dynamic> metadata;
+  final DateTime timestamp;
+  final String ipAddress;
+  final String userAgent;
+  final String module; // New field to categorize activities
+
+  UserActivity({
+    required this.id,
+    required this.tenantId,
+    required this.userId,
+    required this.userEmail,
+    required this.userDisplayName,
+    required this.userRole,
+    required this.action,
+    required this.description,
+    this.metadata = const {},
+    required this.timestamp,
+    this.ipAddress = '',
+    this.userAgent = '',
+    required this.module,
+  });
+
+  factory UserActivity.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    return UserActivity(
+      id: doc.id,
+      tenantId: data['tenantId']?.toString() ?? '',
+      userId: data['userId']?.toString() ?? '',
+      userEmail: data['userEmail']?.toString() ?? '',
+      userDisplayName: data['userDisplayName']?.toString() ?? '',
+      userRole: data['userRole']?.toString() ?? '',
+      action: _parseActivityType(data['action']?.toString() ?? ''),
+      description: data['description']?.toString() ?? '',
+      metadata: data['metadata'] is Map ? Map<String, dynamic>.from(data['metadata'] as Map) : {},
+      timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : DateTime.now(),
+      ipAddress: data['ipAddress']?.toString() ?? '',
+      userAgent: data['userAgent']?.toString() ?? '',
+      module: data['module']?.toString() ?? _getModuleFromAction(data['action']?.toString() ?? ''),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'tenantId': tenantId,
+      'userId': userId,
+      'userEmail': userEmail,
+      'userDisplayName': userDisplayName,
+      'userRole': userRole,
+      'action': action.toString().split('.').last,
+      'description': description,
+      'metadata': metadata,
+      'timestamp': Timestamp.fromDate(timestamp),
+      'ipAddress': ipAddress,
+      'userAgent': userAgent,
+      'module': module,
+    };
+  }
+
+  static ActivityType _parseActivityType(String type) {
+    try {
+      return ActivityType.values.firstWhere(
+            (e) => e.toString().split('.').last == type,
+        orElse: () => ActivityType.user_login,
+      );
+    } catch (e) {
+      return ActivityType.user_login;
+    }
+  }
+
+  static String _getModuleFromAction(String action) {
+    if (action.contains('user_')) return 'user';
+    if (action.contains('product_')) return 'product';
+    if (action.contains('sale_')) return 'sale';
+    if (action.contains('stock_') || action.contains('inventory_')) return 'inventory';
+    if (action.contains('customer_')) return 'customer';
+    if (action.contains('ticket_')) return 'ticket';
+    if (action.contains('payment_')) return 'payment';
+    if (action.contains('report_')) return 'report';
+    if (action.contains('tenant_') || action.contains('subscription_')) return 'system';
+    return 'system';
+  }
+
+  // Helper method to get module icon
+  IconData get moduleIcon {
+    switch (module) {
+      case 'user':
+        return Icons.person;
+      case 'product':
+        return Icons.inventory;
+      case 'sale':
+        return Icons.point_of_sale;
+      case 'inventory':
+        return Icons.warehouse;
+      case 'customer':
+        return Icons.people;
+      case 'report':
+        return Icons.analytics;
+      case 'ticket':
+        return Icons.support;
+      case 'payment':
+        return Icons.payment;
+      default:
+        return Icons.settings;
+    }
+  }
+
+  // Helper method to get module color
+  Color get moduleColor {
+    switch (module) {
+      case 'user':
+        return Colors.blue;
+      case 'product':
+        return Colors.purple;
+      case 'sale':
+        return Colors.green;
+      case 'inventory':
+        return Colors.orange;
+      case 'customer':
+        return Colors.teal;
+      case 'report':
+        return Colors.indigo;
+      case 'ticket':
+        return Colors.red;
+      case 'payment':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+}
 class SuperAdminHome extends StatelessWidget {
+  const SuperAdminHome({super.key});
+
   @override
   Widget build(BuildContext context) {
     final tenantProvider = Provider.of<TenantProvider>(context);
@@ -263,7 +1789,709 @@ class SuperAdminHome extends StatelessWidget {
     );
   }
 }
+class SuperAdminAnalyticsScreen extends StatefulWidget {
+  const SuperAdminAnalyticsScreen({super.key});
 
+  @override
+  _SuperAdminAnalyticsScreenState createState() => _SuperAdminAnalyticsScreenState();
+}
+
+class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
+    with SingleTickerProviderStateMixin {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  List<TenantAnalytics> _tenantsAnalytics = [];
+  OverallAnalytics _overallAnalytics = OverallAnalytics.empty();
+  bool _isLoading = true;
+  String _timeFilter = '7days'; // 7days, 30days, 90days, 1year
+
+  @override
+  void initState() {
+    super.initState();
+    _initAnimations();
+    _loadSuperAdminAnalytics();
+  }
+
+  void _initAnimations() {
+    _animationController = AnimationController(
+      duration: Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+    _animationController.forward();
+  }
+
+  Future<void> _loadSuperAdminAnalytics() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final overall = await _fetchOverallAnalytics();
+      final tenants = await _fetchTenantsAnalytics();
+
+      if (mounted) {
+        setState(() {
+          _overallAnalytics = overall;
+          _tenantsAnalytics = tenants;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Error loading super admin analytics: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<OverallAnalytics> _fetchOverallAnalytics() async {
+    try {
+      // Get all tenants
+      final tenantsSnapshot = await _firestore.collection('tenants').get();
+      final allTenants = tenantsSnapshot.docs;
+
+      DateTime startDate;
+      final now = DateTime.now();
+      switch (_timeFilter) {
+        case '7days':
+          startDate = now.subtract(Duration(days: 7));
+          break;
+        case '30days':
+          startDate = now.subtract(Duration(days: 30));
+          break;
+        case '90days':
+          startDate = now.subtract(Duration(days: 90));
+          break;
+        case '1year':
+          startDate = DateTime(now.year - 1, now.month, now.day);
+          break;
+        default:
+          startDate = now.subtract(Duration(days: 7));
+      }
+
+      double totalRevenue = 0.0;
+      int totalOrders = 0;
+      int totalProducts = 0;
+      int totalCustomers = 0;
+      int activeTenants = 0;
+      int expiredTenants = 0;
+
+      // Aggregate data from all tenants
+      for (final tenant in allTenants) {
+        final tenantId = tenant.id;
+        final tenantData = tenant.data();
+
+        // Check tenant subscription status
+        final subscriptionExpiry = tenantData['subscriptionExpiry'];
+        if (subscriptionExpiry is Timestamp) {
+          if (subscriptionExpiry.toDate().isAfter(now)) {
+            activeTenants++;
+          } else {
+            expiredTenants++;
+          }
+        }
+
+        // Get tenant orders
+        final ordersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('orders')
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .get();
+
+        // Get tenant products
+        final productsSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('products')
+            .where('status', isEqualTo: 'publish')
+            .get();
+
+        // Get tenant customers
+        final customersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('customers')
+            .get();
+
+        // Calculate tenant metrics
+        double tenantRevenue = 0.0;
+        for (final order in ordersSnapshot.docs) {
+          final orderData = order.data();
+          tenantRevenue += (orderData['total'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        totalRevenue += tenantRevenue;
+        totalOrders += ordersSnapshot.docs.length;
+        totalProducts += productsSnapshot.docs.length;
+        totalCustomers += customersSnapshot.docs.length;
+      }
+
+      return OverallAnalytics(
+        totalRevenue: totalRevenue,
+        totalOrders: totalOrders,
+        totalProducts: totalProducts,
+        totalCustomers: totalCustomers,
+        activeTenants: activeTenants,
+        expiredTenants: expiredTenants,
+        totalTenants: allTenants.length,
+        averageRevenuePerTenant: allTenants.isNotEmpty ? totalRevenue / allTenants.length : 0.0,
+        timePeriod: _timeFilter,
+      );
+    } catch (e) {
+      print('Error fetching overall analytics: $e');
+      return OverallAnalytics.empty();
+    }
+  }
+
+  Future<List<TenantAnalytics>> _fetchTenantsAnalytics() async {
+    try {
+      final tenantsSnapshot = await _firestore.collection('tenants').get();
+      final List<TenantAnalytics> tenantsAnalytics = [];
+
+      for (final tenant in tenantsSnapshot.docs) {
+        final tenantId = tenant.id;
+        final tenantData = tenant.data();
+
+        // Get time range based on filter
+        DateTime startDate;
+        final now = DateTime.now();
+        switch (_timeFilter) {
+          case '7days':
+            startDate = now.subtract(Duration(days: 7));
+            break;
+          case '30days':
+            startDate = now.subtract(Duration(days: 30));
+            break;
+          case '90days':
+            startDate = now.subtract(Duration(days: 90));
+            break;
+          case '1year':
+            startDate = DateTime(now.year - 1, now.month, now.day);
+            break;
+          default:
+            startDate = now.subtract(Duration(days: 7));
+        }
+
+        // Fetch tenant-specific data
+        final ordersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('orders')
+            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .get();
+
+        final productsSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('products')
+            .where('status', isEqualTo: 'publish')
+            .get();
+
+        final customersSnapshot = await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('customers')
+            .get();
+
+        // Calculate metrics
+        double revenue = 0.0;
+        for (final order in ordersSnapshot.docs) {
+          final orderData = order.data();
+          revenue += (orderData['total'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        // Check subscription status
+        final subscriptionExpiry = tenantData['subscriptionExpiry'];
+        final bool isActive = subscriptionExpiry is Timestamp &&
+            subscriptionExpiry.toDate().isAfter(now);
+
+        final analytics = TenantAnalytics(
+          tenantId: tenantId,
+          businessName: tenantData['businessName']?.toString() ?? 'Unknown Business',
+          subscriptionPlan: tenantData['subscriptionPlan']?.toString() ?? 'Unknown',
+          isActive: isActive,
+          revenue: revenue,
+          ordersCount: ordersSnapshot.docs.length,
+          productsCount: productsSnapshot.docs.length,
+          customersCount: customersSnapshot.docs.length,
+          subscriptionExpiry: subscriptionExpiry is Timestamp ?
+          subscriptionExpiry.toDate() : null,
+        );
+
+        tenantsAnalytics.add(analytics);
+      }
+
+      // Sort by revenue descending
+      tenantsAnalytics.sort((a, b) => b.revenue.compareTo(a.revenue));
+      return tenantsAnalytics;
+    } catch (e) {
+      print('Error fetching tenants analytics: $e');
+      return [];
+    }
+  }
+
+  void _onTimeFilterChanged(String? filter) {
+    if (filter != null) {
+      setState(() {
+        _timeFilter = filter;
+        _loadSuperAdminAnalytics();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        title: Text('Super Admin Analytics'),
+        backgroundColor: Colors.purple[700],
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          PopupMenuButton<String>(
+            onSelected: _onTimeFilterChanged,
+            itemBuilder: (context) => [
+              PopupMenuItem(value: '7days', child: Text('Last 7 Days')),
+              PopupMenuItem(value: '30days', child: Text('Last 30 Days')),
+              PopupMenuItem(value: '90days', child: Text('Last 90 Days')),
+              PopupMenuItem(value: '1year', child: Text('Last 1 Year')),
+            ],
+            child: Padding(
+              padding: EdgeInsets.all(8.0),
+              child: Row(
+                children: [
+                  Text(_getTimeFilterDisplayName()),
+                  Icon(Icons.arrow_drop_down),
+                ],
+              ),
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: _loadSuperAdminAnalytics,
+            tooltip: 'Refresh Analytics',
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? _buildLoadingState()
+          : AnimatedBuilder(
+        animation: _animationController,
+        builder: (context, child) {
+          return Opacity(
+            opacity: _fadeAnimation.value,
+            child: CustomScrollView(
+              slivers: [
+                _buildOverallStats(),
+                _buildTenantsList(),
+                SliverToBoxAdapter(child: SizedBox(height: 20)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation(Colors.purple[700]!),
+          ),
+          SizedBox(height: 16),
+          Text(
+            'Loading Super Admin Analytics...',
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOverallStats() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Text(
+              'Overall Platform Analytics',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+              children: [
+                _buildStatCard(
+                  'Total Revenue',
+                  '${Constants.CURRENCY_NAME}${_overallAnalytics.totalRevenue.toStringAsFixed(0)}',
+                  Icons.attach_money,
+                  Colors.green,
+                  'Across all tenants',
+                ),
+                _buildStatCard(
+                  'Total Orders',
+                  _overallAnalytics.totalOrders.toString(),
+                  Icons.shopping_cart,
+                  Colors.blue,
+                  'Completed orders',
+                ),
+                _buildStatCard(
+                  'Active Tenants',
+                  '${_overallAnalytics.activeTenants}/${_overallAnalytics.totalTenants}',
+                  Icons.business,
+                  _overallAnalytics.activeTenants > 0 ? Colors.green : Colors.orange,
+                  'Active subscriptions',
+                ),
+                _buildStatCard(
+                  'Platform Customers',
+                  _overallAnalytics.totalCustomers.toString(),
+                  Icons.people,
+                  Colors.purple,
+                  'Total customers',
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+            GridView.count(
+              shrinkWrap: true,
+              physics: NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.2,
+              children: [
+                _buildStatCard(
+                  'Total Products',
+                  _overallAnalytics.totalProducts.toString(),
+                  Icons.inventory_2,
+                  Colors.orange,
+                  'Across platform',
+                ),
+                _buildStatCard(
+                  'Avg Revenue/Tenant',
+                  '${Constants.CURRENCY_NAME}${_overallAnalytics.averageRevenuePerTenant.toStringAsFixed(0)}',
+                  Icons.trending_up,
+                  Colors.teal,
+                  'Average performance',
+                ),
+                _buildStatCard(
+                  'Subscription Health',
+                  '${((_overallAnalytics.activeTenants / _overallAnalytics.totalTenants) * 100).toStringAsFixed(1)}%',
+                  Icons.health_and_safety,
+                  _overallAnalytics.activeTenants / _overallAnalytics.totalTenants > 0.7
+                      ? Colors.green : Colors.orange,
+                  'Active rate',
+                ),
+                _buildStatCard(
+                  'Time Period',
+                  _getTimeFilterDisplayName(),
+                  Icons.calendar_today,
+                  Colors.indigo,
+                  'Analysis period',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(String title, String value, IconData icon, Color color, String subtitle) {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 24, color: color),
+            ),
+            SizedBox(height: 12),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[600],
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[500],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTenantsList() {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Tenant Performance Ranking',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey[800],
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Sorted by revenue (${_getTimeFilterDisplayName()})',
+              style: TextStyle(
+                color: Colors.grey[600],
+              ),
+            ),
+            SizedBox(height: 16),
+            ..._tenantsAnalytics.asMap().entries.map((entry) {
+              final index = entry.key;
+              final tenant = entry.value;
+              return _buildTenantCard(tenant, index + 1);
+            }).toList(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTenantCard(TenantAnalytics tenant, int rank) {
+    return Card(
+      margin: EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // Rank
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: rank <= 3 ? Colors.amber : Colors.grey[300],
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  rank.toString(),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: rank <= 3 ? Colors.white : Colors.grey[700],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: 12),
+            // Tenant Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          tenant.businessName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: tenant.isActive ? Colors.green[100] : Colors.red[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          tenant.isActive ? 'Active' : 'Expired',
+                          style: TextStyle(
+                            color: tenant.isActive ? Colors.green[800] : Colors.red[800],
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Plan: ${tenant.subscriptionPlan}',
+                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                  ),
+                  if (tenant.subscriptionExpiry != null)
+                    Text(
+                      'Expires: ${DateFormat('MMM dd, yyyy').format(tenant.subscriptionExpiry!)}',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 11),
+                    ),
+                ],
+              ),
+            ),
+            SizedBox(width: 12),
+            // Performance Metrics
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  '${Constants.CURRENCY_NAME}${tenant.revenue.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.green[700],
+                  ),
+                ),
+                Text(
+                  '${tenant.ordersCount} orders',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                Text(
+                  '${tenant.productsCount} products',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+                Text(
+                  '${tenant.customersCount} customers',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getTimeFilterDisplayName() {
+    switch (_timeFilter) {
+      case '7days': return 'Last 7 Days';
+      case '30days': return 'Last 30 Days';
+      case '90days': return 'Last 90 Days';
+      case '1year': return 'Last 1 Year';
+      default: return 'Last 7 Days';
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+}
+
+// Analytics Data Models
+class OverallAnalytics {
+  final double totalRevenue;
+  final int totalOrders;
+  final int totalProducts;
+  final int totalCustomers;
+  final int activeTenants;
+  final int expiredTenants;
+  final int totalTenants;
+  final double averageRevenuePerTenant;
+  final String timePeriod;
+
+  const OverallAnalytics({
+    required this.totalRevenue,
+    required this.totalOrders,
+    required this.totalProducts,
+    required this.totalCustomers,
+    required this.activeTenants,
+    required this.expiredTenants,
+    required this.totalTenants,
+    required this.averageRevenuePerTenant,
+    required this.timePeriod,
+  });
+
+  factory OverallAnalytics.empty() {
+    return OverallAnalytics(
+      totalRevenue: 0.0,
+      totalOrders: 0,
+      totalProducts: 0,
+      totalCustomers: 0,
+      activeTenants: 0,
+      expiredTenants: 0,
+      totalTenants: 0,
+      averageRevenuePerTenant: 0.0,
+      timePeriod: '7days',
+    );
+  }
+}
+
+class TenantAnalytics {
+  final String tenantId;
+  final String businessName;
+  final String subscriptionPlan;
+  final bool isActive;
+  final double revenue;
+  final int ordersCount;
+  final int productsCount;
+  final int customersCount;
+  final DateTime? subscriptionExpiry;
+
+  const TenantAnalytics({
+    required this.tenantId,
+    required this.businessName,
+    required this.subscriptionPlan,
+    required this.isActive,
+    required this.revenue,
+    required this.ordersCount,
+    required this.productsCount,
+    required this.customersCount,
+    this.subscriptionExpiry,
+  });
+}
 // Update the _ActionCard widget for better styling
 class _ActionCard extends StatelessWidget {
   final String title;
@@ -271,7 +2499,7 @@ class _ActionCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  _ActionCard(this.title, this.icon, this.color, this.onTap);
+  const _ActionCard(this.title, this.icon, this.color, this.onTap);
 
   @override
   Widget build(BuildContext context) {
@@ -331,7 +2559,7 @@ void main() async {
 class ErrorApp extends StatelessWidget {
   final dynamic error;
 
-  const ErrorApp({Key? key, required this.error}) : super(key: key);
+  const ErrorApp({super.key, required this.error});
 
   @override
   Widget build(BuildContext context) {
@@ -372,6 +2600,591 @@ class ErrorApp extends StatelessWidget {
 class FirebaseService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
+// Add to FirebaseService class
+  static Stream<QuerySnapshot> getSalesStream(String tenantId, {int limit = 100}) {
+    return _firestore
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('sales')
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots();
+  }
+
+  static Stream<QuerySnapshot> getSalesByDateRange(
+      String tenantId, {
+        required DateTime startDate,
+        required DateTime endDate,
+      }) {
+    return _firestore
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('sales')
+        .where('createdAt', isGreaterThanOrEqualTo: startDate)
+        .where('createdAt', isLessThanOrEqualTo: endDate)
+        .orderBy('createdAt', descending: true)
+        .snapshots();
+  }
+
+  static Future<Map<String, dynamic>> getSalesStats(String tenantId) async {
+    try {
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final todayEnd = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+      // Get today's sales
+      final todaySales = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('sales')
+          .where('createdAt', isGreaterThanOrEqualTo: todayStart)
+          .where('createdAt', isLessThanOrEqualTo: todayEnd)
+          .get();
+
+      // Get all sales for total stats
+      final allSales = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('sales')
+          .get();
+
+      double todayRevenue = 0;
+      int todaySalesCount = todaySales.docs.length;
+
+      for (final doc in todaySales.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        todayRevenue += (data['totalAmount'] as num?)?.toDouble() ?? 0;
+      }
+
+      double totalRevenue = 0;
+      int totalSalesCount = allSales.docs.length;
+
+      for (final doc in allSales.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        totalRevenue += (data['totalAmount'] as num?)?.toDouble() ?? 0;
+      }
+
+      return {
+        'todayRevenue': todayRevenue,
+        'todaySalesCount': todaySalesCount,
+        'totalRevenue': totalRevenue,
+        'totalSalesCount': totalSalesCount,
+        'averageOrderValue': totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0,
+      };
+    } catch (e) {
+      print('Error getting sales stats: $e');
+      return {
+        'todayRevenue': 0.0,
+        'todaySalesCount': 0,
+        'totalRevenue': 0.0,
+        'totalSalesCount': 0,
+        'averageOrderValue': 0.0,
+      };
+    }
+  }
+  // In FirebaseService class - Fix the loginWithActivity method
+  static Future<UserCredential> loginWithActivity({
+    required String email,
+    required String password,
+    String ipAddress = '',
+    String userAgent = '',
+  }) async {
+    final userCredential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+
+    // Update last login
+    await _updateLastLogin(userCredential.user!.uid);
+
+    // Log login activity
+    final userDoc = await _getUserDocument(userCredential.user!.uid);
+    if (userDoc.exists) {
+      final userData = userDoc.data() as Map<String, dynamic>? ?? {};
+      await _logUserActivity(
+        tenantId: userData['tenantId']?.toString() ?? 'unknown_tenant',
+        userId: userCredential.user!.uid,
+        userEmail: email,
+        userDisplayName: userData['displayName']?.toString() ?? email.split('@').first,
+        action: ActivityType.user_login,
+        description: 'User logged in successfully',
+        metadata: {
+          'loginMethod': 'email_password',
+          'ipAddress': ipAddress,
+        },
+        ipAddress: ipAddress,
+        userAgent: userAgent,
+      );
+    }
+
+    return userCredential;
+  }
+
+// Fix the _updateLastLogin method
+  static Future<void> _updateLastLogin(String uid) async {
+    final userDoc = await _getUserDocument(uid);
+    if (userDoc.exists) {
+      final userData = userDoc.data() as Map<String, dynamic>? ?? {};
+      final tenantId = userData['tenantId']?.toString() ?? 'unknown_tenant';
+      await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('users')
+          .doc(uid)
+          .update({
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
+    }
+  }
+
+// Fix the createSaleWithUserTracking method
+  static Future<void> createSaleWithUserTracking({
+    required String tenantId,
+    required String cashierId,
+    required List<Map<String, dynamic>> items,
+    required double totalAmount,
+    required double taxAmount,
+    required String paymentMethod,
+    String? customerEmail,
+    String? customerName,
+  }) async {
+    return await _handleFirebaseCall(() async {
+      final saleRef = _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('sales')
+          .doc();
+
+      // Get cashier details
+      final cashierDoc = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('users')
+          .doc(cashierId)
+          .get();
+
+      final cashierData = cashierDoc.data() as Map<String, dynamic>? ?? {};
+
+      // Start a batch write for transaction
+      final batch = _firestore.batch();
+
+      // Create enhanced sale document
+      batch.set(saleRef, {
+        'id': saleRef.id,
+        'cashierId': cashierId,
+        'cashierName': cashierData['displayName']?.toString() ?? 'Unknown Cashier',
+        'cashierEmail': cashierData['email']?.toString() ?? 'unknown@email.com',
+        'items': items,
+        'totalAmount': totalAmount,
+        'taxAmount': taxAmount,
+        'paymentMethod': paymentMethod,
+        'customerEmail': customerEmail,
+        'customerName': customerName,
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'completed',
+      });
+
+      // Update product stock
+      for (final item in items) {
+        final productRef = _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('products')
+            .doc(item['productId']?.toString() ?? '');
+
+        batch.update(productRef, {
+          'stock': FieldValue.increment(-(item['quantity'] as int? ?? 0)),
+        });
+      }
+
+      // Create notification for new sale
+      batch.set(
+        _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('notifications')
+            .doc(),
+        {
+          'type': 'new_sale',
+          'title': 'New Sale Completed',
+          'message':
+          'Sale #${saleRef.id} for \$${totalAmount.toStringAsFixed(2)}',
+          'isRead': false,
+          'createdAt': FieldValue.serverTimestamp(),
+        },
+      );
+
+      await batch.commit();
+
+      // Log sale activity
+      await _logUserActivity(
+        tenantId: tenantId,
+        userId: cashierId,
+        userEmail: cashierData['email']?.toString() ?? 'unknown@email.com',
+        userDisplayName: cashierData['displayName']?.toString() ?? 'Unknown User',
+        action: ActivityType.sale_created,
+        description: 'Sale #${saleRef.id} completed for \$${totalAmount.toStringAsFixed(2)}',
+        metadata: {
+          'saleId': saleRef.id,
+          'totalAmount': totalAmount,
+          'itemsCount': items.length,
+          'paymentMethod': paymentMethod,
+        },
+      );
+
+      return;
+    });
+  }
+// In FirebaseService class - Fix the _logUserActivity method calls
+  static Future<void> _logUserActivity({
+    required String tenantId,
+    required String userId,
+    required String userEmail,
+    required String userDisplayName,
+    required ActivityType action,
+    required String description,
+    Map<String, dynamic> metadata = const {},
+    String ipAddress = '',
+    String userAgent = '',
+  }) async {
+    try {
+      await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('user_activities')
+          .add({
+        'tenantId': tenantId,
+        'userId': userId,
+        'userEmail': userEmail,
+        'userDisplayName': userDisplayName,
+        'action': action.toString().split('.').last,
+        'description': description,
+        'metadata': metadata,
+        'timestamp': FieldValue.serverTimestamp(),
+        'ipAddress': ipAddress,
+        'userAgent': userAgent,
+      });
+    } catch (e) {
+      print('Failed to log activity: $e');
+      // Don't throw error for failed activity logging
+    }
+  }
+
+// Enhanced Login with Activity Tracking - FIXED
+
+
+
+
+// Update User Status with Activity Logging - FIXED
+  static Future<void> updateUserStatus({
+    required String tenantId,
+    required String userId,
+    required bool isActive,
+    required String updatedBy,
+  }) async {
+    return await _handleFirebaseCall(() async {
+      // Get user details before update
+      final userDoc = await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('users')
+          .doc(userId)
+          .get();
+
+      final userData = userDoc.data() as Map<String, dynamic>; // CAST HERE
+
+      // Update user status
+      await _firestore
+          .collection('tenants')
+          .doc(tenantId)
+          .collection('users')
+          .doc(userId)
+          .update({
+        'isActive': isActive,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Log the activity
+      await _logUserActivity(
+        tenantId: tenantId,
+        userId: updatedBy,
+        userEmail: userData['email'], // Use actual user email
+        userDisplayName: userData['displayName'], // Use actual display name
+        action: isActive ? ActivityType.user_updated : ActivityType.user_deactivated,
+        description: 'User ${isActive ? 'activated' : 'deactivated'} by admin',
+        metadata: {
+          'targetUserId': userId,
+          'targetUserEmail': userData['email'],
+          'previousStatus': !isActive,
+          'newStatus': isActive,
+        },
+      );
+
+      return;
+    });
+  }
+  // Enhanced User Creation
+  static Future<void> createUserWithDetails({
+    required String tenantId,
+    required String email,
+    required String password,
+    required String displayName,
+    required String role,
+    required String createdBy,
+    String? phoneNumber,
+    Map<String, dynamic>? profile,
+    List<String>? permissions,
+  }) async {
+    return await _handleFirebaseCall(() async {
+      // Validate password length
+      if (password.length < 6) {
+        throw 'Password must be at least 6 characters long';
+      }
+
+      try {
+        // Create user in Firebase Auth
+        final UserCredential userCredential = await _auth
+            .createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password,
+        );
+
+        // Update display name in Auth
+        await userCredential.user!.updateDisplayName(displayName);
+
+        // Create user document in tenant's users collection
+        await _firestore
+            .collection('tenants')
+            .doc(tenantId)
+            .collection('users')
+            .doc(userCredential.user!.uid)
+            .set({
+          'uid': userCredential.user!.uid,
+          'email': email.trim(),
+          'displayName': displayName,
+          'phoneNumber': phoneNumber,
+          'role': role,
+          'createdBy': createdBy,
+          'createdAt': FieldValue.serverTimestamp(),
+          'isActive': true,
+          'tenantId': tenantId,
+          'lastLogin': FieldValue.serverTimestamp(),
+          'profile': profile ?? {},
+          'permissions': permissions ?? _getDefaultPermissions(role),
+        });
+
+        // Log user creation activity
+        await _logUserActivity(
+          tenantId: tenantId,
+          userId: userCredential.user!.uid,
+          userEmail: email,
+          userDisplayName: displayName,
+          action: ActivityType.user_created,
+          description: 'User account created by $createdBy',
+          metadata: {
+            'role': role,
+            'displayName': displayName,
+          },
+        );
+
+      } catch (e) {
+        // If user creation fails in Firestore, delete the auth user
+        if (_auth.currentUser != null &&
+            _auth.currentUser!.email == email.trim()) {
+          await _auth.currentUser!.delete();
+        }
+        rethrow;
+      }
+
+      return;
+    });
+  }
+
+  static List<String> _getDefaultPermissions(String role) {
+    switch (role) {
+      case 'clientAdmin':
+        return ['manage_users', 'manage_products', 'view_reports', 'manage_sales'];
+      case 'salesInventoryManager':
+        return ['manage_products', 'view_reports', 'manage_sales'];
+      case 'cashier':
+        return ['process_sales', 'view_products'];
+      default:
+        return ['view_products'];
+    }
+  }
+
+
+  static Future<DocumentSnapshot> _getUserDocument(String uid) async {
+    // Search across all tenants for the user
+    final tenantsSnapshot = await _firestore
+        .collection('tenants')
+        .where('isActive', isEqualTo: true)
+        .get();
+
+    for (final tenantDoc in tenantsSnapshot.docs) {
+      final userDoc = await _firestore
+          .collection('tenants')
+          .doc(tenantDoc.id)
+          .collection('users')
+          .doc(uid)
+          .get();
+
+      if (userDoc.exists) {
+        return userDoc;
+      }
+    }
+
+    throw Exception('User document not found');
+  }
+
+
+
+
+  // Get User Activities
+  static Stream<QuerySnapshot> getUserActivities(
+      String tenantId, {
+        String? userId,
+        int limit = 50,
+      }) {
+    Query query = _firestore
+        .collection('tenants')
+        .doc(tenantId)
+        .collection('user_activities')
+        .orderBy('timestamp', descending: true)
+        .limit(limit);
+
+    if (userId != null) {
+      query = query.where('userId', isEqualTo: userId);
+    }
+
+    return query.snapshots();
+  }
+
+
+
+  // Existing methods remain the same but enhanced with activity logging...
+  static Future<void> createTenant({
+    required String tenantId,
+    required String businessName,
+    required String adminEmail,
+    required String adminPassword,
+    required String subscriptionPlan,
+  }) async {
+    return await _handleFirebaseCall(() async {
+      // Validate inputs
+      if (adminPassword.length < 6) {
+        throw 'Password must be at least 6 characters long';
+      }
+
+      if (!_isEmailValid(adminEmail)) {
+        throw 'Please enter a valid email address';
+      }
+
+      // Create tenant document
+      await _firestore.collection('tenants').doc(tenantId).set({
+        'businessName': businessName,
+        'subscriptionPlan': subscriptionPlan,
+        'subscriptionExpiry': _calculateExpiryDate(subscriptionPlan),
+        'isActive': true,
+        'createdAt': FieldValue.serverTimestamp(),
+        'branding': {
+          'primaryColor': '#2196F3',
+          'secondaryColor': '#FF9800',
+          'logoUrl': '',
+          'currency': 'USD',
+          'taxRate': 0.0,
+        },
+      });
+
+      // Create admin user using the enhanced method
+      await createUserWithDetails(
+        tenantId: tenantId,
+        email: adminEmail,
+        password: adminPassword,
+        displayName: 'Admin',
+        role: 'clientAdmin',
+        createdBy: 'system',
+      );
+
+      return;
+    });
+  }
+
+  // ... Rest of the existing FirebaseService methods remain the same
+
+  static DateTime _calculateExpiryDate(String plan) {
+    final now = DateTime.now();
+    switch (plan) {
+      case 'monthly':
+        return now.add(Duration(days: 30));
+      case 'yearly':
+        return now.add(Duration(days: 365));
+      default:
+        return now.add(Duration(days: 30));
+    }
+  }
+
+  static bool _isEmailValid(String email) {
+    final regex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    return regex.hasMatch(email);
+  }
+
+  static Future<T> _handleFirebaseCall<T>(Future<T> Function() call) async {
+    try {
+      return await call();
+    } on FirebaseAuthException catch (e) {
+      throw _handleFirebaseAuthError(e);
+    } on FirebaseException catch (e) {
+      throw _handleFirebaseError(e);
+    } catch (e) {
+      throw 'An unexpected error occurred: $e';
+    }
+  }
+
+  static String _handleFirebaseAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'This email is already registered.';
+      case 'invalid-email':
+        return 'Please enter a valid email address.';
+      case 'operation-not-allowed':
+        return 'Email/password accounts are not enabled.';
+      case 'weak-password':
+        return 'Password is too weak. Please use a stronger password.';
+      default:
+        return 'Authentication error: ${e.message}';
+    }
+  }
+
+  static String _handleFirebaseError(FirebaseException e) {
+    switch (e.code) {
+      case 'permission-denied':
+        return 'Access denied. Please check your permissions.';
+      case 'not-found':
+        return 'Requested data not found.';
+      case 'already-exists':
+        return 'Item already exists.';
+      case 'resource-exhausted':
+        return 'Quota exceeded. Please try again later.';
+      case 'unavailable':
+        return 'Service temporarily unavailable. Please check your connection.';
+      case 'unauthenticated':
+        return 'Please sign in to continue.';
+      default:
+        return 'An error occurred: ${e.message}';
+    }
+  }
+
+  static Future<void> _cacheOfflineData(
+      String type,
+      Map<String, dynamic> data,
+      ) async {
+    final offlineBox = Hive.box('offline_data');
+    final pendingSync =
+    offlineBox.get('pending_sync', defaultValue: []) as List;
+    pendingSync.add({'type': type, 'data': data, 'timestamp': DateTime.now()});
+    await offlineBox.put('pending_sync', pendingSync);
+  }
   // Add to FirebaseService class
   static Future<void> createUserInTenant({
     required String tenantId,
@@ -472,82 +3285,12 @@ class FirebaseService {
   }
 
   // Enhanced error handling wrapper
-  static Future<T> _handleFirebaseCall<T>(Future<T> Function() call) async {
-    try {
-      return await call();
-    } on FirebaseAuthException catch (e) {
-      throw _handleFirebaseAuthError(e);
-    } on FirebaseException catch (e) {
-      throw _handleFirebaseError(e);
-    } catch (e) {
-      throw 'An unexpected error occurred: $e';
-    }
-  }
+
 
   // Tenant management
   // Update the createTenant method in FirebaseService
-  static Future<void> createTenant({
-    required String tenantId,
-    required String businessName,
-    required String adminEmail,
-    required String adminPassword,
-    required String subscriptionPlan,
-  }) async {
-    return await _handleFirebaseCall(() async {
-      // Validate inputs
-      if (adminPassword.length < 6) {
-        throw 'Password must be at least 6 characters long';
-      }
 
-      if (!_isEmailValid(adminEmail)) {
-        throw 'Please enter a valid email address';
-      }
 
-      // Create tenant document
-      await _firestore.collection('tenants').doc(tenantId).set({
-        'businessName': businessName,
-        'subscriptionPlan': subscriptionPlan,
-        'subscriptionExpiry': _calculateExpiryDate(subscriptionPlan),
-        'isActive': true,
-        'createdAt': FieldValue.serverTimestamp(),
-        'branding': {
-          'primaryColor': '#2196F3',
-          'secondaryColor': '#FF9800',
-          'logoUrl': '',
-          'currency': 'USD',
-          'taxRate': 0.0,
-        },
-      });
-
-      // Create admin user using the new method
-      await createUserInTenant(
-        tenantId: tenantId,
-        email: adminEmail,
-        password: adminPassword,
-        role: 'clientAdmin', // Use string value instead of enum
-        createdBy: 'system',
-      );
-
-      return;
-    });
-  }
-
-  static DateTime _calculateExpiryDate(String plan) {
-    final now = DateTime.now();
-    switch (plan) {
-      case 'monthly':
-        return now.add(Duration(days: 30));
-      case 'yearly':
-        return now.add(Duration(days: 365));
-      default:
-        return now.add(Duration(days: 30));
-    }
-  }
-
-  static bool _isEmailValid(String email) {
-    final regex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-    return regex.hasMatch(email);
-  }
 
   // Product management
   static Future<void> addProduct({
@@ -813,13 +3556,13 @@ class FirebaseService {
           .get();
 
       final totalRevenue = salesSnapshot.docs.fold(0.0, (sum, doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         return sum + (data['totalAmount'] as double);
       });
 
       final totalSales = salesSnapshot.docs.length;
       final lowStockProducts = productsSnapshot.docs.where((doc) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         return data['lowStockAlert'] == true;
       }).length;
 
@@ -833,16 +3576,6 @@ class FirebaseService {
   }
 
   // Offline data synchronization
-  static Future<void> _cacheOfflineData(
-    String type,
-    Map<String, dynamic> data,
-  ) async {
-    final offlineBox = Hive.box('offline_data');
-    final pendingSync =
-        offlineBox.get('pending_sync', defaultValue: []) as List;
-    pendingSync.add({'type': type, 'data': data, 'timestamp': DateTime.now()});
-    await offlineBox.put('pending_sync', pendingSync);
-  }
 
   static Future<void> syncOfflineData(String tenantId) async {
     final offlineBox = Hive.box('offline_data');
@@ -871,39 +3604,7 @@ class FirebaseService {
     await offlineBox.put('pending_sync', []);
   }
 
-  static String _handleFirebaseAuthError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'email-already-in-use':
-        return 'This email is already registered.';
-      case 'invalid-email':
-        return 'Please enter a valid email address.';
-      case 'operation-not-allowed':
-        return 'Email/password accounts are not enabled.';
-      case 'weak-password':
-        return 'Password is too weak. Please use a stronger password.';
-      default:
-        return 'Authentication error: ${e.message}';
-    }
-  }
 
-  static String _handleFirebaseError(FirebaseException e) {
-    switch (e.code) {
-      case 'permission-denied':
-        return 'Access denied. Please check your permissions.';
-      case 'not-found':
-        return 'Requested data not found.';
-      case 'already-exists':
-        return 'Item already exists.';
-      case 'resource-exhausted':
-        return 'Quota exceeded. Please try again later.';
-      case 'unavailable':
-        return 'Service temporarily unavailable. Please check your connection.';
-      case 'unauthenticated':
-        return 'Please sign in to continue.';
-      default:
-        return 'An error occurred: ${e.message}';
-    }
-  }
 }
 
 // =============================
@@ -913,69 +3614,16 @@ enum UserRole { superAdmin, clientAdmin, cashier, salesInventoryManager }
 
 enum TicketStatus { open, inProgress, closed }
 
-class Tenant {
-  final String id;
-  final String businessName;
-  final String subscriptionPlan;
-  final DateTime subscriptionExpiry;
-  final bool isActive;
-  final Map<String, dynamic> branding;
 
-  Tenant({
-    required this.id,
-    required this.businessName,
-    required this.subscriptionPlan,
-    required this.subscriptionExpiry,
-    required this.isActive,
-    required this.branding,
-  });
-
-  factory Tenant.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>;
-    return Tenant(
-      id: doc.id,
-      businessName: data['businessName'] ?? '',
-      subscriptionPlan: data['subscriptionPlan'] ?? 'monthly',
-      subscriptionExpiry: (data['subscriptionExpiry'] as Timestamp).toDate(),
-      isActive: data['isActive'] ?? false,
-      branding: data['branding'] ?? {},
-    );
-  }
-
-  bool get isSubscriptionActive {
-    return isActive && subscriptionExpiry.isAfter(DateTime.now());
-  }
-}
-
-class AppUser {
-  final String uid;
-  final String email;
-  final UserRole role;
-  final String tenantId;
-  final bool isActive;
-
-  AppUser({
-    required this.uid,
-    required this.email,
-    required this.role,
-    required this.tenantId,
-    required this.isActive,
-  });
-
-  bool get canManageProducts =>
-      role == UserRole.clientAdmin || role == UserRole.salesInventoryManager;
-  bool get canProcessSales =>
-      role == UserRole.clientAdmin ||
-      role == UserRole.cashier ||
-      role == UserRole.salesInventoryManager;
-  bool get canManageUsers => role == UserRole.clientAdmin;
-  bool get isSuperAdmin => role == UserRole.superAdmin;
-}
 
 // =============================
 // PROVIDERS (STATE MANAGEMENT)
 // =============================
-class AuthProvider with ChangeNotifier {
+// =============================
+// ENHANCED AUTH PROVIDER
+// =============================
+// Enhanced AuthProvider with proper casting
+class MyAuthProvider with ChangeNotifier {
   AppUser? _currentUser;
   Tenant? _currentTenant;
   bool _isLoading = false;
@@ -1002,7 +3650,10 @@ class AuthProvider with ChangeNotifier {
       }
 
       final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email.trim(), password: password);
+          .signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
 
       await _loadUserData(userCredential.user!.uid);
 
@@ -1010,6 +3661,22 @@ class AuthProvider with ChangeNotifier {
       if (_currentTenant != null) {
         await FirebaseService.syncOfflineData(_currentTenant!.id);
       }
+
+      // Log successful login
+      if (_currentUser != null && !_currentUser!.isSuperAdmin) {
+        await FirebaseService._logUserActivity(
+          tenantId: _currentUser!.tenantId,
+          userId: _currentUser!.uid,
+          userEmail: _currentUser!.email,
+          userDisplayName: _currentUser!.displayName,
+          action: ActivityType.user_login,
+          description: 'User logged in successfully',
+          metadata: {
+            'loginMethod': 'email_password',
+          },
+        );
+      }
+
     } on FirebaseAuthException catch (e) {
       _error = _handleAuthError(e);
       print('Firebase Auth Error: ${e.code} - ${e.message}');
@@ -1028,6 +3695,8 @@ class AuthProvider with ChangeNotifier {
       _error = null;
       notifyListeners();
 
+      print('Loading user data for UID: $uid');
+
       // First, check if user is super admin
       final superAdminSnapshot = await FirebaseFirestore.instance
           .collection('super_admins')
@@ -1035,13 +3704,25 @@ class AuthProvider with ChangeNotifier {
           .get();
 
       if (superAdminSnapshot.exists) {
+        final adminData = superAdminSnapshot.data() as Map<String, dynamic>? ?? {};
+        print('Super admin data: $adminData');
+
         _currentUser = AppUser(
           uid: uid,
-          email: FirebaseAuth.instance.currentUser!.email!,
+          email: FirebaseAuth.instance.currentUser?.email ?? 'unknown@email.com',
+          displayName: '${adminData['firstName'] ?? 'Admin'} ${adminData['lastName'] ?? ''}'.trim(),
           role: UserRole.superAdmin,
           tenantId: 'super_admin',
-          isActive: true,
+          isActive: adminData['isActive'] ?? true,
+          createdAt: adminData['createdAt'] != null
+              ? (adminData['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          createdBy: adminData['createdBy'] ?? 'system',
+          lastLogin: adminData['lastLogin'] != null
+              ? (adminData['lastLogin'] as Timestamp).toDate()
+              : null,
         );
+        print('Super admin user loaded successfully');
         return;
       }
 
@@ -1050,6 +3731,8 @@ class AuthProvider with ChangeNotifier {
           .collection('tenants')
           .where('isActive', isEqualTo: true)
           .get();
+
+      print('Found ${tenantsSnapshot.docs.length} active tenants');
 
       bool userFound = false;
 
@@ -1062,58 +3745,50 @@ class AuthProvider with ChangeNotifier {
             .get();
 
         if (userDoc.exists) {
-          final userData = userDoc.data()!;
-          _currentUser = AppUser(
-            uid: uid,
-            email: userData['email'],
-            role: _parseUserRole(userData['role']),
-            tenantId: tenantDoc.id,
-            isActive: userData['isActive'] ?? false,
-          );
+          print('User found in tenant: ${tenantDoc.id}');
+          final userData = userDoc.data() as Map<String, dynamic>? ?? {};
 
-          // Load tenant data
-          _currentTenant = Tenant.fromFirestore(tenantDoc);
-          userFound = true;
-          break;
+          try {
+            _currentUser = AppUser.fromFirestore(userDoc);
+            _currentTenant = Tenant.fromFirestore(tenantDoc);
+            userFound = true;
+            print('User data loaded successfully: ${_currentUser?.email}');
+            break;
+          } catch (e) {
+            print('Error parsing user data: $e');
+            throw Exception('Failed to parse user data: $e');
+          }
         }
       }
 
       if (!userFound) {
-        throw Exception('User not found in any active tenant');
+        print('User not found in any tenant');
+        throw Exception('User not found in any active tenant. Please contact administrator.');
       }
     } catch (e) {
       _error = 'Failed to load user data: $e';
+      print('Error in _loadUserData: $e');
       await logout();
       rethrow;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
-  }
-
-  // Helper method to parse user role from string
-  UserRole _parseUserRole(String roleString) {
-    switch (roleString) {
-      case 'superAdmin':
-        return UserRole.superAdmin;
-      case 'clientAdmin':
-        return UserRole.clientAdmin;
-      case 'cashier':
-        return UserRole.cashier;
-      case 'salesInventoryManager':
-        return UserRole.salesInventoryManager;
-      default:
-        return UserRole.cashier;
-    }
-  }
-
-  String _extractTenantIdFromPath(String path) {
-    // Path format: tenants/{tenantId}/users/{userId}
-    final parts = path.split('/');
-    if (parts.length >= 2 && parts[0] == 'tenants') {
-      return parts[1];
-    }
-    throw Exception('Invalid user path: $path');
   }
 
   Future<void> logout() async {
+    // Log logout activity if user is logged in
+    if (_currentUser != null && !_currentUser!.isSuperAdmin) {
+      await FirebaseService._logUserActivity(
+        tenantId: _currentUser!.tenantId,
+        userId: _currentUser!.uid,
+        userEmail: _currentUser!.email,
+        userDisplayName: _currentUser!.displayName,
+        action: ActivityType.user_logout,
+        description: 'User logged out',
+      );
+    }
+
     await FirebaseAuth.instance.signOut();
     _currentUser = null;
     _currentTenant = null;
@@ -1138,6 +3813,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 }
+
 
 class TenantProvider with ChangeNotifier {
   final List<Tenant> _tenants = [];
@@ -1207,31 +3883,56 @@ class TenantProvider with ChangeNotifier {
 // =============================
 // WIDGETS - CORE UI COMPONENTS
 // =============================
+
+
+
 class MultiTenantSaaSApp extends StatelessWidget {
+  const MultiTenantSaaSApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => MyAuthProvider()),
         ChangeNotifierProvider(create: (_) => TenantProvider()),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..loadSavedTheme()),
       ],
-      child: MaterialApp(
-        title: 'Multi-Tenant SaaS',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-          visualDensity: VisualDensity.adaptivePlatformDensity,
-        ),
-        home: AuthWrapper(),
-        debugShowCheckedModeBanner: false,
+      // 👇 Use Builder to get a new context with access to the providers
+      child: Builder(
+        builder: (context) {
+          final themeProvider = context.watch<ThemeProvider>();
+
+          return MaterialApp(
+            title: 'Multi-Tenant SaaS',
+            theme: ThemeData.light().copyWith(
+              colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+              useMaterial3: true,
+            ),
+            darkTheme: ThemeData.dark().copyWith(
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: Colors.blue,
+                brightness: Brightness.dark,
+              ),
+              useMaterial3: true,
+            ),
+            themeMode: themeProvider.useSystemTheme
+                ? ThemeMode.system
+                : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light),
+            home: const AuthWrapper(),
+            debugShowCheckedModeBanner: false,
+          );
+        },
       ),
     );
   }
 }
 
 class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return FutureBuilder<bool>(
       future: _checkSuperAdminExists(),
@@ -1287,6 +3988,8 @@ class AuthWrapper extends StatelessWidget {
 // AUTH SCREENS
 // =============================
 class SplashScreen extends StatelessWidget {
+  const SplashScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1311,8 +4014,10 @@ class SplashScreen extends StatelessWidget {
 
 
 class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
   @override
-  _LoginScreenState createState() => _LoginScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
@@ -1332,20 +4037,20 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     super.initState();
     _animationController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1000),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Interval(0.0, 0.5, curve: Curves.easeOut),
+        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
       ),
     );
 
     _slideAnimation = Tween<double>(begin: 30.0, end: 0.0).animate(
       CurvedAnimation(
         parent: _animationController,
-        curve: Interval(0.3, 1.0, curve: Curves.easeOut),
+        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
       ),
     );
 
@@ -1355,488 +4060,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     _animationController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    final size = MediaQuery.of(context).size;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: isDark
-                ? [
-              Color(0xFF0F2027),
-              Color(0xFF203A43),
-              Color(0xFF2C5364),
-            ]
-                : [
-              Color(0xFF667EEA),
-              Color(0xFF764BA2),
-            ],
-          ),
-        ),
-        child: Center(
-          child: Container(
-            constraints: BoxConstraints(maxWidth: 500),
-            margin: EdgeInsets.all(20),
-            child: AnimatedBuilder(
-              animation: _animationController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(0, _slideAnimation.value),
-                  child: Opacity(
-                    opacity: _fadeAnimation.value,
-                    child: child,
-                  ),
-                );
-              },
-              child: Card(
-                elevation: 24,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.all(40),
-                  child: SingleChildScrollView(
-                    child: Form(
-                      key: _formKey,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Logo with modern design
-                          Container(
-                            width: 80,
-                            height: 80,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 20,
-                                  offset: Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.rocket_launch_rounded,
-                              color: Colors.white,
-                              size: 40,
-                            ),
-                          ),
-
-                          SizedBox(height: 32),
-
-                          // Welcome text
-                          Text(
-                            'Welcome Back',
-                            style: TextStyle(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w800,
-                              color: isDark ? Colors.white : Color(0xFF2D3748),
-                            ),
-                          ),
-
-                          SizedBox(height: 8),
-
-                          Text(
-                            'Sign in to continue your journey',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: isDark ? Colors.white70 : Color(0xFF718096),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-
-                          SizedBox(height: 32),
-
-                          // Error message with modern design
-                          if (authProvider.error != null)
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.all(16),
-                              margin: EdgeInsets.only(bottom: 20),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: Colors.red.withOpacity(0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    padding: EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      Icons.error_outline,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  ),
-                                  SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      authProvider.error!,
-                                      style: TextStyle(
-                                        color: Colors.red,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    // onTap: () => authProvider.clearError(),
-                                    child: Icon(
-                                      Icons.close,
-                                      color: Colors.red,
-                                      size: 18,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                          // Email field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: TextFormField(
-                              controller: _emailController,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              decoration: InputDecoration(
-                                labelText: 'Email Address',
-                                labelStyle: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                                prefixIcon: Container(
-                                  margin: EdgeInsets.only(right: 12, left: 16),
-                                  child: Icon(
-                                    Icons.email_rounded,
-                                    color: Color(0xFF667EEA),
-                                  ),
-                                ),
-                                filled: true,
-                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              ),
-                              keyboardType: TextInputType.emailAddress,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your email';
-                                }
-                                if (!AppUtils.isEmailValid(value)) {
-                                  return 'Please enter a valid email';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Password field
-                          Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.05),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 5),
-                                ),
-                              ],
-                            ),
-                            child: TextFormField(
-                              controller: _passwordController,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              obscureText: _obscurePassword,
-                              decoration: InputDecoration(
-                                labelText: 'Password',
-                                labelStyle: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                                prefixIcon: Container(
-                                  margin: EdgeInsets.only(right: 12, left: 16),
-                                  child: Icon(
-                                    Icons.lock_rounded,
-                                    color: Color(0xFF667EEA),
-                                  ),
-                                ),
-                                suffixIcon: GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _obscurePassword = !_obscurePassword;
-                                    });
-                                  },
-                                  child: Container(
-                                    margin: EdgeInsets.only(right: 16),
-                                    child: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_rounded
-                                          : Icons.visibility_off_rounded,
-                                      color: Color(0xFF718096),
-                                    ),
-                                  ),
-                                ),
-                                filled: true,
-                                fillColor: isDark ? Color(0xFF2D3748) : Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide.none,
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                  borderSide: BorderSide(
-                                    color: Color(0xFF667EEA),
-                                    width: 2,
-                                  ),
-                                ),
-                                contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              ),
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please enter your password';
-                                }
-                                if (value.length < 6) {
-                                  return 'Password must be at least 6 characters';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-
-                          SizedBox(height: 24),
-
-                          // Sign In button
-                          MouseRegion(
-                            onEnter: (_) => setState(() => _isHovering = true),
-                            onExit: (_) => setState(() => _isHovering = false),
-                            child: AnimatedContainer(
-                              duration: Duration(milliseconds: 300),
-                              width: double.infinity,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: _isHovering
-                                    ? [
-                                  BoxShadow(
-                                    color: Color(0xFF667EEA).withOpacity(0.4),
-                                    blurRadius: 20,
-                                    offset: Offset(0, 10),
-                                  ),
-                                ]
-                                    : [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 10,
-                                    offset: Offset(0, 5),
-                                  ),
-                                ],
-                              ),
-                              child: ElevatedButton(
-                                onPressed: authProvider.isLoading
-                                    ? null
-                                    : () async {
-                                  if (_formKey.currentState!.validate()) {
-                                    await authProvider.login(
-                                      _emailController.text.trim(),
-                                      _passwordController.text,
-                                    );
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  elevation: 0,
-                                ),
-                                child: authProvider.isLoading
-                                    ? SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                    : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Sign In',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    SizedBox(width: 8),
-                                    Icon(
-                                      Icons.arrow_forward_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-
-                          SizedBox(height: 24),
-
-                          // Sign up link
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'New to our platform?',
-                                style: TextStyle(
-                                  color: isDark ? Colors.white70 : Color(0xFF718096),
-                                ),
-                              ),
-                              SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => Navigator.push(
-                                  context,
-                                  PageRouteBuilder(
-                                    pageBuilder: (_, __, ___) => ClientSignupScreen(),
-                                    transitionsBuilder: (_, animation, __, child) {
-                                      return FadeTransition(
-                                        opacity: animation,
-                                        child: child,
-                                      );
-                                    },
-                                  ),
-                                ),
-                                child: Text(
-                                  'Create account',
-                                  style: TextStyle(
-                                    color: Color(0xFF667EEA),
-                                    fontWeight: FontWeight.w600,
-                                    decoration: TextDecoration.underline,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Divider
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Divider(
-                                  color: isDark ? Colors.white24 : Colors.grey[300],
-                                ),
-                              ),
-                              Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 16),
-                                child: Text(
-                                  'or',
-                                  style: TextStyle(
-                                    color: isDark ? Colors.white54 : Color(0xFF718096),
-                                  ),
-                                ),
-                              ),
-                              Expanded(
-                                child: Divider(
-                                  color: isDark ? Colors.white24 : Colors.grey[300],
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          SizedBox(height: 20),
-
-                          // Social login buttons
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildSocialButton(
-                                icon: Icons.g_mobiledata_rounded,
-                                color: Colors.red,
-                                onTap: () {},
-                              ),
-                              SizedBox(width: 16),
-                              _buildSocialButton(
-                                icon: Icons.facebook_rounded,
-                                color: Colors.blue,
-                                onTap: () {},
-                              ),
-                              SizedBox(width: 16),
-                              _buildSocialButton(
-                                icon: Icons.apple_rounded,
-                                color: Colors.black,
-                                onTap: () {},
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+  void _showThemeSelector(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => const ThemeSelectorBottomSheet(),
     );
   }
 
@@ -1848,14 +4082,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         height: 50,
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark
-              ? Color(0xFF2D3748)
+              ? const Color(0xFF2D3748)
               : Colors.white,
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
-              offset: Offset(0, 5),
+              offset: const Offset(0, 5),
             ),
           ],
         ),
@@ -1867,11 +4101,496 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
+    final gradientColors = themeProvider.getCurrentGradientColors();
+    final isDark = themeProvider.isDarkMode;
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: gradientColors,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 500),
+                margin: const EdgeInsets.all(20),
+                child: AnimatedBuilder(
+                  animation: _animationController,
+                  builder: (context, child) {
+                    return Transform.translate(
+                      offset: Offset(0, _slideAnimation.value),
+                      child: Opacity(
+                        opacity: _fadeAnimation.value,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Card(
+                    elevation: 24,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: SingleChildScrollView(
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: IconButton(
+                                      onPressed: () => _showThemeSelector(context),
+                                      icon: const Icon(
+                                        Icons.palette_rounded,
+                                        color: Colors.white,
+                                      ),
+                                      tooltip: 'Change Theme',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Container(
+                                width: 80,
+                                height: 80,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: gradientColors,
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.1),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 10),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.rocket_launch_rounded,
+                                  color: Colors.white,
+                                  size: 40,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              Text(
+                                'Welcome Back',
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : const Color(0xFF2D3748),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Sign in to continue your journey',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 32),
+                              if (authProvider.error != null)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(16),
+                                  margin: const EdgeInsets.only(bottom: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(16),
+                                    border: Border.all(
+                                      color: Colors.red.withOpacity(0.3),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: const BoxDecoration(
+                                          color: Colors.red,
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.error_outline,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Text(
+                                          authProvider.error!,
+                                          style: const TextStyle(
+                                            color: Colors.red,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      GestureDetector(
+                                        // onTap: () => authProvider.clearError(),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.red,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: TextFormField(
+                                  controller: _emailController,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  decoration: InputDecoration(
+                                    labelText: 'Email Address',
+                                    labelStyle: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                    prefixIcon: Container(
+                                      margin: const EdgeInsets.only(right: 12, left: 16),
+                                      child: const Icon(
+                                        Icons.email_rounded,
+                                        color: Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF667EEA),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  ),
+                                  keyboardType: TextInputType.emailAddress,
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter your email';
+                                    }
+                                    if (!AppUtils.isEmailValid(value)) {
+                                      return 'Please enter a valid email';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                              Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                ),
+                                child: TextFormField(
+                                  controller: _passwordController,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  obscureText: _obscurePassword,
+                                  decoration: InputDecoration(
+                                    labelText: 'Password',
+                                    labelStyle: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                    prefixIcon: Container(
+                                      margin: const EdgeInsets.only(right: 12, left: 16),
+                                      child: const Icon(
+                                        Icons.lock_rounded,
+                                        color: Color(0xFF667EEA),
+                                      ),
+                                    ),
+                                    suffixIcon: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
+                                      child: Container(
+                                        margin: const EdgeInsets.only(right: 16),
+                                        child: Icon(
+                                          _obscurePassword
+                                              ? Icons.visibility_rounded
+                                              : Icons.visibility_off_rounded,
+                                          color: const Color(0xFF718096),
+                                        ),
+                                      ),
+                                    ),
+                                    filled: true,
+                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: BorderSide.none,
+                                    ),
+                                    focusedBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                      borderSide: const BorderSide(
+                                        color: Color(0xFF667EEA),
+                                        width: 2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                                  ),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please enter your password';
+                                    }
+                                    if (value.length < 6) {
+                                      return 'Password must be at least 6 characters';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              MouseRegion(
+                                onEnter: (_) => setState(() => _isHovering = true),
+                                onExit: (_) => setState(() => _isHovering = false),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  width: double.infinity,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [const Color(0xFF667EEA), const Color(0xFF764BA2)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: _isHovering
+                                        ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF667EEA).withOpacity(0.4),
+                                        blurRadius: 20,
+                                        offset: const Offset(0, 10),
+                                      ),
+                                    ]
+                                        : [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.1),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 5),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ElevatedButton(
+                                    onPressed: authProvider.isLoading
+                                        ? null
+                                        : () async {
+                                      if (_formKey.currentState!.validate()) {
+                                        await authProvider.login(
+                                          _emailController.text.trim(),
+                                          _passwordController.text,
+                                        );
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.transparent,
+                                      shadowColor: Colors.transparent,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      elevation: 0,
+                                    ),
+                                    child: authProvider.isLoading
+                                        ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                        : const Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          'Sign In',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        SizedBox(width: 8),
+                                        Icon(
+                                          Icons.arrow_forward_rounded,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    'New to our platform?',
+                                    style: TextStyle(
+                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      PageRouteBuilder(
+                                        pageBuilder: (_, __, ___) => const ClientSignupScreen(),
+                                        transitionsBuilder: (_, animation, __, child) {
+                                          return FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Create account',
+                                      style: TextStyle(
+                                        color: Color(0xFF667EEA),
+                                        fontWeight: FontWeight.w600,
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Divider(
+                                      color: isDark ? Colors.white24 : Colors.grey[300],
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                    child: Text(
+                                      'or',
+                                      style: TextStyle(
+                                        color: isDark ? Colors.white54 : const Color(0xFF718096),
+                                      ),
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Divider(
+                                      color: isDark ? Colors.white24 : Colors.grey[300],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSocialButton(
+                                    icon: Icons.g_mobiledata_rounded,
+                                    color: Colors.red,
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    icon: Icons.facebook_rounded,
+                                    color: Colors.blue,
+                                    onTap: () {},
+                                  ),
+                                  const SizedBox(width: 16),
+                                  _buildSocialButton(
+                                    icon: Icons.apple_rounded,
+                                    color: Colors.black,
+                                    onTap: () {},
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class AccountDisabledScreen extends StatelessWidget {
+  const AccountDisabledScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
+    final gradientColors = themeProvider.getCurrentGradientColors();
+
+    // Handle system theme
+    final brightness = MediaQuery.of(context).platformBrightness;
+    final isDark = themeProvider.useSystemTheme
+        ? brightness == Brightness.dark
+        : themeProvider.isDarkMode;
     return Scaffold(
       body: Center(
         child: Padding(
@@ -1894,7 +4613,7 @@ class AccountDisabledScreen extends StatelessWidget {
               SizedBox(height: 30),
               ElevatedButton(
                 onPressed: () =>
-                    Provider.of<AuthProvider>(context, listen: false).logout(),
+                    Provider.of<MyAuthProvider>(context, listen: false).logout(),
                 child: Text('Return to Login'),
               ),
             ],
@@ -1909,6 +4628,8 @@ class AccountDisabledScreen extends StatelessWidget {
 // CLIENT SIGNUP / ONBOARDING
 // =============================
 class ClientSignupScreen extends StatefulWidget {
+  const ClientSignupScreen({super.key});
+
   @override
   _ClientSignupScreenState createState() => _ClientSignupScreenState();
 }
@@ -1922,8 +4643,8 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
   String _adminEmail = '';
   String _adminPassword = '';
   String _subscriptionPlan = 'monthly';
-  List<Map<String, dynamic>> _initialProducts = [];
-  List<Map<String, dynamic>> _initialUsers = [];
+  final List<Map<String, dynamic>> _initialProducts = [];
+  final List<Map<String, dynamic>> _initialUsers = [];
 
   final List<Widget> _steps = [];
 
@@ -1980,9 +4701,7 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
   Future<void> _completeSignup(BuildContext context) async {
     try {
       final tenantId =
-          _businessName.toLowerCase().replaceAll(' ', '_') +
-          '_' +
-          DateTime.now().millisecondsSinceEpoch.toString();
+          '${_businessName.toLowerCase().replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}';
 
       await FirebaseService.createTenant(
         tenantId: tenantId,
@@ -2060,7 +4779,7 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
 
 class _BusinessInfoStep extends StatefulWidget {
   final Function(String) onComplete;
-  _BusinessInfoStep(this.onComplete);
+  const _BusinessInfoStep(this.onComplete);
 
   @override
   __BusinessInfoStepState createState() => __BusinessInfoStepState();
@@ -2116,7 +4835,7 @@ class __BusinessInfoStepState extends State<_BusinessInfoStep> {
 
 class _AdminAccountStep extends StatefulWidget {
   final Function(String, String) onComplete;
-  _AdminAccountStep(this.onComplete);
+  const _AdminAccountStep(this.onComplete);
 
   @override
   __AdminAccountStepState createState() => __AdminAccountStepState();
@@ -2203,7 +4922,7 @@ class __AdminAccountStepState extends State<_AdminAccountStep> {
 
 class _SubscriptionStep extends StatefulWidget {
   final Function(String) onComplete;
-  _SubscriptionStep(this.onComplete);
+  const _SubscriptionStep(this.onComplete);
 
   @override
   __SubscriptionStepState createState() => __SubscriptionStepState();
@@ -2290,7 +5009,7 @@ class __SubscriptionStepState extends State<_SubscriptionStep> {
 
 class _ConfirmationStep extends StatelessWidget {
   final Function(BuildContext) onComplete;
-  _ConfirmationStep(this.onComplete);
+  const _ConfirmationStep(this.onComplete);
 
   @override
   Widget build(BuildContext context) {
@@ -2328,7 +5047,7 @@ class _ConfirmationStep extends StatelessWidget {
 
 class AddUserDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
-  AddUserDialog({required this.onSave});
+  const AddUserDialog({super.key, required this.onSave});
 
   @override
   _AddUserDialogState createState() => _AddUserDialogState();
@@ -2352,7 +5071,7 @@ class _AddUserDialogState extends State<AddUserDialog> {
           ),
           SizedBox(height: 20),
           DropdownButtonFormField(
-            value: _selectedRole,
+            initialValue: _selectedRole,
             items: [
               DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
               DropdownMenuItem(
@@ -2391,7 +5110,7 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  _StatCard(this.title, this.value, this.icon, this.color);
+  const _StatCard(this.title, this.value, this.icon, this.color);
 
   @override
   Widget build(BuildContext context) {
@@ -2417,6 +5136,8 @@ class _StatCard extends StatelessWidget {
 
 // Create the new screen
 class SuperAdminManagementScreen extends StatefulWidget {
+  const SuperAdminManagementScreen({super.key});
+
   @override
   _SuperAdminManagementScreenState createState() =>
       _SuperAdminManagementScreenState();
@@ -2596,9 +5317,11 @@ class _SuperAdminManagementScreenState
 }
 
 class UsersScreen extends StatelessWidget {
+  const UsersScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       body: StreamBuilder<QuerySnapshot>(
@@ -2661,9 +5384,11 @@ class UsersScreen extends StatelessWidget {
 }
 
 class ProfileScreen extends StatelessWidget {
+  const ProfileScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     final tenant = authProvider.currentTenant;
 
     return Padding(
@@ -2711,7 +5436,7 @@ class ProfileScreen extends StatelessWidget {
           ),
 
           ElevatedButton(onPressed: (){
-            final authProvider = Provider.of<AuthProvider>(context,listen: false);
+            final authProvider = Provider.of<MyAuthProvider>(context,listen: false);
             authProvider.logout();
 
           }, child: Text("Logout")),
@@ -2769,6 +5494,8 @@ class ProfileScreen extends StatelessWidget {
 // super_admin_setup_screen.dart
 
 class SuperAdminSetupScreen extends StatefulWidget {
+  const SuperAdminSetupScreen({super.key});
+
   @override
   _SuperAdminSetupScreenState createState() => _SuperAdminSetupScreenState();
 }
@@ -2786,8 +5513,10 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider=Provider.of<MyAuthProvider>(context);
     return Scaffold(
       backgroundColor: Colors.blue[50],
+      appBar: AppBar(actions: [       ],),
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
@@ -3035,7 +5764,7 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
       );
 
       // Auto-login the new super admin
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
       await authProvider.login(
         _emailController.text.trim(),
         _passwordController.text,
@@ -3128,6 +5857,8 @@ class SuperAdminSetup {
 }
 
 class SuperAdminDashboard extends StatefulWidget {
+  const SuperAdminDashboard({super.key});
+
   @override
   _SuperAdminDashboardState createState() => _SuperAdminDashboardState();
 }
@@ -3150,12 +5881,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> _superAdminScreens = [
+    final List<Widget> superAdminScreens = [
       /////////
       SuperAdminHome(),
       TenantsManagementScreen(),
-      SystemAnalyticsScreen(),
-      SuperAdminTicketsScreen(),
+SuperAdminAnalyticsScreen(),      SuperAdminTicketsScreen(),
       SuperAdminManagementScreen(), // Make sure this is included
     ];
 
@@ -3177,11 +5907,11 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
           IconButton(
             icon: Icon(Icons.logout),
             onPressed: () =>
-                Provider.of<AuthProvider>(context, listen: false).logout(),
+                Provider.of<MyAuthProvider>(context, listen: false).logout(),
           ),
         ],
       ),
-      body: _superAdminScreens[_currentIndex],
+      body: superAdminScreens[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
         selectedIconTheme: IconThemeData(color: Colors.black),
         unselectedIconTheme: IconThemeData(color: Colors.grey),
@@ -3213,6 +5943,8 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
 }
 
 class TenantsManagementScreen extends StatelessWidget {
+  const TenantsManagementScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final tenantProvider = Provider.of<TenantProvider>(context);
@@ -3282,7 +6014,7 @@ class TenantsManagementScreen extends StatelessWidget {
 
 class TenantManagementCard extends StatefulWidget {
   final Tenant tenant;
-  TenantManagementCard({required this.tenant});
+  const TenantManagementCard({super.key, required this.tenant});
 
   @override
   _TenantManagementCardState createState() => _TenantManagementCardState();
@@ -3294,7 +6026,7 @@ class _QuickStat extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  _QuickStat(this.label, this.value, this.icon, [this.color = Colors.blue]);
+  const _QuickStat(this.label, this.value, this.icon, this.color);
 
   @override
   Widget build(BuildContext context) {
@@ -3507,7 +6239,7 @@ class _TenantManagementCardState extends State<TenantManagementCard> {
             }
 
             final users = snapshot.data!.docs;
-            return Container(
+            return SizedBox(
               width: double.maxFinite,
               child: ListView.builder(
                 shrinkWrap: true,
@@ -3538,7 +6270,7 @@ class _TenantManagementCardState extends State<TenantManagementCard> {
 class RenewSubscriptionDialog extends StatefulWidget {
   final Tenant tenant;
   final Function(String, DateTime) onRenew;
-  RenewSubscriptionDialog({required this.tenant, required this.onRenew});
+  const RenewSubscriptionDialog({super.key, required this.tenant, required this.onRenew});
 
   @override
   _RenewSubscriptionDialogState createState() =>
@@ -3557,7 +6289,7 @@ class _RenewSubscriptionDialogState extends State<RenewSubscriptionDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField(
-            value: _selectedPlan,
+            initialValue: _selectedPlan,
             items: [
               DropdownMenuItem(value: 'monthly', child: Text('Monthly')),
               DropdownMenuItem(value: 'yearly', child: Text('Yearly')),
@@ -3614,7 +6346,7 @@ class _RenewSubscriptionDialogState extends State<RenewSubscriptionDialog> {
 
 class TenantDetailsDialog extends StatelessWidget {
   final Tenant tenant;
-  TenantDetailsDialog({required this.tenant});
+  const TenantDetailsDialog({super.key, required this.tenant});
 
   @override
   Widget build(BuildContext context) {
@@ -3654,6 +6386,8 @@ class TenantDetailsDialog extends StatelessWidget {
 }
 
 class CreateTenantDialog extends StatefulWidget {
+  const CreateTenantDialog({super.key});
+
   @override
   _CreateTenantDialogState createState() => _CreateTenantDialogState();
 }
@@ -3823,7 +6557,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
               SizedBox(height: 12),
 
               DropdownButtonFormField<String>(
-                value: _selectedPlan,
+                initialValue: _selectedPlan,
                 decoration: InputDecoration(
                   labelText: 'Subscription Plan *',
                   border: OutlineInputBorder(),
@@ -3973,12 +6707,10 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
     try {
       // Generate tenant ID
       final tenantId =
-          _businessNameController.text.toLowerCase().replaceAll(
+          '${_businessNameController.text.toLowerCase().replaceAll(
             RegExp(r'[^a-z0-9]'),
             '_',
-          ) +
-          '_' +
-          DateTime.now().millisecondsSinceEpoch.toString();
+          )}_${DateTime.now().millisecondsSinceEpoch}';
 
       print('Creating tenant: $tenantId');
 
@@ -4040,7 +6772,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
-  _DetailRow(this.label, this.value);
+  const _DetailRow(this.label, this.value);
 
   @override
   Widget build(BuildContext context) {
@@ -4061,9 +6793,11 @@ class _DetailRow extends StatelessWidget {
 // ADDITIONAL FEATURES
 // =============================
 class TicketsScreen extends StatelessWidget {
+  const TicketsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Support Tickets')),
@@ -4074,10 +6808,12 @@ class TicketsScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
+          }
 
           final tickets = snapshot.data!.docs;
 
@@ -4157,6 +6893,8 @@ class TicketsScreen extends StatelessWidget {
 }
 
 class CreateTicketDialog extends StatefulWidget {
+  const CreateTicketDialog({super.key});
+
   @override
   _CreateTicketDialogState createState() => _CreateTicketDialogState();
 }
@@ -4167,7 +6905,7 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return AlertDialog(
       title: Text('Create Support Ticket'),
@@ -4213,7 +6951,7 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
 class TicketDetailsDialog extends StatelessWidget {
   final String ticketId;
   final Map<String, dynamic> ticket;
-  TicketDetailsDialog({required this.ticketId, required this.ticket});
+  const TicketDetailsDialog({super.key, required this.ticketId, required this.ticket});
 
   @override
   Widget build(BuildContext context) {
@@ -4235,7 +6973,7 @@ class TicketDetailsDialog extends StatelessWidget {
                       child: Text('- ${reply['message']}'),
                     ),
                   )
-                  .toList(),
+                  ,
             ],
           ],
         ),
@@ -4251,6 +6989,8 @@ class TicketDetailsDialog extends StatelessWidget {
 }
 
 class SuperAdminTicketsScreen extends StatelessWidget {
+  const SuperAdminTicketsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4261,10 +7001,12 @@ class SuperAdminTicketsScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
+          }
 
           final tickets = snapshot.data!.docs;
 
@@ -4363,7 +7105,7 @@ class SuperAdminTicketsScreen extends StatelessWidget {
 class ManageTicketDialog extends StatefulWidget {
   final String ticketId;
   final Map<String, dynamic> ticket;
-  ManageTicketDialog({required this.ticketId, required this.ticket});
+  const ManageTicketDialog({super.key, required this.ticketId, required this.ticket});
 
   @override
   _ManageTicketDialogState createState() => _ManageTicketDialogState();
@@ -4391,7 +7133,7 @@ class _ManageTicketDialogState extends State<ManageTicketDialog> {
             SizedBox(height: 16),
 
             DropdownButtonFormField(
-              value: _selectedStatus,
+              initialValue: _selectedStatus,
               items: [
                 DropdownMenuItem(value: 'open', child: Text('Open')),
                 DropdownMenuItem(
@@ -4436,6 +7178,8 @@ class _ManageTicketDialogState extends State<ManageTicketDialog> {
 }
 
 class BrandingScreen extends StatefulWidget {
+  const BrandingScreen({super.key});
+
   @override
   _BrandingScreenState createState() => _BrandingScreenState();
 }
@@ -4453,7 +7197,7 @@ class _BrandingScreenState extends State<BrandingScreen> {
   }
 
   void _loadCurrentSettings() {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
     final branding = authProvider.currentTenant?.branding ?? {};
 
     _primaryColorController.text = branding['primaryColor'] ?? '#2196F3';
@@ -4514,7 +7258,7 @@ class _BrandingScreenState extends State<BrandingScreen> {
   }
 
   void _saveSettings() {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
 
     FirebaseFirestore.instance
         .collection('tenants')
@@ -4535,9 +7279,11 @@ class _BrandingScreenState extends State<BrandingScreen> {
 }
 
 class AnalyticsScreen extends StatelessWidget {
+  const AnalyticsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Analytics & Reports')),
@@ -4548,10 +7294,12 @@ class AnalyticsScreen extends StatelessWidget {
           DateTime.now(),
         ),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
+          }
 
           final sales = snapshot.data!.docs;
           final salesData = _prepareSalesData(sales);
@@ -4607,6 +7355,8 @@ class AnalyticsScreen extends StatelessWidget {
 }
 
 class SystemAnalyticsScreen extends StatelessWidget {
+  const SystemAnalyticsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
     final tenantProvider = Provider.of<TenantProvider>(context);
@@ -4644,7 +7394,7 @@ class SystemAnalyticsScreen extends StatelessWidget {
         .map(
           (tenant) => {
             'name': tenant.businessName.length > 10
-                ? tenant.businessName.substring(0, 10) + '...'
+                ? '${tenant.businessName.substring(0, 10)}...'
                 : tenant.businessName,
             'value': tenant.isSubscriptionActive ? 1 : 0,
           },
@@ -4654,9 +7404,11 @@ class SystemAnalyticsScreen extends StatelessWidget {
 }
 
 class NotificationsScreen extends StatelessWidget {
+  const NotificationsScreen({super.key});
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return Scaffold(
       appBar: AppBar(title: Text('Notifications')),
@@ -4668,10 +7420,12 @@ class NotificationsScreen extends StatelessWidget {
             .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.hasError)
+          if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
-          if (snapshot.connectionState == ConnectionState.waiting)
+          }
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return Center(child: CircularProgressIndicator());
+          }
 
           final notifications = snapshot.data!.docs;
 
@@ -4722,7 +7476,7 @@ class NotificationsScreen extends StatelessWidget {
   }
 
   void _markAsRead(String notificationId, BuildContext context) {
-    final authProvider = context.read<AuthProvider>();
+    final authProvider = context.read<MyAuthProvider>();
 
     FirebaseFirestore.instance
         .collection('tenants')
@@ -4871,7 +7625,7 @@ class ErrorHandler {
 
 class ErrorBoundary extends StatelessWidget {
   final Widget child;
-  ErrorBoundary({required this.child});
+  const ErrorBoundary({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
@@ -4881,7 +7635,7 @@ class ErrorBoundary extends StatelessWidget {
 
 class ErrorWidgetBuilder extends StatefulWidget {
   final Widget child;
-  ErrorWidgetBuilder({required this.child});
+  const ErrorWidgetBuilder({super.key, required this.child});
 
   @override
   _ErrorWidgetBuilderState createState() => _ErrorWidgetBuilderState();
