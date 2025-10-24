@@ -59,6 +59,7 @@ dependencies:
   printing:
   path_provider:
   share_plus:
+  local_auth:
   # For image handling in PDF
   image:
   # The following adds the Cupertino Icons font to your application.

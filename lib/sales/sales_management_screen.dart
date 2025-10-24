@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../app.dart';
 import '../constants.dart';
+import '../features/auth/auth_base.dart';
 import '../main.dart';
 
 // Sale Model

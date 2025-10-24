@@ -2,9 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app_theme.dart';
-import 'custom_theme_creation.dart';
 import 'theme_provider.dart';
-
 
 class ThemeSelectorBottomSheet extends StatefulWidget {
   const ThemeSelectorBottomSheet({super.key});
@@ -16,37 +14,6 @@ class ThemeSelectorBottomSheet extends StatefulWidget {
 class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
   int _currentTab = 0;
 
-  void _showCustomThemeCreator([GradientTheme? existingTheme]) {
-    showDialog(
-      context: context,
-      builder: (context) => CustomThemeCreator(existingTheme: existingTheme),
-    );
-  }
-
-  void _deleteCustomTheme(GradientTheme theme) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Theme'),
-        content: Text('Are you sure you want to delete "${theme.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Provider.of<ThemeProvider>(context, listen: false).deleteCustomTheme(theme);
-              Navigator.pop(context);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -55,7 +22,7 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
     return Container(
       height: size.height * 0.8,
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: themeProvider.getSurfaceColor(),
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(24),
           topRight: Radius.circular(24),
@@ -68,7 +35,7 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Colors.grey.withOpacity(0.2),
+                  color: themeProvider.getSecondaryTextColor().withOpacity(0.2),
                 ),
               ),
             ),
@@ -76,14 +43,15 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
               children: [
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded),
+                  icon: Icon(Icons.close_rounded, color: themeProvider.getPrimaryTextColor()),
                 ),
                 const SizedBox(width: 16),
-                const Text(
+                Text(
                   'Theme Settings',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
+                    color: themeProvider.getPrimaryTextColor(),
                   ),
                 ),
               ],
@@ -93,9 +61,9 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                _buildTab('Gradients', 0),
-                _buildTab('Appearance', 1),
-                _buildTab('Custom', 2),
+                _buildTab('Light Themes', 0, themeProvider),
+                _buildTab('Dark Themes', 1, themeProvider),
+                _buildTab('Custom', 2, themeProvider),
               ],
             ),
           ),
@@ -103,8 +71,8 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
             child: IndexedStack(
               index: _currentTab,
               children: [
-                _buildGradientsTab(themeProvider),
-                _buildAppearanceTab(themeProvider),
+                _buildThemesTab(ThemeManager.lightThemes, themeProvider),
+                _buildThemesTab(ThemeManager.darkThemes, themeProvider),
                 _buildCustomThemesTab(themeProvider),
               ],
             ),
@@ -114,12 +82,12 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
     );
   }
 
-  Widget _buildTab(String text, int index) {
+  Widget _buildTab(String text, int index, ThemeProvider themeProvider) {
     return Expanded(
       child: TextButton(
         onPressed: () => setState(() => _currentTab = index),
         style: TextButton.styleFrom(
-          foregroundColor: _currentTab == index ? Theme.of(context).primaryColor : Colors.grey,
+          foregroundColor: _currentTab == index ? themeProvider.getPrimaryColor() : themeProvider.getSecondaryTextColor(),
         ),
         child: Text(
           text,
@@ -131,101 +99,45 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
     );
   }
 
-  Widget _buildGradientsTab(ThemeProvider themeProvider) {
-    return FutureBuilder<List<GradientTheme>>(
-      future: themeProvider.getAvailableThemes(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final themes = snapshot.data ?? [];
-        final defaultThemes = themes.where((t) => GradientThemeManager.defaultThemes.any((dt) => dt.name == t.name)).toList();
-
-        return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Default Gradients',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: 1.5,
-                ),
-                itemCount: defaultThemes.length,
-                itemBuilder: (context, index) {
-                  final theme = defaultThemes[index];
-                  return _buildThemeCard(theme, themeProvider, false);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAppearanceTab(ThemeProvider themeProvider) {
-    return Padding(
+  Widget _buildThemesTab(List<AppTheme> themes, ThemeProvider themeProvider) {
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Theme Mode',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text(
+            _currentTab == 0 ? 'Light Themes' : 'Dark Themes',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: themeProvider.getPrimaryTextColor(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _currentTab == 0
+                ? 'Bright themes for daytime use'
+                : 'Dark themes for comfortable nighttime use',
+            style: TextStyle(
+              color: themeProvider.getSecondaryTextColor(),
+              fontSize: 14,
+            ),
           ),
           const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.phone_iphone),
-                    title: const Text('System Default'),
-                    trailing: Radio<bool>(
-                      value: true,
-                      groupValue: themeProvider.useSystemTheme,
-                      onChanged: (value) => themeProvider.setUseSystemTheme(true),
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.light_mode),
-                    title: const Text('Light Mode'),
-                    trailing: Radio<bool>(
-                      value: false,
-                      groupValue: themeProvider.useSystemTheme,
-                      onChanged: (value) {
-                        themeProvider.setUseSystemTheme(false);
-                        themeProvider.setDarkMode(false);
-                      },
-                    ),
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.dark_mode),
-                    title: const Text('Dark Mode'),
-                    trailing: Radio<bool>(
-                      value: false,
-                      groupValue: themeProvider.useSystemTheme,
-                      onChanged: (value) {
-                        themeProvider.setUseSystemTheme(false);
-                        themeProvider.setDarkMode(true);
-                      },
-                    ),
-                  ),
-                ],
-              ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 16,
+              mainAxisSpacing: 16,
+              childAspectRatio: 1.5,
             ),
+            itemCount: themes.length,
+            itemBuilder: (context, index) {
+              final theme = themes[index];
+              return _buildThemeCard(theme, themeProvider, false);
+            },
           ),
         ],
       ),
@@ -233,15 +145,10 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
   }
 
   Widget _buildCustomThemesTab(ThemeProvider themeProvider) {
-    return FutureBuilder<List<GradientTheme>>(
-      future: themeProvider.getAvailableThemes(),
+    return FutureBuilder<List<AppTheme>>(
+      future: themeProvider.getCustomThemes(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final themes = snapshot.data ?? [];
-        final customThemes = themes.where((t) => !GradientThemeManager.defaultThemes.any((dt) => dt.name == t.name)).toList();
+        final customThemes = snapshot.data ?? [];
 
         return Column(
           children: [
@@ -249,24 +156,30 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
               padding: const EdgeInsets.all(20),
               child: ElevatedButton.icon(
                 onPressed: () => _showCustomThemeCreator(),
-                icon: const Icon(Icons.add),
-                label: const Text('Create New Theme'),
+                icon: Icon(Icons.add, color: themeProvider.getOnPrimaryTextColor()),
+                label: Text('Create New Theme', style: TextStyle(color: themeProvider.getOnPrimaryTextColor())),
                 style: ElevatedButton.styleFrom(
+                  backgroundColor: themeProvider.getPrimaryColor(),
                   minimumSize: const Size(double.infinity, 50),
                 ),
               ),
             ),
             Expanded(
               child: customThemes.isEmpty
-                  ? const Center(
+                  ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.palette, size: 64, color: Colors.grey),
-                    SizedBox(height: 16),
+                    Icon(Icons.palette, size: 64, color: themeProvider.getSecondaryTextColor()),
+                    const SizedBox(height: 16),
                     Text(
                       'No custom themes yet',
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: themeProvider.getSecondaryTextColor()),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Create your own unique theme combination',
+                      style: TextStyle(color: themeProvider.getSecondaryTextColor(), fontSize: 12),
                     ),
                   ],
                 ),
@@ -292,8 +205,8 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
     );
   }
 
-  Widget _buildThemeCard(GradientTheme theme, ThemeProvider themeProvider, bool isCustom) {
-    final colors = GradientThemeManager().hexToColors(theme.colors);
+  Widget _buildThemeCard(AppTheme theme, ThemeProvider themeProvider, bool isCustom) {
+    final colors = ThemeManager.hexToColors(theme.backgroundGradient);
     final isSelected = themeProvider.currentTheme?.name == theme.name;
 
     return GestureDetector(
@@ -337,12 +250,23 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
                       fontSize: 16,
                     ),
                   ),
-                  Text(
-                    theme.isDark ? 'Dark' : 'Light',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      for (int i = 0; i < colors.length && i < 3; i++)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: colors[i],
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
@@ -354,27 +278,23 @@ class _ThemeSelectorBottomSheetState extends State<ThemeSelectorBottomSheet> {
               right: 12,
               child: Icon(Icons.check, color: Colors.white, size: 20),
             ),
-          if (isCustom)
-            Positioned(
-              top: 8,
-              left: 8,
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => _showCustomThemeCreator(theme),
-                    icon: const Icon(Icons.edit, color: Colors.white, size: 16),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  IconButton(
-                    onPressed: () => _deleteCustomTheme(theme),
-                    icon: const Icon(Icons.delete, color: Colors.white, size: 16),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ],
-              ),
-            ),
+        ],
+      ),
+    );
+  }
+
+  void _showCustomThemeCreator() {
+    // You can implement custom theme creation dialog here
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Custom Theme Creator', style: TextStyle(color: Provider.of<ThemeProvider>(context).getPrimaryTextColor())),
+        content: Text('Custom theme creation will be implemented here', style: TextStyle(color: Provider.of<ThemeProvider>(context).getSecondaryTextColor())),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(color: Provider.of<ThemeProvider>(context).getPrimaryColor())),
+          ),
         ],
       ),
     );

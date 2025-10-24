@@ -13,8 +13,8 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:hive/hive.dart';
 import 'package:path_provider/path_provider.dart';
 import 'constants.dart';
+import 'features/auth/auth_base.dart';
 import 'firebase_options.dart';
-
 
 // =============================
 // ENHANCED USER MANAGEMENT SCREENS
@@ -36,12 +36,7 @@ class EnhancedUsersScreen extends StatelessWidget {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _UsersListTab(),
-            _ActivityLogTab(),
-          ],
-        ),
+        body: TabBarView(children: [_UsersListTab(), _ActivityLogTab()]),
         floatingActionButton: FloatingActionButton(
           onPressed: () => _showAddUserDialog(context),
           child: Icon(Icons.person_add),
@@ -148,7 +143,8 @@ class _UsersListTab extends StatelessWidget {
                             style: TextStyle(fontSize: 10, color: Colors.white),
                           ),
                           backgroundColor: _getRoleColor(user.role),
-                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
                         ),
                         if (user.phoneNumber != null) ...[
                           SizedBox(width: 8),
@@ -173,7 +169,8 @@ class _UsersListTab extends StatelessWidget {
                   children: [
                     Switch(
                       value: user.isActive,
-                      onChanged: (value) => _toggleUserStatus(context, user, value),
+                      onChanged: (value) =>
+                          _toggleUserStatus(context, user, value),
                     ),
                     PopupMenuButton(
                       icon: Icon(Icons.more_vert),
@@ -208,16 +205,20 @@ class _UsersListTab extends StatelessWidget {
                             ],
                           ),
                         ),
-                        if (!user.isActive) PopupMenuItem(
-                          value: 'delete',
-                          child: Row(
-                            children: [
-                              Icon(Icons.delete, size: 18, color: Colors.red),
-                              SizedBox(width: 8),
-                              Text('Delete User', style: TextStyle(color: Colors.red)),
-                            ],
+                        if (!user.isActive)
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete, size: 18, color: Colors.red),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Delete User',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
                       ],
                       onSelected: (value) {
                         switch (value) {
@@ -261,7 +262,11 @@ class _UsersListTab extends StatelessWidget {
     }
   }
 
-  void _toggleUserStatus(BuildContext context, AppUser user, bool isActive) async {
+  void _toggleUserStatus(
+    BuildContext context,
+    AppUser user,
+    bool isActive,
+  ) async {
     final authProvider = context.read<MyAuthProvider>();
 
     try {
@@ -274,7 +279,9 @@ class _UsersListTab extends StatelessWidget {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('User ${isActive ? 'activated' : 'deactivated'} successfully'),
+          content: Text(
+            'User ${isActive ? 'activated' : 'deactivated'} successfully',
+          ),
           backgroundColor: isActive ? Colors.green : Colors.orange,
         ),
       );
@@ -298,9 +305,7 @@ class _UsersListTab extends StatelessWidget {
   void _viewUserActivity(BuildContext context, AppUser user) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) => UserActivityScreen(user: user),
-      ),
+      MaterialPageRoute(builder: (context) => UserActivityScreen(user: user)),
     );
   }
 
@@ -316,7 +321,9 @@ class _UsersListTab extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Delete User'),
-        content: Text('Are you sure you want to delete ${user.formattedName}? This action cannot be undone.'),
+        content: Text(
+          'Are you sure you want to delete ${user.formattedName}? This action cannot be undone.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -444,7 +451,11 @@ class _ActivityLogTab extends StatelessWidget {
                 ),
                 trailing: Chip(
                   label: Text(
-                    activity.action.toString().split('.').last.replaceAll('_', ' '),
+                    activity.action
+                        .toString()
+                        .split('.')
+                        .last
+                        .replaceAll('_', ' '),
                     style: TextStyle(fontSize: 10, color: Colors.white),
                   ),
                   backgroundColor: _getActivityColor(activity.action),
@@ -483,18 +494,27 @@ class _ActivityLogTab extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDetailRow('Action', activity.action.toString().split('.').last.replaceAll('_', ' ')),
+              _buildDetailRow(
+                'Action',
+                activity.action.toString().split('.').last.replaceAll('_', ' '),
+              ),
               _buildDetailRow('Description', activity.description),
-              _buildDetailRow('User', '${activity.userDisplayName} (${activity.userEmail})'),
+              _buildDetailRow(
+                'User',
+                '${activity.userDisplayName} (${activity.userEmail})',
+              ),
               _buildDetailRow('Role', activity.userRole),
               _buildDetailRow('Module', activity.module),
-              _buildDetailRow('Time', DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp)),
+              _buildDetailRow(
+                'Time',
+                DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp),
+              ),
 
               if (activity.metadata.isNotEmpty) ...[
                 SizedBox(height: 16),
                 Text('Details:', style: TextStyle(fontWeight: FontWeight.bold)),
-                ...activity.metadata.entries.map((entry) =>
-                    _buildDetailRow(entry.key, entry.value.toString())
+                ...activity.metadata.entries.map(
+                  (entry) => _buildDetailRow(entry.key, entry.value.toString()),
                 ),
               ],
 
@@ -524,12 +544,7 @@ class _ActivityLogTab extends StatelessWidget {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(fontSize: 12),
-            ),
-          ),
+          Expanded(child: Text(value, style: TextStyle(fontSize: 12))),
         ],
       ),
     );
@@ -598,9 +613,6 @@ class ResetPasswordDialog extends StatelessWidget {
     );
   }
 }
-
-
-
 
 class EnhancedAddUserDialog extends StatefulWidget {
   final Function(Map<String, dynamic>) onSave;
@@ -700,10 +712,7 @@ class _EnhancedAddUserDialogState extends State<EnhancedAddUserDialog> {
               DropdownButtonFormField(
                 value: _selectedRole,
                 items: [
-                  DropdownMenuItem(
-                    value: 'cashier',
-                    child: Text('Cashier'),
-                  ),
+                  DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
                   DropdownMenuItem(
                     value: 'salesInventoryManager',
                     child: Text('Sales & Inventory Manager'),
@@ -732,10 +741,7 @@ class _EnhancedAddUserDialogState extends State<EnhancedAddUserDialog> {
           onPressed: () => Navigator.pop(context),
           child: Text('Cancel'),
         ),
-        ElevatedButton(
-          onPressed: _saveUser,
-          child: Text('Create User'),
-        ),
+        ElevatedButton(onPressed: _saveUser, child: Text('Create User')),
       ],
     );
   }
@@ -747,7 +753,9 @@ class _EnhancedAddUserDialogState extends State<EnhancedAddUserDialog> {
         'password': _passwordController.text,
         'displayName': _displayNameController.text.trim(),
         'role': _selectedRole,
-        'phoneNumber': _phoneController.text.trim().isEmpty ? null : _phoneController.text.trim(),
+        'phoneNumber': _phoneController.text.trim().isEmpty
+            ? null
+            : _phoneController.text.trim(),
       };
 
       widget.onSave(userData);
@@ -783,7 +791,7 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
     'inventory',
     'ticket',
     'report',
-    'system'
+    'system',
   ];
 
   @override
@@ -842,7 +850,9 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
                     backgroundColor: Colors.grey[200],
                     selectedColor: _getFilterColor(filter),
                     labelStyle: TextStyle(
-                      color: _selectedFilter == filter ? Colors.white : Colors.black,
+                      color: _selectedFilter == filter
+                          ? Colors.white
+                          : Colors.black,
                       fontSize: 12,
                     ),
                   ),
@@ -898,7 +908,9 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
                 return ListView.builder(
                   itemCount: filteredActivities.length,
                   itemBuilder: (context, index) {
-                    final activity = UserActivity.fromFirestore(filteredActivities[index]);
+                    final activity = UserActivity.fromFirestore(
+                      filteredActivities[index],
+                    );
 
                     return Card(
                       margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -924,7 +936,10 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
                           children: [
                             Text(
                               'By ${activity.userDisplayName} • ${DateFormat('MMM dd, yyyy HH:mm').format(activity.timestamp)}',
-                              style: TextStyle(fontSize: 12, color: Colors.grey),
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey,
+                              ),
                             ),
                             if (activity.metadata.isNotEmpty) ...[
                               SizedBox(height: 4),
@@ -934,7 +949,11 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
                         ),
                         trailing: Chip(
                           label: Text(
-                            activity.action.toString().split('.').last.replaceAll('_', ' '),
+                            activity.action
+                                .toString()
+                                .split('.')
+                                .last
+                                .replaceAll('_', ' '),
                             style: TextStyle(fontSize: 10, color: Colors.white),
                           ),
                           backgroundColor: _getActivityColor(activity.action),
@@ -977,18 +996,27 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildDetailRow('Action', activity.action.toString().split('.').last.replaceAll('_', ' ')),
+              _buildDetailRow(
+                'Action',
+                activity.action.toString().split('.').last.replaceAll('_', ' '),
+              ),
               _buildDetailRow('Description', activity.description),
-              _buildDetailRow('User', '${activity.userDisplayName} (${activity.userEmail})'),
+              _buildDetailRow(
+                'User',
+                '${activity.userDisplayName} (${activity.userEmail})',
+              ),
               _buildDetailRow('Role', activity.userRole),
               _buildDetailRow('Module', activity.module),
-              _buildDetailRow('Time', DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp)),
+              _buildDetailRow(
+                'Time',
+                DateFormat('MMM dd, yyyy HH:mm:ss').format(activity.timestamp),
+              ),
 
               if (activity.metadata.isNotEmpty) ...[
                 SizedBox(height: 16),
                 Text('Details:', style: TextStyle(fontWeight: FontWeight.bold)),
-                ...activity.metadata.entries.map((entry) =>
-                    _buildDetailRow(entry.key, entry.value.toString())
+                ...activity.metadata.entries.map(
+                  (entry) => _buildDetailRow(entry.key, entry.value.toString()),
                 ),
               ],
 
@@ -1018,12 +1046,7 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
           ),
           SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(fontSize: 12),
-            ),
-          ),
+          Expanded(child: Text(value, style: TextStyle(fontSize: 12))),
         ],
       ),
     );
@@ -1128,7 +1151,10 @@ class EnhancedProfileScreen extends StatelessWidget {
                     SizedBox(height: 16),
                     Text(
                       user.formattedName,
-                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     SizedBox(height: 8),
                     Text(user.email),
@@ -1163,7 +1189,9 @@ class EnhancedProfileScreen extends StatelessWidget {
                   ListTile(
                     leading: Icon(Icons.credit_card),
                     title: Text('Subscription'),
-                    subtitle: Text('${tenant.subscriptionPlan} - ${DateFormat('MMM dd, yyyy').format(tenant.subscriptionExpiry)}'),
+                    subtitle: Text(
+                      '${tenant.subscriptionPlan} - ${DateFormat('MMM dd, yyyy').format(tenant.subscriptionExpiry)}',
+                    ),
                   ),
                   ListTile(
                     leading: Icon(Icons.history),
@@ -1189,213 +1217,9 @@ class EnhancedProfileScreen extends StatelessWidget {
         ),
       ),
     );
-  }}
-
-enum ActivityType {
-  // Keep all existing types
-  user_login,
-  user_logout,
-  user_created,
-  user_updated,
-  user_deactivated,
-  sale_created,
-  sale_updated,
-  sale_deleted,
-  product_created,
-  product_updated,
-  product_deleted,
-  stock_updated,
-  tenant_created,
-  tenant_updated,
-  subscription_updated,
-  ticket_created,
-  ticket_updated,
-  payment_processed,
-  report_generated,
-
-  // Add new types for comprehensive tracking
-  user_password_changed,
-  user_profile_updated,
-  product_stock_updated,
-  product_category_created,
-  product_category_updated,
-  sale_refunded,
-  sale_cancelled,
-  inventory_checked,
-  inventory_adjusted,
-  low_stock_alert,
-  customer_created,
-  customer_updated,
-  customer_deleted,
-  report_exported,
-  settings_updated,
-  branding_updated,
-  ticket_closed,
-  ticket_replied,
-  payment_failed,
-  payment_refunded,
-}
-class Tenant {
-  final String id;
-  final String businessName;
-  final String subscriptionPlan;
-  final DateTime subscriptionExpiry;
-  final bool isActive;
-  final Map<String, dynamic> branding;
-
-  Tenant({
-    required this.id,
-    required this.businessName,
-    required this.subscriptionPlan,
-    required this.subscriptionExpiry,
-    required this.isActive,
-    required this.branding,
-  });
-
-  factory Tenant.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-
-    // Calculate expiry date with fallback
-    final subscriptionExpiry = data['subscriptionExpiry'] != null
-        ? (data['subscriptionExpiry'] as Timestamp).toDate()
-        : DateTime.now().add(Duration(days: 30)); // Default 30 days
-
-    return Tenant(
-      id: doc.id,
-      businessName: data['businessName']?.toString() ?? 'Unknown Business',
-      subscriptionPlan: data['subscriptionPlan']?.toString() ?? 'monthly',
-      subscriptionExpiry: subscriptionExpiry,
-      isActive: data['isActive'] ?? false,
-      branding: data['branding'] is Map
-          ? Map<String, dynamic>.from(data['branding'] as Map)
-          : {},
-    );
-  }
-
-  bool get isSubscriptionActive {
-    return isActive && subscriptionExpiry.isAfter(DateTime.now());
   }
 }
 
-
-class AppUser {
-  final String uid;
-  final String email;
-  final String displayName;
-  final String? phoneNumber;
-  final UserRole role;
-  final String tenantId;
-  final bool isActive;
-  final DateTime createdAt;
-  final DateTime? lastLogin;
-  final String createdBy;
-  final Map<String, dynamic> profile;
-  final List<String> permissions;
-
-  AppUser({
-    required this.uid,
-    required this.email,
-    required this.displayName,
-    this.phoneNumber,
-    required this.role,
-    required this.tenantId,
-    required this.isActive,
-    required this.createdAt,
-    this.lastLogin,
-    required this.createdBy,
-    this.profile = const {},
-    this.permissions = const [],
-  });
-
-  factory AppUser.fromFirestore(DocumentSnapshot doc) {
-    final data = doc.data() as Map<String, dynamic>? ?? {};
-
-    // Extract email with fallback
-    final email = data['email']?.toString() ?? 'unknown@email.com';
-
-    // Extract display name with fallback
-    final displayName = data['displayName']?.toString() ??
-        email.split('@').first ??
-        'User';
-
-    // Parse role with fallback
-    final roleString = data['role']?.toString() ?? 'cashier';
-    final role = _parseUserRole(roleString);
-
-    // Extract tenant ID with fallback
-    final tenantId = data['tenantId']?.toString() ?? 'unknown_tenant';
-
-    // Parse dates with fallbacks
-    final createdAt = data['createdAt'] != null
-        ? (data['createdAt'] as Timestamp).toDate()
-        : DateTime.now();
-
-    final lastLogin = data['lastLogin'] != null
-        ? (data['lastLogin'] as Timestamp).toDate()
-        : null;
-
-    return AppUser(
-      uid: doc.id,
-      email: email,
-      displayName: displayName,
-      phoneNumber: data['phoneNumber']?.toString(),
-      role: role,
-      tenantId: tenantId,
-      isActive: data['isActive'] ?? false,
-      createdAt: createdAt,
-      lastLogin: lastLogin,
-      createdBy: data['createdBy']?.toString() ?? 'system',
-      profile: data['profile'] is Map ? Map<String, dynamic>.from(data['profile'] as Map) : {},
-      permissions: data['permissions'] is List
-          ? List<String>.from(data['permissions'] as List)
-          : [],
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'uid': uid,
-      'email': email,
-      'displayName': displayName,
-      'phoneNumber': phoneNumber,
-      'role': role.toString().split('.').last,
-      'tenantId': tenantId,
-      'isActive': isActive,
-      'createdAt': Timestamp.fromDate(createdAt),
-      'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
-      'createdBy': createdBy,
-      'profile': profile,
-      'permissions': permissions,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-  }
-
-  static UserRole _parseUserRole(String roleString) {
-    switch (roleString) {
-      case 'superAdmin':
-        return UserRole.superAdmin;
-      case 'clientAdmin':
-        return UserRole.clientAdmin;
-      case 'cashier':
-        return UserRole.cashier;
-      case 'salesInventoryManager':
-        return UserRole.salesInventoryManager;
-      default:
-        return UserRole.cashier; // Default fallback
-    }
-  }
-
-  bool get canManageProducts =>
-      role == UserRole.clientAdmin || role == UserRole.salesInventoryManager;
-  bool get canProcessSales =>
-      role == UserRole.clientAdmin ||
-          role == UserRole.cashier ||
-          role == UserRole.salesInventoryManager;
-  bool get canManageUsers => role == UserRole.clientAdmin;
-  bool get isSuperAdmin => role == UserRole.superAdmin;
-
-  String get formattedName => displayName.isNotEmpty ? displayName : email.split('@').first;
-}
 class UserActivity {
   final String id;
   final String tenantId;
@@ -1439,11 +1263,17 @@ class UserActivity {
       userRole: data['userRole']?.toString() ?? '',
       action: _parseActivityType(data['action']?.toString() ?? ''),
       description: data['description']?.toString() ?? '',
-      metadata: data['metadata'] is Map ? Map<String, dynamic>.from(data['metadata'] as Map) : {},
-      timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : DateTime.now(),
+      metadata: data['metadata'] is Map
+          ? Map<String, dynamic>.from(data['metadata'] as Map)
+          : {},
+      timestamp: data['timestamp'] != null
+          ? (data['timestamp'] as Timestamp).toDate()
+          : DateTime.now(),
       ipAddress: data['ipAddress']?.toString() ?? '',
       userAgent: data['userAgent']?.toString() ?? '',
-      module: data['module']?.toString() ?? _getModuleFromAction(data['action']?.toString() ?? ''),
+      module:
+          data['module']?.toString() ??
+          _getModuleFromAction(data['action']?.toString() ?? ''),
     );
   }
 
@@ -1467,7 +1297,7 @@ class UserActivity {
   static ActivityType _parseActivityType(String type) {
     try {
       return ActivityType.values.firstWhere(
-            (e) => e.toString().split('.').last == type,
+        (e) => e.toString().split('.').last == type,
         orElse: () => ActivityType.user_login,
       );
     } catch (e) {
@@ -1479,12 +1309,14 @@ class UserActivity {
     if (action.contains('user_')) return 'user';
     if (action.contains('product_')) return 'product';
     if (action.contains('sale_')) return 'sale';
-    if (action.contains('stock_') || action.contains('inventory_')) return 'inventory';
+    if (action.contains('stock_') || action.contains('inventory_'))
+      return 'inventory';
     if (action.contains('customer_')) return 'customer';
     if (action.contains('ticket_')) return 'ticket';
     if (action.contains('payment_')) return 'payment';
     if (action.contains('report_')) return 'report';
-    if (action.contains('tenant_') || action.contains('subscription_')) return 'system';
+    if (action.contains('tenant_') || action.contains('subscription_'))
+      return 'system';
     return 'system';
   }
 
@@ -1536,6 +1368,7 @@ class UserActivity {
     }
   }
 }
+
 class SuperAdminHome extends StatelessWidget {
   const SuperAdminHome({super.key});
 
@@ -1789,11 +1622,13 @@ class SuperAdminHome extends StatelessWidget {
     );
   }
 }
+
 class SuperAdminAnalyticsScreen extends StatefulWidget {
   const SuperAdminAnalyticsScreen({super.key});
 
   @override
-  _SuperAdminAnalyticsScreenState createState() => _SuperAdminAnalyticsScreenState();
+  _SuperAdminAnalyticsScreenState createState() =>
+      _SuperAdminAnalyticsScreenState();
 }
 
 class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
@@ -1820,10 +1655,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
       vsync: this,
     );
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeInOut,
-      ),
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
     _animationController.forward();
   }
@@ -1902,7 +1734,10 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
             .collection('tenants')
             .doc(tenantId)
             .collection('orders')
-            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .where(
+              'dateCreated',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+            )
             .get();
 
         // Get tenant products
@@ -1941,7 +1776,9 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
         activeTenants: activeTenants,
         expiredTenants: expiredTenants,
         totalTenants: allTenants.length,
-        averageRevenuePerTenant: allTenants.isNotEmpty ? totalRevenue / allTenants.length : 0.0,
+        averageRevenuePerTenant: allTenants.isNotEmpty
+            ? totalRevenue / allTenants.length
+            : 0.0,
         timePeriod: _timeFilter,
       );
     } catch (e) {
@@ -1984,7 +1821,10 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
             .collection('tenants')
             .doc(tenantId)
             .collection('orders')
-            .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+            .where(
+              'dateCreated',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startDate),
+            )
             .get();
 
         final productsSnapshot = await _firestore
@@ -2009,20 +1849,24 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
 
         // Check subscription status
         final subscriptionExpiry = tenantData['subscriptionExpiry'];
-        final bool isActive = subscriptionExpiry is Timestamp &&
+        final bool isActive =
+            subscriptionExpiry is Timestamp &&
             subscriptionExpiry.toDate().isAfter(now);
 
         final analytics = TenantAnalytics(
           tenantId: tenantId,
-          businessName: tenantData['businessName']?.toString() ?? 'Unknown Business',
-          subscriptionPlan: tenantData['subscriptionPlan']?.toString() ?? 'Unknown',
+          businessName:
+              tenantData['businessName']?.toString() ?? 'Unknown Business',
+          subscriptionPlan:
+              tenantData['subscriptionPlan']?.toString() ?? 'Unknown',
           isActive: isActive,
           revenue: revenue,
           ordersCount: ordersSnapshot.docs.length,
           productsCount: productsSnapshot.docs.length,
           customersCount: customersSnapshot.docs.length,
-          subscriptionExpiry: subscriptionExpiry is Timestamp ?
-          subscriptionExpiry.toDate() : null,
+          subscriptionExpiry: subscriptionExpiry is Timestamp
+              ? subscriptionExpiry.toDate()
+              : null,
         );
 
         tenantsAnalytics.add(analytics);
@@ -2084,20 +1928,20 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
       body: _isLoading
           ? _buildLoadingState()
           : AnimatedBuilder(
-        animation: _animationController,
-        builder: (context, child) {
-          return Opacity(
-            opacity: _fadeAnimation.value,
-            child: CustomScrollView(
-              slivers: [
-                _buildOverallStats(),
-                _buildTenantsList(),
-                SliverToBoxAdapter(child: SizedBox(height: 20)),
-              ],
+              animation: _animationController,
+              builder: (context, child) {
+                return Opacity(
+                  opacity: _fadeAnimation.value,
+                  child: CustomScrollView(
+                    slivers: [
+                      _buildOverallStats(),
+                      _buildTenantsList(),
+                      SliverToBoxAdapter(child: SizedBox(height: 20)),
+                    ],
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
@@ -2164,7 +2008,9 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
                   'Active Tenants',
                   '${_overallAnalytics.activeTenants}/${_overallAnalytics.totalTenants}',
                   Icons.business,
-                  _overallAnalytics.activeTenants > 0 ? Colors.green : Colors.orange,
+                  _overallAnalytics.activeTenants > 0
+                      ? Colors.green
+                      : Colors.orange,
                   'Active subscriptions',
                 ),
                 _buildStatCard(
@@ -2203,8 +2049,11 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
                   'Subscription Health',
                   '${((_overallAnalytics.activeTenants / _overallAnalytics.totalTenants) * 100).toStringAsFixed(1)}%',
                   Icons.health_and_safety,
-                  _overallAnalytics.activeTenants / _overallAnalytics.totalTenants > 0.7
-                      ? Colors.green : Colors.orange,
+                  _overallAnalytics.activeTenants /
+                              _overallAnalytics.totalTenants >
+                          0.7
+                      ? Colors.green
+                      : Colors.orange,
                   'Active rate',
                 ),
                 _buildStatCard(
@@ -2222,7 +2071,13 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
     );
   }
 
-  Widget _buildStatCard(String title, String value, IconData icon, Color color, String subtitle) {
+  Widget _buildStatCard(
+    String title,
+    String value,
+    IconData icon,
+    Color color,
+    String subtitle,
+  ) {
     return Card(
       elevation: 4,
       child: Padding(
@@ -2261,10 +2116,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
             SizedBox(height: 2),
             Text(
               subtitle,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey[500],
-              ),
+              style: TextStyle(fontSize: 10, color: Colors.grey[500]),
               textAlign: TextAlign.center,
             ),
           ],
@@ -2291,9 +2143,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
             SizedBox(height: 8),
             Text(
               'Sorted by revenue (${_getTimeFilterDisplayName()})',
-              style: TextStyle(
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(color: Colors.grey[600]),
             ),
             SizedBox(height: 16),
             ..._tenantsAnalytics.asMap().entries.map((entry) {
@@ -2351,15 +2201,22 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
                         ),
                       ),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: tenant.isActive ? Colors.green[100] : Colors.red[100],
+                          color: tenant.isActive
+                              ? Colors.green[100]
+                              : Colors.red[100],
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Text(
                           tenant.isActive ? 'Active' : 'Expired',
                           style: TextStyle(
-                            color: tenant.isActive ? Colors.green[800] : Colors.red[800],
+                            color: tenant.isActive
+                                ? Colors.green[800]
+                                : Colors.red[800],
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                           ),
@@ -2415,11 +2272,16 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
 
   String _getTimeFilterDisplayName() {
     switch (_timeFilter) {
-      case '7days': return 'Last 7 Days';
-      case '30days': return 'Last 30 Days';
-      case '90days': return 'Last 90 Days';
-      case '1year': return 'Last 1 Year';
-      default: return 'Last 7 Days';
+      case '7days':
+        return 'Last 7 Days';
+      case '30days':
+        return 'Last 30 Days';
+      case '90days':
+        return 'Last 90 Days';
+      case '1year':
+        return 'Last 1 Year';
+      default:
+        return 'Last 7 Days';
     }
   }
 
@@ -2492,6 +2354,7 @@ class TenantAnalytics {
     this.subscriptionExpiry,
   });
 }
+
 // Update the _ActionCard widget for better styling
 class _ActionCard extends StatelessWidget {
   final String title;
@@ -2600,8 +2463,11 @@ class ErrorApp extends StatelessWidget {
 class FirebaseService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
-// Add to FirebaseService class
-  static Stream<QuerySnapshot> getSalesStream(String tenantId, {int limit = 100}) {
+  // Add to FirebaseService class
+  static Stream<QuerySnapshot> getSalesStream(
+    String tenantId, {
+    int limit = 100,
+  }) {
     return _firestore
         .collection('tenants')
         .doc(tenantId)
@@ -2612,10 +2478,10 @@ class FirebaseService {
   }
 
   static Stream<QuerySnapshot> getSalesByDateRange(
-      String tenantId, {
-        required DateTime startDate,
-        required DateTime endDate,
-      }) {
+    String tenantId, {
+    required DateTime startDate,
+    required DateTime endDate,
+  }) {
     return _firestore
         .collection('tenants')
         .doc(tenantId)
@@ -2652,7 +2518,7 @@ class FirebaseService {
       int todaySalesCount = todaySales.docs.length;
 
       for (final doc in todaySales.docs) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         todayRevenue += (data['totalAmount'] as num?)?.toDouble() ?? 0;
       }
 
@@ -2660,7 +2526,7 @@ class FirebaseService {
       int totalSalesCount = allSales.docs.length;
 
       for (final doc in allSales.docs) {
-        final data = doc.data() as Map<String, dynamic>;
+        final data = doc.data();
         totalRevenue += (data['totalAmount'] as num?)?.toDouble() ?? 0;
       }
 
@@ -2669,7 +2535,9 @@ class FirebaseService {
         'todaySalesCount': todaySalesCount,
         'totalRevenue': totalRevenue,
         'totalSalesCount': totalSalesCount,
-        'averageOrderValue': totalSalesCount > 0 ? totalRevenue / totalSalesCount : 0,
+        'averageOrderValue': totalSalesCount > 0
+            ? totalRevenue / totalSalesCount
+            : 0,
       };
     } catch (e) {
       print('Error getting sales stats: $e');
@@ -2682,6 +2550,7 @@ class FirebaseService {
       };
     }
   }
+
   // In FirebaseService class - Fix the loginWithActivity method
   static Future<UserCredential> loginWithActivity({
     required String email,
@@ -2705,13 +2574,11 @@ class FirebaseService {
         tenantId: userData['tenantId']?.toString() ?? 'unknown_tenant',
         userId: userCredential.user!.uid,
         userEmail: email,
-        userDisplayName: userData['displayName']?.toString() ?? email.split('@').first,
+        userDisplayName:
+            userData['displayName']?.toString() ?? email.split('@').first,
         action: ActivityType.user_login,
         description: 'User logged in successfully',
-        metadata: {
-          'loginMethod': 'email_password',
-          'ipAddress': ipAddress,
-        },
+        metadata: {'loginMethod': 'email_password', 'ipAddress': ipAddress},
         ipAddress: ipAddress,
         userAgent: userAgent,
       );
@@ -2720,7 +2587,7 @@ class FirebaseService {
     return userCredential;
   }
 
-// Fix the _updateLastLogin method
+  // Fix the _updateLastLogin method
   static Future<void> _updateLastLogin(String uid) async {
     final userDoc = await _getUserDocument(uid);
     if (userDoc.exists) {
@@ -2731,13 +2598,11 @@ class FirebaseService {
           .doc(tenantId)
           .collection('users')
           .doc(uid)
-          .update({
-        'lastLogin': FieldValue.serverTimestamp(),
-      });
+          .update({'lastLogin': FieldValue.serverTimestamp()});
     }
   }
 
-// Fix the createSaleWithUserTracking method
+  // Fix the createSaleWithUserTracking method
   static Future<void> createSaleWithUserTracking({
     required String tenantId,
     required String cashierId,
@@ -2763,7 +2628,7 @@ class FirebaseService {
           .doc(cashierId)
           .get();
 
-      final cashierData = cashierDoc.data() as Map<String, dynamic>? ?? {};
+      final cashierData = cashierDoc.data() ?? {};
 
       // Start a batch write for transaction
       final batch = _firestore.batch();
@@ -2772,7 +2637,8 @@ class FirebaseService {
       batch.set(saleRef, {
         'id': saleRef.id,
         'cashierId': cashierId,
-        'cashierName': cashierData['displayName']?.toString() ?? 'Unknown Cashier',
+        'cashierName':
+            cashierData['displayName']?.toString() ?? 'Unknown Cashier',
         'cashierEmail': cashierData['email']?.toString() ?? 'unknown@email.com',
         'items': items,
         'totalAmount': totalAmount,
@@ -2808,7 +2674,7 @@ class FirebaseService {
           'type': 'new_sale',
           'title': 'New Sale Completed',
           'message':
-          'Sale #${saleRef.id} for \$${totalAmount.toStringAsFixed(2)}',
+              'Sale #${saleRef.id} for \$${totalAmount.toStringAsFixed(2)}',
           'isRead': false,
           'createdAt': FieldValue.serverTimestamp(),
         },
@@ -2821,9 +2687,11 @@ class FirebaseService {
         tenantId: tenantId,
         userId: cashierId,
         userEmail: cashierData['email']?.toString() ?? 'unknown@email.com',
-        userDisplayName: cashierData['displayName']?.toString() ?? 'Unknown User',
+        userDisplayName:
+            cashierData['displayName']?.toString() ?? 'Unknown User',
         action: ActivityType.sale_created,
-        description: 'Sale #${saleRef.id} completed for \$${totalAmount.toStringAsFixed(2)}',
+        description:
+            'Sale #${saleRef.id} completed for \$${totalAmount.toStringAsFixed(2)}',
         metadata: {
           'saleId': saleRef.id,
           'totalAmount': totalAmount,
@@ -2835,7 +2703,8 @@ class FirebaseService {
       return;
     });
   }
-// In FirebaseService class - Fix the _logUserActivity method calls
+
+  // In FirebaseService class - Fix the _logUserActivity method calls
   static Future<void> _logUserActivity({
     required String tenantId,
     required String userId,
@@ -2853,29 +2722,26 @@ class FirebaseService {
           .doc(tenantId)
           .collection('user_activities')
           .add({
-        'tenantId': tenantId,
-        'userId': userId,
-        'userEmail': userEmail,
-        'userDisplayName': userDisplayName,
-        'action': action.toString().split('.').last,
-        'description': description,
-        'metadata': metadata,
-        'timestamp': FieldValue.serverTimestamp(),
-        'ipAddress': ipAddress,
-        'userAgent': userAgent,
-      });
+            'tenantId': tenantId,
+            'userId': userId,
+            'userEmail': userEmail,
+            'userDisplayName': userDisplayName,
+            'action': action.toString().split('.').last,
+            'description': description,
+            'metadata': metadata,
+            'timestamp': FieldValue.serverTimestamp(),
+            'ipAddress': ipAddress,
+            'userAgent': userAgent,
+          });
     } catch (e) {
       print('Failed to log activity: $e');
       // Don't throw error for failed activity logging
     }
   }
 
-// Enhanced Login with Activity Tracking - FIXED
+  // Enhanced Login with Activity Tracking - FIXED
 
-
-
-
-// Update User Status with Activity Logging - FIXED
+  // Update User Status with Activity Logging - FIXED
   static Future<void> updateUserStatus({
     required String tenantId,
     required String userId,
@@ -2900,9 +2766,9 @@ class FirebaseService {
           .collection('users')
           .doc(userId)
           .update({
-        'isActive': isActive,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
+            'isActive': isActive,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
 
       // Log the activity
       await _logUserActivity(
@@ -2910,7 +2776,9 @@ class FirebaseService {
         userId: updatedBy,
         userEmail: userData['email'], // Use actual user email
         userDisplayName: userData['displayName'], // Use actual display name
-        action: isActive ? ActivityType.user_updated : ActivityType.user_deactivated,
+        action: isActive
+            ? ActivityType.user_updated
+            : ActivityType.user_deactivated,
         description: 'User ${isActive ? 'activated' : 'deactivated'} by admin',
         metadata: {
           'targetUserId': userId,
@@ -2923,6 +2791,7 @@ class FirebaseService {
       return;
     });
   }
+
   // Enhanced User Creation
   static Future<void> createUserWithDetails({
     required String tenantId,
@@ -2945,9 +2814,9 @@ class FirebaseService {
         // Create user in Firebase Auth
         final UserCredential userCredential = await _auth
             .createUserWithEmailAndPassword(
-          email: email.trim(),
-          password: password,
-        );
+              email: email.trim(),
+              password: password,
+            );
 
         // Update display name in Auth
         await userCredential.user!.updateDisplayName(displayName);
@@ -2959,19 +2828,19 @@ class FirebaseService {
             .collection('users')
             .doc(userCredential.user!.uid)
             .set({
-          'uid': userCredential.user!.uid,
-          'email': email.trim(),
-          'displayName': displayName,
-          'phoneNumber': phoneNumber,
-          'role': role,
-          'createdBy': createdBy,
-          'createdAt': FieldValue.serverTimestamp(),
-          'isActive': true,
-          'tenantId': tenantId,
-          'lastLogin': FieldValue.serverTimestamp(),
-          'profile': profile ?? {},
-          'permissions': permissions ?? _getDefaultPermissions(role),
-        });
+              'uid': userCredential.user!.uid,
+              'email': email.trim(),
+              'displayName': displayName,
+              'phoneNumber': phoneNumber,
+              'role': role,
+              'createdBy': createdBy,
+              'createdAt': FieldValue.serverTimestamp(),
+              'isActive': true,
+              'tenantId': tenantId,
+              'lastLogin': FieldValue.serverTimestamp(),
+              'profile': profile ?? {},
+              'permissions': permissions ?? _getDefaultPermissions(role),
+            });
 
         // Log user creation activity
         await _logUserActivity(
@@ -2981,12 +2850,8 @@ class FirebaseService {
           userDisplayName: displayName,
           action: ActivityType.user_created,
           description: 'User account created by $createdBy',
-          metadata: {
-            'role': role,
-            'displayName': displayName,
-          },
+          metadata: {'role': role, 'displayName': displayName},
         );
-
       } catch (e) {
         // If user creation fails in Firestore, delete the auth user
         if (_auth.currentUser != null &&
@@ -3003,7 +2868,12 @@ class FirebaseService {
   static List<String> _getDefaultPermissions(String role) {
     switch (role) {
       case 'clientAdmin':
-        return ['manage_users', 'manage_products', 'view_reports', 'manage_sales'];
+        return [
+          'manage_users',
+          'manage_products',
+          'view_reports',
+          'manage_sales',
+        ];
       case 'salesInventoryManager':
         return ['manage_products', 'view_reports', 'manage_sales'];
       case 'cashier':
@@ -3012,7 +2882,6 @@ class FirebaseService {
         return ['view_products'];
     }
   }
-
 
   static Future<DocumentSnapshot> _getUserDocument(String uid) async {
     // Search across all tenants for the user
@@ -3037,15 +2906,12 @@ class FirebaseService {
     throw Exception('User document not found');
   }
 
-
-
-
   // Get User Activities
   static Stream<QuerySnapshot> getUserActivities(
-      String tenantId, {
-        String? userId,
-        int limit = 50,
-      }) {
+    String tenantId, {
+    String? userId,
+    int limit = 50,
+  }) {
     Query query = _firestore
         .collection('tenants')
         .doc(tenantId)
@@ -3059,8 +2925,6 @@ class FirebaseService {
 
     return query.snapshots();
   }
-
-
 
   // Existing methods remain the same but enhanced with activity logging...
   static Future<void> createTenant({
@@ -3176,15 +3040,16 @@ class FirebaseService {
   }
 
   static Future<void> _cacheOfflineData(
-      String type,
-      Map<String, dynamic> data,
-      ) async {
+    String type,
+    Map<String, dynamic> data,
+  ) async {
     final offlineBox = Hive.box('offline_data');
     final pendingSync =
-    offlineBox.get('pending_sync', defaultValue: []) as List;
+        offlineBox.get('pending_sync', defaultValue: []) as List;
     pendingSync.add({'type': type, 'data': data, 'timestamp': DateTime.now()});
     await offlineBox.put('pending_sync', pendingSync);
   }
+
   // Add to FirebaseService class
   static Future<void> createUserInTenant({
     required String tenantId,
@@ -3286,11 +3151,8 @@ class FirebaseService {
 
   // Enhanced error handling wrapper
 
-
   // Tenant management
   // Update the createTenant method in FirebaseService
-
-
 
   // Product management
   static Future<void> addProduct({
@@ -3603,18 +3465,13 @@ class FirebaseService {
     // Clear successfully synced data
     await offlineBox.put('pending_sync', []);
   }
-
-
 }
 
 // =============================
 // ENUMS AND MODELS
 // =============================
-enum UserRole { superAdmin, clientAdmin, cashier, salesInventoryManager }
 
 enum TicketStatus { open, inProgress, closed }
-
-
 
 // =============================
 // PROVIDERS (STATE MANAGEMENT)
@@ -3623,197 +3480,6 @@ enum TicketStatus { open, inProgress, closed }
 // ENHANCED AUTH PROVIDER
 // =============================
 // Enhanced AuthProvider with proper casting
-class MyAuthProvider with ChangeNotifier {
-  AppUser? _currentUser;
-  Tenant? _currentTenant;
-  bool _isLoading = false;
-  String? _error;
-
-  AppUser? get currentUser => _currentUser;
-  Tenant? get currentTenant => _currentTenant;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-
-  Future<void> login(String email, String password) async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      // Validate inputs
-      if (email.isEmpty || password.isEmpty) {
-        throw 'Please enter both email and password';
-      }
-
-      if (!AppUtils.isEmailValid(email)) {
-        throw 'Please enter a valid email address';
-      }
-
-      final UserCredential userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-
-      await _loadUserData(userCredential.user!.uid);
-
-      // Sync any offline data
-      if (_currentTenant != null) {
-        await FirebaseService.syncOfflineData(_currentTenant!.id);
-      }
-
-      // Log successful login
-      if (_currentUser != null && !_currentUser!.isSuperAdmin) {
-        await FirebaseService._logUserActivity(
-          tenantId: _currentUser!.tenantId,
-          userId: _currentUser!.uid,
-          userEmail: _currentUser!.email,
-          userDisplayName: _currentUser!.displayName,
-          action: ActivityType.user_login,
-          description: 'User logged in successfully',
-          metadata: {
-            'loginMethod': 'email_password',
-          },
-        );
-      }
-
-    } on FirebaseAuthException catch (e) {
-      _error = _handleAuthError(e);
-      print('Firebase Auth Error: ${e.code} - ${e.message}');
-    } catch (e) {
-      _error = 'Login failed: $e';
-      print('Login Error: $e');
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> _loadUserData(String uid) async {
-    try {
-      _isLoading = true;
-      _error = null;
-      notifyListeners();
-
-      print('Loading user data for UID: $uid');
-
-      // First, check if user is super admin
-      final superAdminSnapshot = await FirebaseFirestore.instance
-          .collection('super_admins')
-          .doc(uid)
-          .get();
-
-      if (superAdminSnapshot.exists) {
-        final adminData = superAdminSnapshot.data() as Map<String, dynamic>? ?? {};
-        print('Super admin data: $adminData');
-
-        _currentUser = AppUser(
-          uid: uid,
-          email: FirebaseAuth.instance.currentUser?.email ?? 'unknown@email.com',
-          displayName: '${adminData['firstName'] ?? 'Admin'} ${adminData['lastName'] ?? ''}'.trim(),
-          role: UserRole.superAdmin,
-          tenantId: 'super_admin',
-          isActive: adminData['isActive'] ?? true,
-          createdAt: adminData['createdAt'] != null
-              ? (adminData['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
-          createdBy: adminData['createdBy'] ?? 'system',
-          lastLogin: adminData['lastLogin'] != null
-              ? (adminData['lastLogin'] as Timestamp).toDate()
-              : null,
-        );
-        print('Super admin user loaded successfully');
-        return;
-      }
-
-      // Search for user in tenants
-      final tenantsSnapshot = await FirebaseFirestore.instance
-          .collection('tenants')
-          .where('isActive', isEqualTo: true)
-          .get();
-
-      print('Found ${tenantsSnapshot.docs.length} active tenants');
-
-      bool userFound = false;
-
-      for (final tenantDoc in tenantsSnapshot.docs) {
-        final userDoc = await FirebaseFirestore.instance
-            .collection('tenants')
-            .doc(tenantDoc.id)
-            .collection('users')
-            .doc(uid)
-            .get();
-
-        if (userDoc.exists) {
-          print('User found in tenant: ${tenantDoc.id}');
-          final userData = userDoc.data() as Map<String, dynamic>? ?? {};
-
-          try {
-            _currentUser = AppUser.fromFirestore(userDoc);
-            _currentTenant = Tenant.fromFirestore(tenantDoc);
-            userFound = true;
-            print('User data loaded successfully: ${_currentUser?.email}');
-            break;
-          } catch (e) {
-            print('Error parsing user data: $e');
-            throw Exception('Failed to parse user data: $e');
-          }
-        }
-      }
-
-      if (!userFound) {
-        print('User not found in any tenant');
-        throw Exception('User not found in any active tenant. Please contact administrator.');
-      }
-    } catch (e) {
-      _error = 'Failed to load user data: $e';
-      print('Error in _loadUserData: $e');
-      await logout();
-      rethrow;
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
-  Future<void> logout() async {
-    // Log logout activity if user is logged in
-    if (_currentUser != null && !_currentUser!.isSuperAdmin) {
-      await FirebaseService._logUserActivity(
-        tenantId: _currentUser!.tenantId,
-        userId: _currentUser!.uid,
-        userEmail: _currentUser!.email,
-        userDisplayName: _currentUser!.displayName,
-        action: ActivityType.user_logout,
-        description: 'User logged out',
-      );
-    }
-
-    await FirebaseAuth.instance.signOut();
-    _currentUser = null;
-    _currentTenant = null;
-    _error = null;
-    notifyListeners();
-  }
-
-  String _handleAuthError(FirebaseAuthException e) {
-    switch (e.code) {
-      case 'user-not-found':
-        return 'No user found with this email.';
-      case 'wrong-password':
-        return 'Incorrect password.';
-      case 'invalid-email':
-        return 'Invalid email address.';
-      case 'user-disabled':
-        return 'This account has been disabled.';
-      case 'too-many-requests':
-        return 'Too many attempts. Please try again later.';
-      default:
-        return 'Login failed: ${e.message}';
-    }
-  }
-}
-
 
 class TenantProvider with ChangeNotifier {
   final List<Tenant> _tenants = [];
@@ -3884,8 +3550,6 @@ class TenantProvider with ChangeNotifier {
 // WIDGETS - CORE UI COMPONENTS
 // =============================
 
-
-
 class MultiTenantSaaSApp extends StatelessWidget {
   const MultiTenantSaaSApp({super.key});
 
@@ -3895,7 +3559,9 @@ class MultiTenantSaaSApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => MyAuthProvider()),
         ChangeNotifierProvider(create: (_) => TenantProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()..loadSavedTheme()),
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider()..loadSavedTheme(),
+        ),
       ],
       // 👇 Use Builder to get a new context with access to the providers
       child: Builder(
@@ -3904,21 +3570,22 @@ class MultiTenantSaaSApp extends StatelessWidget {
 
           return MaterialApp(
             title: 'Multi-Tenant SaaS',
-            theme: ThemeData.light().copyWith(
-              colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+            theme: ThemeData(
               useMaterial3: true,
-            ),
-            darkTheme: ThemeData.dark().copyWith(
+              brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+              primaryColor: themeProvider.getPrimaryColor(),
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.blue,
-                brightness: Brightness.dark,
+                seedColor: themeProvider.getPrimaryColor(),
+                brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
               ),
-              useMaterial3: true,
+              scaffoldBackgroundColor: themeProvider.getBackgroundColor(),
+              cardColor: themeProvider.getSurfaceColor(),
+              textTheme: TextTheme(
+                bodyLarge: TextStyle(color: themeProvider.getPrimaryTextColor()),
+                bodyMedium: TextStyle(color: themeProvider.getSecondaryTextColor()),
+              ),
             ),
-            themeMode: themeProvider.useSystemTheme
-                ? ThemeMode.system
-                : (themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light),
-            home: const AuthWrapper(),
+            home: AppLifecycleWrapper(child: const AuthWrapper()),
             debugShowCheckedModeBanner: false,
           );
         },
@@ -3927,702 +3594,9 @@ class MultiTenantSaaSApp extends StatelessWidget {
   }
 }
 
-class AuthWrapper extends StatelessWidget {
-  const AuthWrapper({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<MyAuthProvider>(context);
-
-    return FutureBuilder<bool>(
-      future: _checkSuperAdminExists(),
-      builder: (context, snapshot) {
-        // Show loading while checking
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return SplashScreen();
-        }
-
-        // If no super admin exists, show setup screen
-        if (snapshot.hasData && !snapshot.data!) {
-          return SuperAdminSetupScreen();
-        }
-
-        // Existing auth logic
-        return StreamBuilder<User?>(
-          stream: FirebaseAuth.instance.authStateChanges(),
-          builder: (context, userSnapshot) {
-            if (userSnapshot.connectionState == ConnectionState.waiting) {
-              return SplashScreen();
-            }
-
-            if (userSnapshot.hasData && authProvider.currentUser != null) {
-              if (!authProvider.currentUser!.isActive) {
-                return AccountDisabledScreen();
-              }
-
-              if (authProvider.currentUser!.isSuperAdmin) {
-                return SuperAdminDashboard();
-              } else {
-                return MainPOSScreen();
-              }
-            }
-
-            return LoginScreen();
-          },
-        );
-      },
-    );
-  }
-
-  Future<bool> _checkSuperAdminExists() async {
-    try {
-      return await FirebaseService.checkSuperAdminExists();
-    } catch (e) {
-      print('Error checking super admin: $e');
-      return false;
-    }
-  }
-}
-
 // =============================
 // AUTH SCREENS
 // =============================
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FlutterLogo(size: 100),
-            SizedBox(height: 20),
-            Text(
-              'Multi-Tenant SaaS',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 20),
-            CircularProgressIndicator(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
-
-  @override
-  State<LoginScreen> createState() => _LoginScreenState();
-}
-
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
-
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _slideAnimation;
-
-  bool _obscurePassword = true;
-  bool _isHovering = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1000),
-    );
-
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.0, 0.5, curve: Curves.easeOut),
-      ),
-    );
-
-    _slideAnimation = Tween<double>(begin: 30.0, end: 0.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
-      ),
-    );
-
-    _animationController.forward();
-  }
-
-  @override
-  void dispose() {
-    _animationController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  void _showThemeSelector(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => const ThemeSelectorBottomSheet(),
-    );
-  }
-
-  Widget _buildSocialButton({required IconData icon, required Color color, required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 50,
-        height: 50,
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF2D3748)
-              : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Icon(
-          icon,
-          color: color,
-          size: 24,
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<MyAuthProvider>(context);
-    final themeProvider = Provider.of<ThemeProvider>(context);
-
-    final gradientColors = themeProvider.getCurrentGradientColors();
-    final isDark = themeProvider.isDarkMode;
-
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: gradientColors,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Center(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 500),
-                margin: const EdgeInsets.all(20),
-                child: AnimatedBuilder(
-                  animation: _animationController,
-                  builder: (context, child) {
-                    return Transform.translate(
-                      offset: Offset(0, _slideAnimation.value),
-                      child: Opacity(
-                        opacity: _fadeAnimation.value,
-                        child: child,
-                      ),
-                    );
-                  },
-                  child: Card(
-                    elevation: 24,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(40),
-                      child: SingleChildScrollView(
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: IconButton(
-                                      onPressed: () => _showThemeSelector(context),
-                                      icon: const Icon(
-                                        Icons.palette_rounded,
-                                        color: Colors.white,
-                                      ),
-                                      tooltip: 'Change Theme',
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Container(
-                                width: 80,
-                                height: 80,
-                                decoration: BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: gradientColors,
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.1),
-                                      blurRadius: 20,
-                                      offset: const Offset(0, 10),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.rocket_launch_rounded,
-                                  color: Colors.white,
-                                  size: 40,
-                                ),
-                              ),
-                              const SizedBox(height: 32),
-                              Text(
-                                'Welcome Back',
-                                style: TextStyle(
-                                  fontSize: 32,
-                                  fontWeight: FontWeight.w800,
-                                  color: isDark ? Colors.white : const Color(0xFF2D3748),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Sign in to continue your journey',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: isDark ? Colors.white70 : const Color(0xFF718096),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 32),
-                              if (authProvider.error != null)
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(16),
-                                  margin: const EdgeInsets.only(bottom: 20),
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: Colors.red.withOpacity(0.3),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.all(4),
-                                        decoration: const BoxDecoration(
-                                          color: Colors.red,
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(
-                                          Icons.error_outline,
-                                          color: Colors.white,
-                                          size: 16,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          authProvider.error!,
-                                          style: const TextStyle(
-                                            color: Colors.red,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                      GestureDetector(
-                                        // onTap: () => authProvider.clearError(),
-                                        child: const Icon(
-                                          Icons.close,
-                                          color: Colors.red,
-                                          size: 18,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: TextFormField(
-                                  controller: _emailController,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  decoration: InputDecoration(
-                                    labelText: 'Email Address',
-                                    labelStyle: TextStyle(
-                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
-                                    ),
-                                    prefixIcon: Container(
-                                      margin: const EdgeInsets.only(right: 12, left: 16),
-                                      child: const Icon(
-                                        Icons.email_rounded,
-                                        color: Color(0xFF667EEA),
-                                      ),
-                                    ),
-                                    filled: true,
-                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFF667EEA),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                  ),
-                                  keyboardType: TextInputType.emailAddress,
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter your email';
-                                    }
-                                    if (!AppUtils.isEmailValid(value)) {
-                                      return 'Please enter a valid email';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              Container(
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 5),
-                                    ),
-                                  ],
-                                ),
-                                child: TextFormField(
-                                  controller: _passwordController,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  obscureText: _obscurePassword,
-                                  decoration: InputDecoration(
-                                    labelText: 'Password',
-                                    labelStyle: TextStyle(
-                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
-                                    ),
-                                    prefixIcon: Container(
-                                      margin: const EdgeInsets.only(right: 12, left: 16),
-                                      child: const Icon(
-                                        Icons.lock_rounded,
-                                        color: Color(0xFF667EEA),
-                                      ),
-                                    ),
-                                    suffixIcon: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _obscurePassword = !_obscurePassword;
-                                        });
-                                      },
-                                      child: Container(
-                                        margin: const EdgeInsets.only(right: 16),
-                                        child: Icon(
-                                          _obscurePassword
-                                              ? Icons.visibility_rounded
-                                              : Icons.visibility_off_rounded,
-                                          color: const Color(0xFF718096),
-                                        ),
-                                      ),
-                                    ),
-                                    filled: true,
-                                    fillColor: isDark ? const Color(0xFF2D3748) : Colors.white,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                      borderSide: const BorderSide(
-                                        color: Color(0xFF667EEA),
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                  ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Please enter your password';
-                                    }
-                                    if (value.length < 6) {
-                                      return 'Password must be at least 6 characters';
-                                    }
-                                    return null;
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              MouseRegion(
-                                onEnter: (_) => setState(() => _isHovering = true),
-                                onExit: (_) => setState(() => _isHovering = false),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 300),
-                                  width: double.infinity,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [const Color(0xFF667EEA), const Color(0xFF764BA2)],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: _isHovering
-                                        ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF667EEA).withOpacity(0.4),
-                                        blurRadius: 20,
-                                        offset: const Offset(0, 10),
-                                      ),
-                                    ]
-                                        : [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.1),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ],
-                                  ),
-                                  child: ElevatedButton(
-                                    onPressed: authProvider.isLoading
-                                        ? null
-                                        : () async {
-                                      if (_formKey.currentState!.validate()) {
-                                        await authProvider.login(
-                                          _emailController.text.trim(),
-                                          _passwordController.text,
-                                        );
-                                      }
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
-                                      elevation: 0,
-                                    ),
-                                    child: authProvider.isLoading
-                                        ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                        : const Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'Sign In',
-                                          style: TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        SizedBox(width: 8),
-                                        Icon(
-                                          Icons.arrow_forward_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    'New to our platform?',
-                                    style: TextStyle(
-                                      color: isDark ? Colors.white70 : const Color(0xFF718096),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  GestureDetector(
-                                    onTap: () => Navigator.push(
-                                      context,
-                                      PageRouteBuilder(
-                                        pageBuilder: (_, __, ___) => const ClientSignupScreen(),
-                                        transitionsBuilder: (_, animation, __, child) {
-                                          return FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Create account',
-                                      style: TextStyle(
-                                        color: Color(0xFF667EEA),
-                                        fontWeight: FontWeight.w600,
-                                        decoration: TextDecoration.underline,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Divider(
-                                      color: isDark ? Colors.white24 : Colors.grey[300],
-                                    ),
-                                  ),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                                    child: Text(
-                                      'or',
-                                      style: TextStyle(
-                                        color: isDark ? Colors.white54 : const Color(0xFF718096),
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Divider(
-                                      color: isDark ? Colors.white24 : Colors.grey[300],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _buildSocialButton(
-                                    icon: Icons.g_mobiledata_rounded,
-                                    color: Colors.red,
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 16),
-                                  _buildSocialButton(
-                                    icon: Icons.facebook_rounded,
-                                    color: Colors.blue,
-                                    onTap: () {},
-                                  ),
-                                  const SizedBox(width: 16),
-                                  _buildSocialButton(
-                                    icon: Icons.apple_rounded,
-                                    color: Colors.black,
-                                    onTap: () {},
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class AccountDisabledScreen extends StatelessWidget {
-  const AccountDisabledScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<MyAuthProvider>(context);
-    final themeProvider = Provider.of<ThemeProvider>(context);
-
-    final gradientColors = themeProvider.getCurrentGradientColors();
-
-    // Handle system theme
-    final brightness = MediaQuery.of(context).platformBrightness;
-    final isDark = themeProvider.useSystemTheme
-        ? brightness == Brightness.dark
-        : themeProvider.isDarkMode;
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, size: 80, color: Colors.red),
-              SizedBox(height: 20),
-              Text(
-                'Account Disabled',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              SizedBox(height: 10),
-              Text(
-                'Your account has been disabled. Please contact your administrator or check your subscription status.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
-              ),
-              SizedBox(height: 30),
-              ElevatedButton(
-                onPressed: () =>
-                    Provider.of<MyAuthProvider>(context, listen: false).logout(),
-                child: Text('Return to Login'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 // =============================
 // CLIENT SIGNUP / ONBOARDING
@@ -5006,7 +3980,6 @@ class __SubscriptionStepState extends State<_SubscriptionStep> {
   }
 }
 
-
 class _ConfirmationStep extends StatelessWidget {
   final Function(BuildContext) onComplete;
   const _ConfirmationStep(this.onComplete);
@@ -5101,8 +4074,6 @@ class _AddUserDialogState extends State<AddUserDialog> {
     Navigator.pop(context);
   }
 }
-
-
 
 class _StatCard extends StatelessWidget {
   final String title;
@@ -5435,11 +4406,16 @@ class ProfileScreen extends StatelessWidget {
             ),
           ),
 
-          ElevatedButton(onPressed: (){
-            final authProvider = Provider.of<MyAuthProvider>(context,listen: false);
-            authProvider.logout();
-
-          }, child: Text("Logout")),
+          ElevatedButton(
+            onPressed: () {
+              final authProvider = Provider.of<MyAuthProvider>(
+                context,
+                listen: false,
+              );
+              authProvider.logout();
+            },
+            child: Text("Logout"),
+          ),
           SizedBox(height: 20),
 
           // Expanded(
@@ -5513,10 +4489,10 @@ class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider=Provider.of<MyAuthProvider>(context);
+    final authProvider = Provider.of<MyAuthProvider>(context);
     return Scaffold(
       backgroundColor: Colors.blue[50],
-      appBar: AppBar(actions: [       ],),
+      appBar: AppBar(actions: []),
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
@@ -5885,7 +4861,7 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
       /////////
       SuperAdminHome(),
       TenantsManagementScreen(),
-SuperAdminAnalyticsScreen(),      SuperAdminTicketsScreen(),
+      SuperAdminAnalyticsScreen(), SuperAdminTicketsScreen(),
       SuperAdminManagementScreen(), // Make sure this is included
     ];
 
@@ -6270,7 +5246,11 @@ class _TenantManagementCardState extends State<TenantManagementCard> {
 class RenewSubscriptionDialog extends StatefulWidget {
   final Tenant tenant;
   final Function(String, DateTime) onRenew;
-  const RenewSubscriptionDialog({super.key, required this.tenant, required this.onRenew});
+  const RenewSubscriptionDialog({
+    super.key,
+    required this.tenant,
+    required this.onRenew,
+  });
 
   @override
   _RenewSubscriptionDialogState createState() =>
@@ -6707,10 +5687,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
     try {
       // Generate tenant ID
       final tenantId =
-          '${_businessNameController.text.toLowerCase().replaceAll(
-            RegExp(r'[^a-z0-9]'),
-            '_',
-          )}_${DateTime.now().millisecondsSinceEpoch}';
+          '${_businessNameController.text.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}_${DateTime.now().millisecondsSinceEpoch}';
 
       print('Creating tenant: $tenantId');
 
@@ -6951,7 +5928,11 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
 class TicketDetailsDialog extends StatelessWidget {
   final String ticketId;
   final Map<String, dynamic> ticket;
-  const TicketDetailsDialog({super.key, required this.ticketId, required this.ticket});
+  const TicketDetailsDialog({
+    super.key,
+    required this.ticketId,
+    required this.ticket,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -6966,14 +5947,12 @@ class TicketDetailsDialog extends StatelessWidget {
             SizedBox(height: 16),
             if (ticket['replies'] != null) ...[
               Text('Replies:', style: TextStyle(fontWeight: FontWeight.bold)),
-              ...(ticket['replies'] as List)
-                  .map(
-                    (reply) => Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text('- ${reply['message']}'),
-                    ),
-                  )
-                  ,
+              ...(ticket['replies'] as List).map(
+                (reply) => Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('- ${reply['message']}'),
+                ),
+              ),
             ],
           ],
         ),
@@ -7105,7 +6084,11 @@ class SuperAdminTicketsScreen extends StatelessWidget {
 class ManageTicketDialog extends StatefulWidget {
   final String ticketId;
   final Map<String, dynamic> ticket;
-  const ManageTicketDialog({super.key, required this.ticketId, required this.ticket});
+  const ManageTicketDialog({
+    super.key,
+    required this.ticketId,
+    required this.ticket,
+  });
 
   @override
   _ManageTicketDialogState createState() => _ManageTicketDialogState();

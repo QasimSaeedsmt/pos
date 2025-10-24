@@ -1,450 +1,352 @@
-// // enhanced_checkout_screen.dart
-// import 'package:flutter/material.dart';
-// import 'package:mpcm/woo_service.dart';
-//
-// import 'cart_manager.dart';
-// import 'app.dart';
-//
-// class EnhancedCheckoutScreen extends StatefulWidget {
-//   final EnhancedCartManager cartManager;
-//   final List<CartItem> cartItems;
-//
-//   const EnhancedCheckoutScreen({
-//     Key? key,
-//     required this.cartManager,
-//     required this.cartItems,
-//   }) : super(key: key);
-//
-//   @override
-//   _EnhancedCheckoutScreenState createState() => _EnhancedCheckoutScreenState();
-// }
-//
-// class _EnhancedCheckoutScreenState extends State<EnhancedCheckoutScreen> {
-//   final EnhancedWooCommerceService _wooService = EnhancedWooCommerceService();
-//   bool _isProcessing = false;
-//   Order? _completedOrder;
-//   int? _pendingOrderId;
-//   String? _errorMessage;
-//
-//   Future<void> _processOrder() async {
-//     if (!mounted) return;
-//
-//     setState(() {
-//       _isProcessing = true;
-//       _errorMessage = null;
-//       _completedOrder = null;
-//       _pendingOrderId = null;
-//     });
-//
-//     try {
-//       final result = await _wooService.createOrder(widget.cartItems);
-//
-//       if (!mounted) return;
-//
-//       if (result.success) {
-//         if (result.isOffline) {
-//           setState(() => _pendingOrderId = result.pendingOrderId);
-//           _showOfflineSuccessMessage();
-//         } else {
-//           setState(() => _completedOrder = result.order);
-//           _showOnlineSuccessMessage();
-//         }
-//         widget.cartManager.clearCart();
-//       } else {
-//         setState(() => _errorMessage = result.error);
-//         _showErrorMessage(result.error!);
-//       }
-//     } catch (e) {
-//       if (!mounted) return;
-//       setState(() => _errorMessage = e.toString());
-//       _showErrorMessage(e.toString());
-//     } finally {
-//       if (mounted) {
-//         setState(() => _isProcessing = false);
-//       }
-//     }
-//   }
-//
-//   void _showOnlineSuccessMessage() {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(
-//         content: Row(
-//           children: [
-//             Icon(Icons.check_circle, color: Colors.white),
-//             SizedBox(width: 8),
-//             Expanded(
-//               child: Column(
-//                 crossAxisAlignment: CrossAxisAlignment.start,
-//                 children: [
-//                   Text('Order Successful!'),
-//                   Text(
-//                     'Order #${_completedOrder!.number}',
-//                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ],
-//         ),
-//         backgroundColor: Colors.green,
-//         duration: Duration(seconds: 4),
-//       ),
-//     );
-//   }
-//
-//   void _showOfflineSuccessMessage() {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(
-//         content: Row(
-//           children: [
-//             Icon(Icons.cloud_off, color: Colors.white),
-//             SizedBox(width: 8),
-//             Expanded(
-//               child: Column(
-//                 crossAxisAlignment: CrossAxisAlignment.start,
-//                 children: [
-//                   Text('Order Saved Offline'),
-//                   Text(
-//                     'Will sync when online',
-//                     style: TextStyle(fontSize: 12),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ],
-//         ),
-//         backgroundColor: Colors.orange,
-//         duration: Duration(seconds: 4),
-//       ),
-//     );
-//   }
-//
-//   void _showErrorMessage(String error) {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(
-//         content: Row(
-//           children: [
-//             Icon(Icons.error, color: Colors.white),
-//             SizedBox(width: 8),
-//             Expanded(child: Text('Checkout failed: $error')),
-//           ],
-//         ),
-//         backgroundColor: Colors.red,
-//         duration: Duration(seconds: 5),
-//       ),
-//     );
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     final totalAmount = widget.cartManager.totalAmount;
-//     final isOnline = _wooService.isOnline;
-//
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text('Checkout'),
-//         backgroundColor: Colors.blue[700],
-//         actions: [
-//           if (!isOnline)
-//             Padding(
-//               padding: EdgeInsets.only(right: 16),
-//               child: Row(
-//                 children: [
-//                   Icon(Icons.cloud_off, color: Colors.orange, size: 20),
-//                   SizedBox(width: 4),
-//                   Text('Offline', style: TextStyle(fontSize: 12)),
-//                 ],
-//               ),
-//             ),
-//         ],
-//       ),
-//       body: _completedOrder != null
-//           ? OrderSuccessScreen(
-//         order: _completedOrder!,
-//         onPrintReceipt: _printReceipt,
-//         onReturn: _returnToProducts,
-//         isOnline: true,
-//       )
-//           : _pendingOrderId != null
-//           ? OfflineOrderSuccessScreen(
-//         pendingOrderId: _pendingOrderId!,
-//         onPrintReceipt: _printReceipt,
-//         onReturn: _returnToProducts,
-//       )
-//           : Padding(
-//         padding: EdgeInsets.all(16),
-//         child: Column(
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             // Connection status banner
-//             if (!isOnline)
-//               Container(
-//                 width: double.infinity,
-//                 padding: EdgeInsets.all(12),
-//                 margin: EdgeInsets.only(bottom: 16),
-//                 decoration: BoxDecoration(
-//                   color: Colors.orange[50],
-//                   border: Border.all(color: Colors.orange),
-//                   borderRadius: BorderRadius.circular(8),
-//                 ),
-//                 child: Row(
-//                   children: [
-//                     Icon(Icons.cloud_off, color: Colors.orange, size: 20),
-//                     SizedBox(width: 8),
-//                     Expanded(
-//                       child: Column(
-//                         crossAxisAlignment: CrossAxisAlignment.start,
-//                         children: [
-//                           Text(
-//                             'Offline Mode',
-//                             style: TextStyle(
-//                               fontWeight: FontWeight.bold,
-//                               color: Colors.orange[800],
-//                             ),
-//                           ),
-//                           Text(
-//                             'Order will be saved locally and synced when online',
-//                             style: TextStyle(
-//                               fontSize: 12,
-//                               color: Colors.orange[700],
-//                             ),
-//                           ),
-//                         ],
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//
-//             Text(
-//               'Order Summary',
-//               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-//             ),
-//             SizedBox(height: 16),
-//
-//             if (_errorMessage != null)
-//               Container(
-//                 width: double.infinity,
-//                 padding: EdgeInsets.all(12),
-//                 margin: EdgeInsets.only(bottom: 16),
-//                 decoration: BoxDecoration(
-//                   color: Colors.red[50],
-//                   border: Border.all(color: Colors.red),
-//                   borderRadius: BorderRadius.circular(8),
-//                 ),
-//                 child: Text(
-//                   _errorMessage!,
-//                   style: TextStyle(color: Colors.red[700]),
-//                 ),
-//               ),
-//
-//             Expanded(
-//               child: ListView.builder(
-//                 itemCount: widget.cartItems.length,
-//                 itemBuilder: (context, index) {
-//                   final item = widget.cartItems[index];
-//                   return ListTile(
-//                     leading: Container(
-//                       width: 40,
-//                       height: 40,
-//                       decoration: BoxDecoration(
-//                         color: Colors.grey[200],
-//                         borderRadius: BorderRadius.circular(4),
-//                       ),
-//                       child: item.product.imageUrl != null
-//                           ? Image.network(
-//                         item.product.imageUrl!,
-//                         fit: BoxFit.cover,
-//                         errorBuilder: (context, error, stackTrace) {
-//                           return Icon(Icons.shopping_bag, size: 20);
-//                         },
-//                       )
-//                           : Icon(Icons.shopping_bag, size: 20),
-//                     ),
-//                     title: Text(item.product.name),
-//                     subtitle: Text('Qty: ${item.quantity}'),
-//                     trailing: Text('\$${item.subtotal.toStringAsFixed(2)}'),
-//                   );
-//                 },
-//               ),
-//             ),
-//             Divider(),
-//             Row(
-//               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//               children: [
-//                 Text(
-//                   'Total Amount:',
-//                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-//                 ),
-//                 Text(
-//                   '\$${totalAmount.toStringAsFixed(2)}',
-//                   style: TextStyle(
-//                     fontSize: 24,
-//                     fontWeight: FontWeight.bold,
-//                     color: Colors.green[700],
-//                   ),
-//                 ),
-//               ],
-//             ),
-//             SizedBox(height: 24),
-//             SizedBox(
-//               width: double.infinity,
-//               height: 50,
-//               child: _isProcessing
-//                   ? ElevatedButton(
-//                 onPressed: null,
-//                 child: Row(
-//                   mainAxisAlignment: MainAxisAlignment.center,
-//                   children: [
-//                     CircularProgressIndicator(color: Colors.white),
-//                     SizedBox(width: 12),
-//                     Text(isOnline ? 'Processing...' : 'Saving Offline...'),
-//                   ],
-//                 ),
-//               )
-//                   : ElevatedButton(
-//                 onPressed: _processOrder,
-//                 style: ElevatedButton.styleFrom(
-//                   backgroundColor: isOnline ? Colors.green[700] : Colors.orange,
-//                   shape: RoundedRectangleBorder(
-//                     borderRadius: BorderRadius.circular(8),
-//                   ),
-//                 ),
-//                 child: Text(
-//                   isOnline ? 'PROCESS PAYMENT' : 'SAVE OFFLINE ORDER',
-//                   style: TextStyle(
-//                     fontSize: 18,
-//                     fontWeight: FontWeight.bold,
-//                     color: Colors.white,
-//                   ),
-//                 ),
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-//
-//   void _printReceipt() {
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       SnackBar(content: Text('Receipt sent to printer')),
-//     );
-//   }
-//
-//   void _returnToProducts() {
-//     Navigator.of(context).popUntil((route) => route.isFirst);
-//   }
-// }
-//
-// class OfflineOrderSuccessScreen extends StatelessWidget {
-//   final int pendingOrderId;
-//   final VoidCallback onPrintReceipt;
-//   final VoidCallback onReturn;
-//
-//   const OfflineOrderSuccessScreen({
-//     Key? key,
-//     required this.pendingOrderId,
-//     required this.onPrintReceipt,
-//     required this.onReturn,
-//   }) : super(key: key);
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Padding(
-//       padding: EdgeInsets.all(24),
-//       child: Column(
-//         mainAxisAlignment: MainAxisAlignment.center,
-//         children: [
-//           Icon(
-//             Icons.cloud_done,
-//             color: Colors.orange,
-//             size: 80,
-//           ),
-//           SizedBox(height: 24),
-//           Text(
-//             'Order Saved Offline!',
-//             style: TextStyle(
-//               fontSize: 28,
-//               fontWeight: FontWeight.bold,
-//               color: Colors.orange[700],
-//             ),
-//           ),
-//           SizedBox(height: 16),
-//           Text(
-//             'Order #$pendingOrderId',
-//             style: TextStyle(fontSize: 18),
-//           ),
-//           SizedBox(height: 8),
-//           Text(
-//             'Date: ${DateTime.now().toString().split(' ')[0]}',
-//             style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-//           ),
-//           SizedBox(height: 16),
-//           Card(
-//             child: Padding(
-//               padding: EdgeInsets.all(16),
-//               child: Column(
-//                 children: [
-//                   Row(
-//                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                     children: [
-//                       Text('Status:', style: TextStyle(fontSize: 18)),
-//                       Container(
-//                         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-//                         decoration: BoxDecoration(
-//                           color: Colors.orange[100],
-//                           borderRadius: BorderRadius.circular(16),
-//                         ),
-//                         child: Text(
-//                           'PENDING SYNC',
-//                           style: TextStyle(
-//                             color: Colors.orange[800],
-//                             fontWeight: FontWeight.bold,
-//                           ),
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                   SizedBox(height: 8),
-//                   Divider(),
-//                   SizedBox(height: 8),
-//                   Text(
-//                     'This order will be automatically synced when you go online',
-//                     style: TextStyle(color: Colors.grey[600]),
-//                     textAlign: TextAlign.center,
-//                   ),
-//                 ],
-//               ),
-//             ),
-//           ),
-//           SizedBox(height: 32),
-//           Row(
-//             children: [
-//               Expanded(
-//                 child: OutlinedButton(
-//                   onPressed: onPrintReceipt,
-//                   style: OutlinedButton.styleFrom(
-//                     padding: EdgeInsets.symmetric(vertical: 16),
-//                   ),
-//                   child: Text('PRINT RECEIPT'),
-//                 ),
-//               ),
-//               SizedBox(width: 16),
-//               Expanded(
-//                 child: ElevatedButton(
-//                   onPressed: onReturn,
-//                   style: ElevatedButton.styleFrom(
-//                     backgroundColor: Colors.blue[700],
-//                     padding: EdgeInsets.symmetric(vertical: 16),
-//                   ),
-//                   child: Text('NEW SALE'),
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+import 'main.dart';
+
+enum ActivityType {
+  // Keep all existing types
+  user_login,
+  user_logout,
+  user_created,
+  user_updated,
+  user_deactivated,
+  sale_created,
+  sale_updated,
+  sale_deleted,
+  product_created,
+  product_updated,
+  product_deleted,
+  stock_updated,
+  tenant_created,
+  tenant_updated,
+  subscription_updated,
+  ticket_created,
+  ticket_updated,
+  payment_processed,
+  report_generated,
+
+  // Add new types for comprehensive tracking
+  user_password_changed,
+  user_profile_updated,
+  product_stock_updated,
+  product_category_created,
+  product_category_updated,
+  sale_refunded,
+  sale_cancelled,
+  inventory_checked,
+  inventory_adjusted,
+  low_stock_alert,
+  customer_created,
+  customer_updated,
+  customer_deleted,
+  report_exported,
+  settings_updated,
+  branding_updated,
+  ticket_closed,
+  ticket_replied,
+  payment_failed,
+  payment_refunded,
+}
+class Tenant {
+  final String id;
+  final String businessName;
+  final String subscriptionPlan;
+  final DateTime subscriptionExpiry;
+  final bool isActive;
+  final Map<String, dynamic> branding;
+
+  Tenant({
+    required this.id,
+    required this.businessName,
+    required this.subscriptionPlan,
+    required this.subscriptionExpiry,
+    required this.isActive,
+    required this.branding,
+  });
+
+  factory Tenant.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // Calculate expiry date with fallback
+    final subscriptionExpiry = data['subscriptionExpiry'] != null
+        ? (data['subscriptionExpiry'] as Timestamp).toDate()
+        : DateTime.now().add(Duration(days: 30)); // Default 30 days
+
+    return Tenant(
+      id: doc.id,
+      businessName: data['businessName']?.toString() ?? 'Unknown Business',
+      subscriptionPlan: data['subscriptionPlan']?.toString() ?? 'monthly',
+      subscriptionExpiry: subscriptionExpiry,
+      isActive: data['isActive'] ?? false,
+      branding: data['branding'] is Map
+          ? Map<String, dynamic>.from(data['branding'] as Map)
+          : {},
+    );
+  }
+
+  bool get isSubscriptionActive {
+    return isActive && subscriptionExpiry.isAfter(DateTime.now());
+  }
+}
+
+
+class AppUser {
+  final String uid;
+  final String email;
+  final String displayName;
+  final String? phoneNumber;
+  final UserRole role;
+  final String tenantId;
+  final bool isActive;
+  final DateTime createdAt;
+  final DateTime? lastLogin;
+  final String createdBy;
+  final Map<String, dynamic> profile;
+  final List<String> permissions;
+
+  AppUser({
+    required this.uid,
+    required this.email,
+    required this.displayName,
+    this.phoneNumber,
+    required this.role,
+    required this.tenantId,
+    required this.isActive,
+    required this.createdAt,
+    this.lastLogin,
+    required this.createdBy,
+    this.profile = const {},
+    this.permissions = const [],
+  });
+
+  factory AppUser.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    // Extract email with fallback
+    final email = data['email']?.toString() ?? 'unknown@email.com';
+
+    // Extract display name with fallback
+    final displayName = data['displayName']?.toString() ??
+        email.split('@').first ??
+        'User';
+
+    // Parse role with fallback
+    final roleString = data['role']?.toString() ?? 'cashier';
+    final role = _parseUserRole(roleString);
+
+    // Extract tenant ID with fallback
+    final tenantId = data['tenantId']?.toString() ?? 'unknown_tenant';
+
+    // Parse dates with fallbacks
+    final createdAt = data['createdAt'] != null
+        ? (data['createdAt'] as Timestamp).toDate()
+        : DateTime.now();
+
+    final lastLogin = data['lastLogin'] != null
+        ? (data['lastLogin'] as Timestamp).toDate()
+        : null;
+
+    return AppUser(
+      uid: doc.id,
+      email: email,
+      displayName: displayName,
+      phoneNumber: data['phoneNumber']?.toString(),
+      role: role,
+      tenantId: tenantId,
+      isActive: data['isActive'] ?? false,
+      createdAt: createdAt,
+      lastLogin: lastLogin,
+      createdBy: data['createdBy']?.toString() ?? 'system',
+      profile: data['profile'] is Map ? Map<String, dynamic>.from(data['profile'] as Map) : {},
+      permissions: data['permissions'] is List
+          ? List<String>.from(data['permissions'] as List)
+          : [],
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'uid': uid,
+      'email': email,
+      'displayName': displayName,
+      'phoneNumber': phoneNumber,
+      'role': role.toString().split('.').last,
+      'tenantId': tenantId,
+      'isActive': isActive,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'lastLogin': lastLogin != null ? Timestamp.fromDate(lastLogin!) : null,
+      'createdBy': createdBy,
+      'profile': profile,
+      'permissions': permissions,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  static UserRole _parseUserRole(String roleString) {
+    switch (roleString) {
+      case 'superAdmin':
+        return UserRole.superAdmin;
+      case 'clientAdmin':
+        return UserRole.clientAdmin;
+      case 'cashier':
+        return UserRole.cashier;
+      case 'salesInventoryManager':
+        return UserRole.salesInventoryManager;
+      default:
+        return UserRole.cashier; // Default fallback
+    }
+  }
+
+  bool get canManageProducts =>
+      role == UserRole.clientAdmin || role == UserRole.salesInventoryManager;
+  bool get canProcessSales =>
+      role == UserRole.clientAdmin ||
+          role == UserRole.cashier ||
+          role == UserRole.salesInventoryManager;
+  bool get canManageUsers => role == UserRole.clientAdmin;
+  bool get isSuperAdmin => role == UserRole.superAdmin;
+
+  String get formattedName => displayName.isNotEmpty ? displayName : email.split('@').first;
+}
+class UserActivity {
+  final String id;
+  final String tenantId;
+  final String userId;
+  final String userEmail;
+  final String userDisplayName;
+  final String userRole;
+  final ActivityType action;
+  final String description;
+  final Map<String, dynamic> metadata;
+  final DateTime timestamp;
+  final String ipAddress;
+  final String userAgent;
+  final String module; // New field to categorize activities
+
+  UserActivity({
+    required this.id,
+    required this.tenantId,
+    required this.userId,
+    required this.userEmail,
+    required this.userDisplayName,
+    required this.userRole,
+    required this.action,
+    required this.description,
+    this.metadata = const {},
+    required this.timestamp,
+    this.ipAddress = '',
+    this.userAgent = '',
+    required this.module,
+  });
+
+  factory UserActivity.fromFirestore(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? {};
+
+    return UserActivity(
+      id: doc.id,
+      tenantId: data['tenantId']?.toString() ?? '',
+      userId: data['userId']?.toString() ?? '',
+      userEmail: data['userEmail']?.toString() ?? '',
+      userDisplayName: data['userDisplayName']?.toString() ?? '',
+      userRole: data['userRole']?.toString() ?? '',
+      action: _parseActivityType(data['action']?.toString() ?? ''),
+      description: data['description']?.toString() ?? '',
+      metadata: data['metadata'] is Map ? Map<String, dynamic>.from(data['metadata'] as Map) : {},
+      timestamp: data['timestamp'] != null ? (data['timestamp'] as Timestamp).toDate() : DateTime.now(),
+      ipAddress: data['ipAddress']?.toString() ?? '',
+      userAgent: data['userAgent']?.toString() ?? '',
+      module: data['module']?.toString() ?? _getModuleFromAction(data['action']?.toString() ?? ''),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'tenantId': tenantId,
+      'userId': userId,
+      'userEmail': userEmail,
+      'userDisplayName': userDisplayName,
+      'userRole': userRole,
+      'action': action.toString().split('.').last,
+      'description': description,
+      'metadata': metadata,
+      'timestamp': Timestamp.fromDate(timestamp),
+      'ipAddress': ipAddress,
+      'userAgent': userAgent,
+      'module': module,
+    };
+  }
+
+  static ActivityType _parseActivityType(String type) {
+    try {
+      return ActivityType.values.firstWhere(
+            (e) => e.toString().split('.').last == type,
+        orElse: () => ActivityType.user_login,
+      );
+    } catch (e) {
+      return ActivityType.user_login;
+    }
+  }
+
+  static String _getModuleFromAction(String action) {
+    if (action.contains('user_')) return 'user';
+    if (action.contains('product_')) return 'product';
+    if (action.contains('sale_')) return 'sale';
+    if (action.contains('stock_') || action.contains('inventory_')) return 'inventory';
+    if (action.contains('customer_')) return 'customer';
+    if (action.contains('ticket_')) return 'ticket';
+    if (action.contains('payment_')) return 'payment';
+    if (action.contains('report_')) return 'report';
+    if (action.contains('tenant_') || action.contains('subscription_')) return 'system';
+    return 'system';
+  }
+
+  // Helper method to get module icon
+  IconData get moduleIcon {
+    switch (module) {
+      case 'user':
+        return Icons.person;
+      case 'product':
+        return Icons.inventory;
+      case 'sale':
+        return Icons.point_of_sale;
+      case 'inventory':
+        return Icons.warehouse;
+      case 'customer':
+        return Icons.people;
+      case 'report':
+        return Icons.analytics;
+      case 'ticket':
+        return Icons.support;
+      case 'payment':
+        return Icons.payment;
+      default:
+        return Icons.settings;
+    }
+  }
+
+  // Helper method to get module color
+  Color get moduleColor {
+    switch (module) {
+      case 'user':
+        return Colors.blue;
+      case 'product':
+        return Colors.purple;
+      case 'sale':
+        return Colors.green;
+      case 'inventory':
+        return Colors.orange;
+      case 'customer':
+        return Colors.teal;
+      case 'report':
+        return Colors.indigo;
+      case 'ticket':
+        return Colors.red;
+      case 'payment':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+}
+enum UserRole { superAdmin, clientAdmin, cashier, salesInventoryManager }

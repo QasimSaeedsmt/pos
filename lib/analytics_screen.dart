@@ -8,6 +8,7 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:provider/provider.dart';
 import 'constants.dart';
 import 'app.dart';
+import 'features/auth/auth_base.dart';
 import 'main.dart';
 
 // Enhanced Analytics Data Models
@@ -936,6 +937,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        actions: [
+          ElevatedButton(onPressed: (){
+            Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsPage(),));
+          }, child: Text("BioMetric")),
+
+        ],
+      ),
       body: Column(
         children: [
           // Tab Bar

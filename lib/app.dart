@@ -29,6 +29,7 @@ import 'package:image_picker/image_picker.dart';
 import 'analytics_screen.dart';
 import 'app_theme.dart';
 import 'constants.dart';
+import 'features/auth/auth_base.dart';
 import 'main.dart';
 
 // Modern Dashboard Screen with Real Data
@@ -9651,6 +9652,7 @@ class _CartScreenState extends State<CartScreen> {
           ],
         ),
         actions: [
+
           if (item.hasManualDiscount)
             TextButton(
               onPressed: () {
