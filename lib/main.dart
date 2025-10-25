@@ -4,10 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:mpcm/app.dart';
+import 'package:mpcm/modules/auth/screens/settings_screen.dart';
 import 'package:mpcm/theme_provider.dart';
 import 'package:mpcm/theme_selector_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:hive/hive.dart';
@@ -15,6 +17,14 @@ import 'package:path_provider/path_provider.dart';
 import 'constants.dart';
 import 'features/auth/auth_base.dart';
 import 'firebase_options.dart';
+import 'modules/auth/models/activity_type.dart';
+import 'modules/auth/models/tenant_model.dart';
+import 'modules/auth/models/user_model.dart';
+import 'modules/auth/providers/auth_provider.dart';
+import 'modules/auth/providers/settings_provider.dart';
+import 'modules/auth/screens/auth_wrapper.dart';
+import 'modules/auth/services/offline_storage_service.dart';
+import 'modules/auth/widgets/app_lifecycle_wrapper.dart';
 
 // =============================
 // ENHANCED USER MANAGEMENT SCREENS
@@ -1900,6 +1910,9 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(onPressed: (){
+            Navigator.push(context, MaterialPageRoute(builder: (context) => SettingsScreen(),));
+          }, icon:Icon(Icons.settings)),
           PopupMenuButton<String>(
             onSelected: _onTimeFilterChanged,
             itemBuilder: (context) => [
@@ -2405,14 +2418,24 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-
+    final sharedPreferences = await SharedPreferences.getInstance();
+    final offlineStorageService = OfflineStorageService(sharedPreferences);
     // Initialize Hive for offline storage
     final appDocumentDir = await getApplicationDocumentsDirectory();
     Hive.init(appDocumentDir.path);
     await Hive.openBox('app_cache');
     await Hive.openBox('offline_data');
 
-    runApp(MultiTenantSaaSApp());
+    runApp(MultiProvider(
+        providers: [
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+
+  ChangeNotifierProvider(create: (_) => MyAuthProvider(offlineStorageService)),
+          ChangeNotifierProvider(create: (_) => TenantProvider()),
+          ChangeNotifierProvider(
+            create: (_) => ThemeProvider()..loadSavedTheme(),
+          ),
+        ],child: MultiTenantSaaSApp()));
   } catch (e) {
     print('Firebase initialization error: $e');
     runApp(ErrorApp(error: e));
@@ -3555,16 +3578,9 @@ class MultiTenantSaaSApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => MyAuthProvider()),
-        ChangeNotifierProvider(create: (_) => TenantProvider()),
-        ChangeNotifierProvider(
-          create: (_) => ThemeProvider()..loadSavedTheme(),
-        ),
-      ],
+    return
       // 👇 Use Builder to get a new context with access to the providers
-      child: Builder(
+       Builder(
         builder: (context) {
           final themeProvider = context.watch<ThemeProvider>();
 
@@ -3589,8 +3605,7 @@ class MultiTenantSaaSApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
           );
         },
-      ),
-    );
+          );
   }
 }
 

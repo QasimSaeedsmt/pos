@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mpcm/main.dart';
 
 import '../features/auth/auth_base.dart';
+import '../modules/auth/providers/auth_provider.dart';
 
 class CurrencyService extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;

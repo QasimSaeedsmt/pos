@@ -31,6 +31,7 @@ import 'app_theme.dart';
 import 'constants.dart';
 import 'features/auth/auth_base.dart';
 import 'main.dart';
+import 'modules/auth/providers/auth_provider.dart';
 
 // Modern Dashboard Screen with Real Data
 class ModernDashboardScreen extends StatefulWidget {
