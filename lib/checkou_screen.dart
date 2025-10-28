@@ -1,8 +1,11 @@
 
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
+import 'modules/auth/models/tenant_model.dart';
 //
 // enum ActivityType {
 //   // Keep all existing types
@@ -350,3 +353,174 @@ import 'main.dart';
 //   }
 // }
 // enum UserRole { superAdmin, clientAdmin, cashier, salesInventoryManager }
+class TenantProvider with ChangeNotifier {
+  final List<Tenant> _tenants = [];
+  bool _isLoading = false;
+  String? _error;
+
+  // Smart refresh properties
+  DateTime _lastTenantsRefresh = DateTime.now();
+  bool _isRefreshingTenants = false;
+  Timer? _refreshCooldownTimer;
+
+  List<Tenant> get tenants => _tenants;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+  bool get isRefreshingTenants => _isRefreshingTenants;
+  DateTime get lastTenantsRefresh => _lastTenantsRefresh;
+
+  // Cooldown duration (30 seconds)
+  static const Duration refreshCooldown = Duration(seconds: 30);
+
+  bool get isInCooldown {
+    return DateTime.now().difference(_lastTenantsRefresh) < refreshCooldown;
+  }
+
+  String get cooldownRemaining {
+    final elapsed = DateTime.now().difference(_lastTenantsRefresh);
+    final remaining = refreshCooldown - elapsed;
+    return '${remaining.inSeconds}s';
+  }
+
+  Future<void> loadAllTenants({bool forceRefresh = false}) async {
+    // Don't refresh if we're in cooldown (unless forced)
+    if (!forceRefresh && isInCooldown) {
+      print('Tenants refresh in cooldown. Available in $cooldownRemaining');
+      return;
+    }
+
+    try {
+      _isLoading = true;
+      _isRefreshingTenants = true;
+      _error = null;
+      notifyListeners();
+
+      print('Loading tenants from Firestore...');
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('tenants')
+          .get();
+
+      print('Found ${snapshot.docs.length} tenants');
+
+      _tenants.clear();
+      _tenants.addAll(
+        snapshot.docs.map((doc) {
+          print('Processing tenant: ${doc.id} - ${doc.data()['businessName']}');
+          return Tenant.fromFirestore(doc);
+        }),
+      );
+
+      _lastTenantsRefresh = DateTime.now();
+      print('Successfully loaded ${_tenants.length} tenants');
+
+      // Reset cooldown timer
+      _resetCooldownTimer();
+
+    } catch (e) {
+      _error = 'Failed to load tenants: $e';
+      print('Error loading tenants: $e');
+    } finally {
+      _isLoading = false;
+      _isRefreshingTenants = false;
+      notifyListeners();
+    }
+  }
+
+  void _resetCooldownTimer() {
+    _refreshCooldownTimer?.cancel();
+    _refreshCooldownTimer = Timer(refreshCooldown, () {
+      notifyListeners(); // Notify when cooldown ends
+    });
+  }
+
+  // Add this method to update individual tenant status without full reload
+  Future<void> updateTenantStatus(String tenantId, bool isActive) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(tenantId)
+          .update({'isActive': isActive});
+
+      // Update local state without full reload
+      final index = _tenants.indexWhere((tenant) => tenant.id == tenantId);
+      if (index != -1) {
+        // Create updated tenant with new status
+        final updatedTenant = Tenant(
+          id: _tenants[index].id,
+          businessName: _tenants[index].businessName,
+          subscriptionPlan: _tenants[index].subscriptionPlan,
+          subscriptionExpiry: _tenants[index].subscriptionExpiry,
+          isActive: isActive,
+          branding: _tenants[index].branding,
+        );
+        _tenants[index] = updatedTenant;
+      }
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _error = 'Failed to update tenant status: $e';
+      notifyListeners();
+      throw 'Failed to update tenant status: $e';
+    }
+  }
+
+  // Update this method to avoid full reload
+  Future<void> updateTenantSubscription(
+      String tenantId,
+      String plan,
+      DateTime expiry,
+      ) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      await FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(tenantId)
+          .update({
+        'subscriptionPlan': plan,
+        'subscriptionExpiry': expiry,
+        'isActive': expiry.isAfter(DateTime.now()),
+      });
+
+      // Update local state without full reload
+      final index = _tenants.indexWhere((tenant) => tenant.id == tenantId);
+      if (index != -1) {
+        final updatedTenant = Tenant(
+          id: _tenants[index].id,
+          businessName: _tenants[index].businessName,
+          subscriptionPlan: plan,
+          subscriptionExpiry: expiry,
+          isActive: expiry.isAfter(DateTime.now()),
+          branding: _tenants[index].branding,
+        );
+        _tenants[index] = updatedTenant;
+      }
+
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _error = 'Failed to update subscription: $e';
+      notifyListeners();
+      throw 'Failed to update subscription: $e';
+    }
+  }
+
+  // Force refresh ignoring cooldown
+  Future<void> forceRefreshTenants() async {
+    await loadAllTenants(forceRefresh: true);
+  }
+
+  @override
+  void dispose() {
+    _refreshCooldownTimer?.cancel();
+    super.dispose();
+  }
+}

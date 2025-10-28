@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../../features/users/users_base.dart';
 import '../models/activity_type.dart';
 import '../models/user_model.dart';
 import '../models/tenant_model.dart';

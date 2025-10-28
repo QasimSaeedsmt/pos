@@ -1,6 +1,6 @@
 
 class Constants{
-  static String CURRENCY_NAME ="R";
+  static String CURRENCY_NAME ="Rs ";
   static String DEFAULT_CURRENCY ="R";
 
   // static String get DEFAULT_CURRENCY => CurrencyService().currency;

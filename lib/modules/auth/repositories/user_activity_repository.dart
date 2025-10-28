@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import '../../../features/users/users_base.dart';
 import '../models/activity_type.dart';
 
 class UserActivityRepository {

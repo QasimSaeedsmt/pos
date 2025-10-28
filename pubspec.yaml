@@ -57,6 +57,7 @@ dependencies:
   badges:
   pdf:
   printing:
+  firebase_app_check:
   path_provider:
   share_plus:
   local_auth:
