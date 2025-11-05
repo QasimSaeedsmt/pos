@@ -1,6 +1,7 @@
 // enhanced_woocommerce_service.dart
 
 import 'app.dart';
+import 'features/orderBase/order_base.dart';
 
 class EnhancedWooCommerceService {
   // static final EnhancedWooCommerceService _instance = EnhancedWooCommerceService._internal();
@@ -220,7 +221,7 @@ class EnhancedWooCommerceService {
 
 class OrderCreationResult {
   final bool success;
-  final Order? order;
+  final AppOrder? order;
   final int? pendingOrderId;
   final String? error;
 

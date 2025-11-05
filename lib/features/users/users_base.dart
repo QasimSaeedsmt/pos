@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../../modules/auth/models/activity_type.dart';
 import '../../modules/auth/providers/auth_provider.dart';
+import '../../modules/auth/screens/login_screen.dart';
 
 enum UserRole { superAdmin, clientAdmin, cashier, salesInventoryManager }
 
@@ -1234,7 +1235,7 @@ class _UsersListTab extends StatelessWidget {
                   value: user.isActive,
                   onChanged: (value) => _toggleUserStatus(context, user, value),
                 ),
-                  
+
                 title: Text(
                   user.formattedName,
                   style: TextStyle(fontWeight: FontWeight.w500),
@@ -1976,7 +1977,13 @@ class EnhancedProfileScreen extends StatelessWidget {
                         ListTile(
                           leading: Icon(Icons.logout, color: Colors.red),
                           title: Text('Logout', style: TextStyle(color: Colors.red)),
-                          onTap: () => authProvider.logout(),
+                          onTap: (){
+                            authProvider.logout();
+    Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(builder: (context) => LoginScreen()),
+    );
+    } ,
                         ),
                       ],
                     ),

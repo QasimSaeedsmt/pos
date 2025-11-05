@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../app.dart';
+import '../../../features/main_navigation/main_navigation_base.dart';
 import '../../../features/super_admin/super_admin_base.dart';
 import '../../../main.dart';
 import '../../../theme_provider.dart';
@@ -94,7 +95,7 @@ class _AppLockScreenState extends State<AppLockScreen>
         );
       } else {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const MainPOSScreen()),
+          MaterialPageRoute(builder: (context) => const MainNavScreen()),
               (route) => false,
         );
       }

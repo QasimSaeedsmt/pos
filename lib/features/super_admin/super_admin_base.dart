@@ -4069,442 +4069,442 @@ class _SuperAdminManagementScreenState extends State<SuperAdminManagementScreen>
     super.dispose();
   }
 }
-class SuperAdminSetupScreen extends StatefulWidget {
-  const SuperAdminSetupScreen({super.key});
-
-  @override
-  _SuperAdminSetupScreenState createState() => _SuperAdminSetupScreenState();
-}
-
-class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _firstNameController = TextEditingController();
-  final _lastNameController = TextEditingController();
-  final _confirmPasswordController = TextEditingController();
-
-  bool _isLoading = false;
-  String? _error;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: ThemeUtils.gradientBackground(context),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 500),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header Section
-                  _buildHeaderSection(context),
-                  const SizedBox(height: 32),
-
-                  // Setup Form Card
-                  _buildSetupForm(context),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeaderSection(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: ThemeUtils.accent(context),
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            Icons.admin_panel_settings,
-            size: 80,
-            color: ThemeUtils.textOnPrimary(context),
-          ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Super Admin Setup',
-          style: ThemeUtils.headlineLarge(context).copyWith(
-            fontSize: 32,
-            fontWeight: FontWeight.bold,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Create the master administrator account for your system',
-          style: ThemeUtils.bodyMedium(context).copyWith(
-            color: ThemeUtils.textSecondary(context),
-          ),
-          textAlign: TextAlign.center,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSetupForm(BuildContext context) {
-    return Container(
-      decoration: ThemeUtils.cardDecoration(context),
-      padding: const EdgeInsets.all(32),
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Error Message
-            if (_error != null) _buildErrorSection(context),
-
-            // Form Fields
-            _buildFormFields(context),
-            const SizedBox(height: 24),
-
-            // Create Button
-            _buildCreateButton(context),
-            const SizedBox(height: 24),
-
-            // Permissions Info
-            _buildPermissionsInfo(context),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorSection(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      margin: const EdgeInsets.only(bottom: 24),
-      decoration: BoxDecoration(
-        color: ThemeUtils.error(context).withOpacity(0.1),
-        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-        border: Border.all(color: ThemeUtils.error(context)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline, color: ThemeUtils.error(context)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              _error!,
-              style: ThemeUtils.bodyMedium(context).copyWith(
-                color: ThemeUtils.error(context),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFormFields(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: _buildFormField(
-                context: context,
-                controller: _firstNameController,
-                label: 'First Name',
-                icon: Icons.person_outline,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter first name';
-                  }
-                  return null;
-                },
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _buildFormField(
-                context: context,
-                controller: _lastNameController,
-                label: 'Last Name',
-                icon: Icons.person_outline,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter last name';
-                  }
-                  return null;
-                },
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFormField(
-          context: context,
-          controller: _emailController,
-          label: 'Email Address',
-          icon: Icons.email_outlined,
-          keyboardType: TextInputType.emailAddress,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter email address';
-            }
-            if (!AppUtils.isEmailValid(value)) {
-              return 'Please enter a valid email address';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 16),
-        _buildFormField(
-          context: context,
-          controller: _passwordController,
-          label: 'Password',
-          icon: Icons.lock_outline,
-          obscureText: true,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter password';
-            }
-            if (value.length < 8) {
-              return 'Password must be at least 8 characters';
-            }
-            return null;
-          },
-        ),
-        const SizedBox(height: 16),
-        _buildFormField(
-          context: context,
-          controller: _confirmPasswordController,
-          label: 'Confirm Password',
-          icon: Icons.lock_outline,
-          obscureText: true,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please confirm password';
-            }
-            if (value != _passwordController.text) {
-              return 'Passwords do not match';
-            }
-            return null;
-          },
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFormField({
-    required BuildContext context,
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-    String? Function(String?)? validator,
-  }) {
-    return TextFormField(
-      controller: controller,
-      obscureText: obscureText,
-      keyboardType: keyboardType,
-      validator: validator,
-      style: ThemeUtils.bodyLarge(context),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: ThemeUtils.bodyMedium(context),
-        prefixIcon: Icon(icon, color: ThemeUtils.primary(context)),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-          borderSide: BorderSide(color: ThemeUtils.secondary(context)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-          borderSide: BorderSide(color: ThemeUtils.primary(context), width: 2),
-        ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      ),
-    );
-  }
-
-  Widget _buildCreateButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 54,
-      child: _isLoading
-          ? Container(
-        decoration: ThemeUtils.buttonDecoration(context),
-        child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(
-                ThemeUtils.textOnPrimary(context),
-              ),
-            ),
-          ),
-        ),
-      )
-          : Material(
-        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-        child: InkWell(
-          onTap: _createSuperAdmin,
-          borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-          child: Container(
-            decoration: ThemeUtils.buttonDecoration(context),
-            child: Center(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.admin_panel_settings,
-                    color: ThemeUtils.textOnPrimary(context),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Create Super Admin',
-                    style: ThemeUtils.buttonText(context).copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPermissionsInfo(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: ThemeUtils.surface(context),
-        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-        border: Border.all(color: ThemeUtils.secondary(context).withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Super Admin Permissions:',
-            style: ThemeUtils.headlineMedium(context).copyWith(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildPermissionItem('Manage all tenants and subscriptions'),
-          _buildPermissionItem('Access system-wide analytics and reports'),
-          _buildPermissionItem('Manage support tickets and user issues'),
-          _buildPermissionItem('Configure system settings and preferences'),
-          _buildPermissionItem('Create and manage additional super admins'),
-          _buildPermissionItem('Monitor platform health and performance'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPermissionItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.verified,
-            size: 16,
-            color: ThemeUtils.success(context),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: ThemeUtils.bodyMedium(context).copyWith(
-                color: ThemeUtils.textSecondary(context),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _createSuperAdmin() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
-
-    try {
-      await SuperAdminService.createSuperAdminUser(
-        email: _emailController.text.trim(),
-        password: _passwordController.text,
-        firstName: _firstNameController.text.trim(),
-        lastName: _lastNameController.text.trim(),
-      );
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.check_circle, color: ThemeUtils.success(context)),
-              const SizedBox(width: 8),
-              Text('Super Admin created successfully!'),
-            ],
-          ),
-          backgroundColor: ThemeUtils.success(context),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-          ),
-        ),
-      );
-
-      // Auto-login the new super admin
-      final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
-      await authProvider.login(
-        _emailController.text.trim(),
-        _passwordController.text,
-      );
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to create super admin: ${e.toString()}';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
-    _confirmPasswordController.dispose();
-    super.dispose();
-  }
-}
+// class SuperAdminSetupScreen extends StatefulWidget {
+//   const SuperAdminSetupScreen({super.key});
+//
+//   @override
+//   _SuperAdminSetupScreenState createState() => _SuperAdminSetupScreenState();
+// }
+//
+// class _SuperAdminSetupScreenState extends State<SuperAdminSetupScreen> {
+//   final _formKey = GlobalKey<FormState>();
+//   final _emailController = TextEditingController();
+//   final _passwordController = TextEditingController();
+//   final _firstNameController = TextEditingController();
+//   final _lastNameController = TextEditingController();
+//   final _confirmPasswordController = TextEditingController();
+//
+//   bool _isLoading = false;
+//   String? _error;
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Scaffold(
+//       body: Container(
+//         decoration: ThemeUtils.gradientBackground(context),
+//         child: Center(
+//           child: ConstrainedBox(
+//             constraints: const BoxConstraints(maxWidth: 500),
+//             child: SingleChildScrollView(
+//               padding: const EdgeInsets.all(24),
+//               child: Column(
+//                 mainAxisSize: MainAxisSize.min,
+//                 children: [
+//                   // Header Section
+//                   _buildHeaderSection(context),
+//                   const SizedBox(height: 32),
+//
+//                   // Setup Form Card
+//                   _buildSetupForm(context),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildHeaderSection(BuildContext context) {
+//     return Column(
+//       children: [
+//         Container(
+//           padding: const EdgeInsets.all(20),
+//           decoration: BoxDecoration(
+//             gradient: LinearGradient(
+//               colors: ThemeUtils.accent(context),
+//               begin: Alignment.topLeft,
+//               end: Alignment.bottomRight,
+//             ),
+//             shape: BoxShape.circle,
+//           ),
+//           child: Icon(
+//             Icons.admin_panel_settings,
+//             size: 80,
+//             color: ThemeUtils.textOnPrimary(context),
+//           ),
+//         ),
+//         const SizedBox(height: 24),
+//         Text(
+//           'Super Admin Setup',
+//           style: ThemeUtils.headlineLarge(context).copyWith(
+//             fontSize: 32,
+//             fontWeight: FontWeight.bold,
+//           ),
+//           textAlign: TextAlign.center,
+//         ),
+//         const SizedBox(height: 8),
+//         Text(
+//           'Create the master administrator account for your system',
+//           style: ThemeUtils.bodyMedium(context).copyWith(
+//             color: ThemeUtils.textSecondary(context),
+//           ),
+//           textAlign: TextAlign.center,
+//         ),
+//       ],
+//     );
+//   }
+//
+//   Widget _buildSetupForm(BuildContext context) {
+//     return Container(
+//       decoration: ThemeUtils.cardDecoration(context),
+//       padding: const EdgeInsets.all(32),
+//       child: Form(
+//         key: _formKey,
+//         child: Column(
+//           mainAxisSize: MainAxisSize.min,
+//           children: [
+//             // Error Message
+//             if (_error != null) _buildErrorSection(context),
+//
+//             // Form Fields
+//             _buildFormFields(context),
+//             const SizedBox(height: 24),
+//
+//             // Create Button
+//             _buildCreateButton(context),
+//             const SizedBox(height: 24),
+//
+//             // Permissions Info
+//             _buildPermissionsInfo(context),
+//           ],
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildErrorSection(BuildContext context) {
+//     return Container(
+//       width: double.infinity,
+//       padding: const EdgeInsets.all(16),
+//       margin: const EdgeInsets.only(bottom: 24),
+//       decoration: BoxDecoration(
+//         color: ThemeUtils.error(context).withOpacity(0.1),
+//         borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//         border: Border.all(color: ThemeUtils.error(context)),
+//       ),
+//       child: Row(
+//         children: [
+//           Icon(Icons.error_outline, color: ThemeUtils.error(context)),
+//           const SizedBox(width: 12),
+//           Expanded(
+//             child: Text(
+//               _error!,
+//               style: ThemeUtils.bodyMedium(context).copyWith(
+//                 color: ThemeUtils.error(context),
+//               ),
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildFormFields(BuildContext context) {
+//     return Column(
+//       children: [
+//         Row(
+//           children: [
+//             Expanded(
+//               child: _buildFormField(
+//                 context: context,
+//                 controller: _firstNameController,
+//                 label: 'First Name',
+//                 icon: Icons.person_outline,
+//                 validator: (value) {
+//                   if (value == null || value.isEmpty) {
+//                     return 'Please enter first name';
+//                   }
+//                   return null;
+//                 },
+//               ),
+//             ),
+//             const SizedBox(width: 16),
+//             Expanded(
+//               child: _buildFormField(
+//                 context: context,
+//                 controller: _lastNameController,
+//                 label: 'Last Name',
+//                 icon: Icons.person_outline,
+//                 validator: (value) {
+//                   if (value == null || value.isEmpty) {
+//                     return 'Please enter last name';
+//                   }
+//                   return null;
+//                 },
+//               ),
+//             ),
+//           ],
+//         ),
+//         const SizedBox(height: 16),
+//         _buildFormField(
+//           context: context,
+//           controller: _emailController,
+//           label: 'Email Address',
+//           icon: Icons.email_outlined,
+//           keyboardType: TextInputType.emailAddress,
+//           validator: (value) {
+//             if (value == null || value.isEmpty) {
+//               return 'Please enter email address';
+//             }
+//             if (!AppUtils.isEmailValid(value)) {
+//               return 'Please enter a valid email address';
+//             }
+//             return null;
+//           },
+//         ),
+//         const SizedBox(height: 16),
+//         _buildFormField(
+//           context: context,
+//           controller: _passwordController,
+//           label: 'Password',
+//           icon: Icons.lock_outline,
+//           obscureText: true,
+//           validator: (value) {
+//             if (value == null || value.isEmpty) {
+//               return 'Please enter password';
+//             }
+//             if (value.length < 8) {
+//               return 'Password must be at least 8 characters';
+//             }
+//             return null;
+//           },
+//         ),
+//         const SizedBox(height: 16),
+//         _buildFormField(
+//           context: context,
+//           controller: _confirmPasswordController,
+//           label: 'Confirm Password',
+//           icon: Icons.lock_outline,
+//           obscureText: true,
+//           validator: (value) {
+//             if (value == null || value.isEmpty) {
+//               return 'Please confirm password';
+//             }
+//             if (value != _passwordController.text) {
+//               return 'Passwords do not match';
+//             }
+//             return null;
+//           },
+//         ),
+//       ],
+//     );
+//   }
+//
+//   Widget _buildFormField({
+//     required BuildContext context,
+//     required TextEditingController controller,
+//     required String label,
+//     required IconData icon,
+//     bool obscureText = false,
+//     TextInputType keyboardType = TextInputType.text,
+//     String? Function(String?)? validator,
+//   }) {
+//     return TextFormField(
+//       controller: controller,
+//       obscureText: obscureText,
+//       keyboardType: keyboardType,
+//       validator: validator,
+//       style: ThemeUtils.bodyLarge(context),
+//       decoration: InputDecoration(
+//         labelText: label,
+//         labelStyle: ThemeUtils.bodyMedium(context),
+//         prefixIcon: Icon(icon, color: ThemeUtils.primary(context)),
+//         border: OutlineInputBorder(
+//           borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//           borderSide: BorderSide(color: ThemeUtils.secondary(context)),
+//         ),
+//         focusedBorder: OutlineInputBorder(
+//           borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//           borderSide: BorderSide(color: ThemeUtils.primary(context), width: 2),
+//         ),
+//         contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildCreateButton(BuildContext context) {
+//     return SizedBox(
+//       width: double.infinity,
+//       height: 54,
+//       child: _isLoading
+//           ? Container(
+//         decoration: ThemeUtils.buttonDecoration(context),
+//         child: Center(
+//           child: SizedBox(
+//             width: 24,
+//             height: 24,
+//             child: CircularProgressIndicator(
+//               strokeWidth: 2,
+//               valueColor: AlwaysStoppedAnimation<Color>(
+//                 ThemeUtils.textOnPrimary(context),
+//               ),
+//             ),
+//           ),
+//         ),
+//       )
+//           : Material(
+//         borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//         child: InkWell(
+//           onTap: _createSuperAdmin,
+//           borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//           child: Container(
+//             decoration: ThemeUtils.buttonDecoration(context),
+//             child: Center(
+//               child: Row(
+//                 mainAxisAlignment: MainAxisAlignment.center,
+//                 children: [
+//                   Icon(
+//                     Icons.admin_panel_settings,
+//                     color: ThemeUtils.textOnPrimary(context),
+//                   ),
+//                   const SizedBox(width: 12),
+//                   Text(
+//                     'Create Super Admin',
+//                     style: ThemeUtils.buttonText(context).copyWith(
+//                       fontSize: 16,
+//                       fontWeight: FontWeight.w600,
+//                     ),
+//                   ),
+//                 ],
+//               ),
+//             ),
+//           ),
+//         ),
+//       ),
+//     );
+//   }
+//
+//   Widget _buildPermissionsInfo(BuildContext context) {
+//     return Container(
+//       padding: const EdgeInsets.all(20),
+//       decoration: BoxDecoration(
+//         color: ThemeUtils.surface(context),
+//         borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//         border: Border.all(color: ThemeUtils.secondary(context).withOpacity(0.3)),
+//       ),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Text(
+//             'Super Admin Permissions:',
+//             style: ThemeUtils.headlineMedium(context).copyWith(
+//               fontSize: 16,
+//               fontWeight: FontWeight.w600,
+//             ),
+//           ),
+//           const SizedBox(height: 12),
+//           _buildPermissionItem('Manage all tenants and subscriptions'),
+//           _buildPermissionItem('Access system-wide analytics and reports'),
+//           _buildPermissionItem('Manage support tickets and user issues'),
+//           _buildPermissionItem('Configure system settings and preferences'),
+//           _buildPermissionItem('Create and manage additional super admins'),
+//           _buildPermissionItem('Monitor platform health and performance'),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Widget _buildPermissionItem(String text) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 4),
+//       child: Row(
+//         crossAxisAlignment: CrossAxisAlignment.start,
+//         children: [
+//           Icon(
+//             Icons.verified,
+//             size: 16,
+//             color: ThemeUtils.success(context),
+//           ),
+//           const SizedBox(width: 8),
+//           Expanded(
+//             child: Text(
+//               text,
+//               style: ThemeUtils.bodyMedium(context).copyWith(
+//                 color: ThemeUtils.textSecondary(context),
+//               ),
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+//
+//   Future<void> _createSuperAdmin() async {
+//     if (!_formKey.currentState!.validate()) {
+//       return;
+//     }
+//
+//     setState(() {
+//       _isLoading = true;
+//       _error = null;
+//     });
+//
+//     try {
+//       await SuperAdminService.createSuperAdminUser(
+//         email: _emailController.text.trim(),
+//         password: _passwordController.text,
+//         firstName: _firstNameController.text.trim(),
+//         lastName: _lastNameController.text.trim(),
+//       );
+//
+//       // Show success message
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(
+//           content: Row(
+//             children: [
+//               Icon(Icons.check_circle, color: ThemeUtils.success(context)),
+//               const SizedBox(width: 8),
+//               Text('Super Admin created successfully!'),
+//             ],
+//           ),
+//           backgroundColor: ThemeUtils.success(context),
+//           behavior: SnackBarBehavior.floating,
+//           shape: RoundedRectangleBorder(
+//             borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+//           ),
+//         ),
+//       );
+//
+//       // Auto-login the new super admin
+//       final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
+//       await authProvider.login(
+//         _emailController.text.trim(),
+//         _passwordController.text,
+//       );
+//     } catch (e) {
+//       setState(() {
+//         _error = 'Failed to create super admin: ${e.toString()}';
+//       });
+//     } finally {
+//       if (mounted) {
+//         setState(() {
+//           _isLoading = false;
+//         });
+//       }
+//     }
+//   }
+//
+//   @override
+//   void dispose() {
+//     _emailController.dispose();
+//     _passwordController.dispose();
+//     _firstNameController.dispose();
+//     _lastNameController.dispose();
+//     _confirmPasswordController.dispose();
+//     super.dispose();
+//   }
+// }
 
 class SuperAdminSetup {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;

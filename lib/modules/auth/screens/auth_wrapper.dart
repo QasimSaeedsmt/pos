@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
-import '../../../app.dart';
+import '../../../features/main_navigation/main_navigation_base.dart';
 import '../../../features/super_admin/super_admin_base.dart';
-import '../../../main.dart';
 import '../constants/auth_measurements.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/auth_repository.dart';
@@ -28,9 +27,9 @@ class AuthWrapper extends StatelessWidget {
           return const SplashScreen();
         }
 
-        if (snapshot.hasData && snapshot.data == false) {
-          return const SuperAdminSetupScreen();
-        }
+        // if (snapshot.hasData && snapshot.data == false) {
+        //   return const SuperAdminSetupScreen();
+        // }
 
         if (snapshot.hasError) {
           debugPrint('Error loading super admin state: ${snapshot.error}');
@@ -88,7 +87,7 @@ class AuthWrapper extends StatelessWidget {
 
                   return user.isSuperAdmin
                       ? const SuperAdminDashboard()
-                      : const MainPOSScreen();
+                      : const MainNavScreen();
                 },
               );
             }

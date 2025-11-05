@@ -30,8 +30,6 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http:
-  flutter_dotenv:
   camera:
   async:
   connectivity_plus:
@@ -42,7 +40,6 @@ dependencies:
   shared_preferences:
   keyboard_actions:
   synchronized:
-  sqflite_common_ffi:
   hive:
   firebase_core:
   cloud_firestore:
@@ -61,6 +58,8 @@ dependencies:
   path_provider:
   share_plus:
   local_auth:
+  google_fonts:
+
   # For image handling in PDF
   image:
   # The following adds the Cupertino Icons font to your application.
@@ -71,6 +70,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   hive_generator:
+  flutter_launcher_icons:
   build_runner:
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
@@ -78,7 +78,10 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
-
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
@@ -92,6 +95,7 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
+    - "assets/logo.png"
     - .env
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg

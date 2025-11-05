@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/orderBase/order_base.dart';
 import 'invoice_model.dart';
 import 'invoice_service.dart';
 
 class InvoiceOptionsBottomSheet extends StatefulWidget {
-  final Order order;
+  final AppOrder order;
   final Customer? customer;
   final Map<String, dynamic>? enhancedData;
 

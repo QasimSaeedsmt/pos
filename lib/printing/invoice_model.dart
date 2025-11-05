@@ -1,4 +1,6 @@
 import '../app.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/orderBase/order_base.dart';
 
 class Invoice {
   final String id;
@@ -46,7 +48,7 @@ class Invoice {
   });
 
   // Original factory method - preserved for backward compatibility
-  factory Invoice.fromOrder(Order order, Customer? customer,
+  factory Invoice.fromOrder(AppOrder order, Customer? customer,
       Map<String, dynamic> businessInfo, Map<String, dynamic> invoiceSettings,
       {String templateType = 'traditional'}) {
 
@@ -92,7 +94,7 @@ class Invoice {
 
   // Enhanced factory method with detailed pricing
   factory Invoice.fromEnhancedOrder(
-      Order order,
+      AppOrder order,
       Customer? customer,
       Map<String, dynamic> businessInfo,
       Map<String, dynamic> invoiceSettings, {
@@ -122,7 +124,7 @@ class Invoice {
   }
 
   static Invoice _createEnhancedInvoice(
-      Order order,
+      AppOrder order,
       Customer? customer,
       Map<String, dynamic> businessInfo,
       Map<String, dynamic> invoiceSettings,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../printing/printing_setting_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
 import '../constants/auth_strings.dart';
@@ -25,76 +26,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(AuthStrings.securitySettings),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.security),
-            onPressed: settingsProvider.testBiometricAuth,
-            tooltip: 'Test Biometric Authentication',
-          ),
-        ],
+        title: const Text("Settings"),
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(Icons.security),
+        //     onPressed: settingsProvider.testBiometricAuth,
+        //     tooltip: 'Test Biometric Authentication',
+        //   ),
+        // ],
       ),
       body: settingsProvider.loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
         children: [
-          Card(
-            margin: const EdgeInsets.all(AuthMeasurements.innerPadding),
-            child: Padding(
-              padding: const EdgeInsets.all(AuthMeasurements.innerPadding),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.biotech_rounded,
-                        color: theme.colorScheme.primary,
-                        size: AuthMeasurements.iconSizeSmall,
-                      ),
-                      const SizedBox(width: AuthMeasurements.spacingMedium),
-                      const Text(
-                        AuthStrings.biometricStatus,
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AuthMeasurements.spacingMedium),
-                  if (settingsProvider.availableBiometrics.isNotEmpty) ...[
-                    const Text(
-                      AuthStrings.availableBiometricMethods,
-                      style: TextStyle(fontWeight: FontWeight.w500),
-                    ),
-                    const SizedBox(height: AuthMeasurements.spacingSmall),
-                    Wrap(
-                      spacing: AuthMeasurements.spacingSmall,
-                      runSpacing: AuthMeasurements.spacingXSmall,
-                      children: settingsProvider.availableBiometrics
-                          .map(
-                            (type) => Chip(
-                          label: Text(settingsProvider.getBiometricTypeName(type)),
-                          avatar: Icon(
-                            settingsProvider.getBiometricIcon(type),
-                            size: 18,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      )
-                          .toList(),
-                    ),
-                  ] else ...[
-                    const Text(
-                      AuthStrings.noBiometricMethods,
-                      style: TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+          // Card(
+          //   margin: const EdgeInsets.all(AuthMeasurements.innerPadding),
+          //   child: Padding(
+          //     padding: const EdgeInsets.all(AuthMeasurements.innerPadding),
+          //     child: Column(
+          //       crossAxisAlignment: CrossAxisAlignment.start,
+          //       children: [
+          //         Row(
+          //           children: [
+          //             Icon(
+          //               Icons.biotech_rounded,
+          //               color: theme.colorScheme.primary,
+          //               size: AuthMeasurements.iconSizeSmall,
+          //             ),
+          //             const SizedBox(width: AuthMeasurements.spacingMedium),
+          //             const Text(
+          //               AuthStrings.biometricStatus,
+          //               style: TextStyle(
+          //                 fontSize: 18,
+          //                 fontWeight: FontWeight.bold,
+          //               ),
+          //             ),
+          //           ],
+          //         ),
+          //         const SizedBox(height: AuthMeasurements.spacingMedium),
+          //         if (settingsProvider.availableBiometrics.isNotEmpty) ...[
+          //           const Text(
+          //             AuthStrings.availableBiometricMethods,
+          //             style: TextStyle(fontWeight: FontWeight.w500),
+          //           ),
+          //           const SizedBox(height: AuthMeasurements.spacingSmall),
+          //           Wrap(
+          //             spacing: AuthMeasurements.spacingSmall,
+          //             runSpacing: AuthMeasurements.spacingXSmall,
+          //             children: settingsProvider.availableBiometrics
+          //                 .map(
+          //                   (type) => Chip(
+          //                 label: Text(settingsProvider.getBiometricTypeName(type)),
+          //                 avatar: Icon(
+          //                   settingsProvider.getBiometricIcon(type),
+          //                   size: 18,
+          //                 ),
+          //                 visualDensity: VisualDensity.compact,
+          //               ),
+          //             )
+          //                 .toList(),
+          //           ),
+          //         ] else ...[
+          //           const Text(
+          //             AuthStrings.noBiometricMethods,
+          //             style: TextStyle(color: Colors.grey),
+          //           ),
+          //         ],
+          //       ],
+          //     ),
+          //   ),
+          // ),
           Card(
             margin: const EdgeInsets.symmetric(
               horizontal: AuthMeasurements.innerPadding,
@@ -173,94 +174,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     settingsProvider.setLoading(false);
                   },
                 ),
-                if (authProvider.appLockEnabled) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.timer_rounded),
-                    title: const Text(AuthStrings.autoLockTimeout),
-                    subtitle: const Text(AuthStrings.autoLockDescription),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: _showLockTimeoutDialog,
-                  ),
-                  const Divider(height: 1),
-                  ListTile(
-                    leading: const Icon(Icons.history_rounded),
-                    title: const Text(AuthStrings.lastUnlock),
-                    subtitle: authProvider.lastUnlockTime != null
-                        ? Text(
-                      DateFormat('MMM dd, yyyy - HH:mm').format(authProvider.lastUnlockTime!),
-                    )
-                        : const Text(AuthStrings.neverUnlocked),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.refresh_rounded),
-                      onPressed: () async {
-                        final success = await authProvider.authenticateForAppUnlock();
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              success
-                                  ? AuthStrings.reauthenticatedSuccess
-                                  : AuthStrings.reauthenticatedFailed,
-                            ),
-                            backgroundColor: success ? Colors.green : Colors.red,
-                          ),
-                        );
-                      },
-                      tooltip: 'Re-authenticate',
-                    ),
-                  ),
-                ],
+                // if (authProvider.appLockEnabled) ...[
+                //   const Divider(height: 1),
+                //   ListTile(
+                //     leading: const Icon(Icons.timer_rounded),
+                //     title: const Text(AuthStrings.autoLockTimeout),
+                //     subtitle: const Text(AuthStrings.autoLockDescription),
+                //     trailing: const Icon(Icons.chevron_right_rounded),
+                //     onTap: _showLockTimeoutDialog,
+                //   ),
+                //   const Divider(height: 1),
+                //   ListTile(
+                //     leading: const Icon(Icons.history_rounded),
+                //     title: const Text(AuthStrings.lastUnlock),
+                //     subtitle: authProvider.lastUnlockTime != null
+                //         ? Text(
+                //       DateFormat('MMM dd, yyyy - HH:mm').format(authProvider.lastUnlockTime!),
+                //     )
+                //         : const Text(AuthStrings.neverUnlocked),
+                //     trailing: IconButton(
+                //       icon: const Icon(Icons.refresh_rounded),
+                //       onPressed: () async {
+                //         final success = await authProvider.authenticateForAppUnlock();
+                //         if (!mounted) return;
+                //         ScaffoldMessenger.of(context).showSnackBar(
+                //           SnackBar(
+                //             content: Text(
+                //               success
+                //                   ? AuthStrings.reauthenticatedSuccess
+                //                   : AuthStrings.reauthenticatedFailed,
+                //             ),
+                //             backgroundColor: success ? Colors.green : Colors.red,
+                //           ),
+                //         );
+                //       },
+                //       tooltip: 'Re-authenticate',
+                //     ),
+                //   ),
+                // ],
               ],
             ),
           ),
-          Card(
-            margin: const EdgeInsets.symmetric(
-              horizontal: AuthMeasurements.innerPadding,
-              vertical: AuthMeasurements.spacingSmall,
-            ),
-            child: Column(
-              children: [
-                const ListTile(
-                  leading: Icon(Icons.enhanced_encryption_rounded),
-                  title: Text(
-                    AuthStrings.securityFeatures,
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  title: const Text(AuthStrings.requireBiometricOnResume),
-                  subtitle: const Text(AuthStrings.requireBiometricDescription),
-                  secondary: const Icon(Icons.smartphone_rounded),
-                  value: authProvider.appLockEnabled,
-                  onChanged: authProvider.appLockEnabled
-                      ? (value) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(AuthStrings.featureComingSoon),
-                      ),
-                    );
-                  }
-                      : null,
-                ),
-                const Divider(height: 1),
-                SwitchListTile(
-                  title: const Text(AuthStrings.biometricFallbackToPin),
-                  subtitle: const Text(AuthStrings.fallbackDescription),
-                  secondary: const Icon(Icons.pin_rounded),
-                  value: false,
-                  onChanged: (value) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(AuthStrings.featureComingSoon),
-                      ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
+          // Card(
+          //   margin: const EdgeInsets.symmetric(
+          //     horizontal: AuthMeasurements.innerPadding,
+          //     vertical: AuthMeasurements.spacingSmall,
+          //   ),
+          //   child: Column(
+          //     children: [
+          //       const ListTile(
+          //         leading: Icon(Icons.enhanced_encryption_rounded),
+          //         title: Text(
+          //           AuthStrings.securityFeatures,
+          //           style: TextStyle(fontWeight: FontWeight.w600),
+          //         ),
+          //       ),
+          //       const Divider(height: 1),
+          //       SwitchListTile(
+          //         title: const Text(AuthStrings.requireBiometricOnResume),
+          //         subtitle: const Text(AuthStrings.requireBiometricDescription),
+          //         secondary: const Icon(Icons.smartphone_rounded),
+          //         value: authProvider.appLockEnabled,
+          //         onChanged: authProvider.appLockEnabled
+          //             ? (value) {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             const SnackBar(
+          //               content: Text(AuthStrings.featureComingSoon),
+          //             ),
+          //           );
+          //         }
+          //             : null,
+          //       ),
+          //       const Divider(height: 1),
+          //       SwitchListTile(
+          //         title: const Text(AuthStrings.biometricFallbackToPin),
+          //         subtitle: const Text(AuthStrings.fallbackDescription),
+          //         secondary: const Icon(Icons.pin_rounded),
+          //         value: false,
+          //         onChanged: (value) {
+          //           ScaffoldMessenger.of(context).showSnackBar(
+          //             const SnackBar(
+          //               content: Text(AuthStrings.featureComingSoon),
+          //             ),
+          //           );
+          //         },
+          //       ),
+          //     ],
+          //   ),
+          // ),
           Card(
             margin: const EdgeInsets.symmetric(
               horizontal: AuthMeasurements.innerPadding,
@@ -372,7 +373,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          InkWell(
+            onTap: (){
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => InvoiceSettingsScreen(),
+                ),
+              );
+
+            },
+            child: Card(
+              child: Center(child: Text("Invoicing"),),
+              margin: const EdgeInsets.symmetric(
+                horizontal: AuthMeasurements.innerPadding,
+                vertical: AuthMeasurements.spacingSmall,
+              ),
+
+            ),
+          ),
+
         ],
+
       ),
     );
   }

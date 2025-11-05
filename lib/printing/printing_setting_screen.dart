@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/orderBase/order_base.dart';
 import 'invoice_model.dart';
 import 'invoice_preview_screen.dart';
 import 'invoice_service.dart';
@@ -92,7 +94,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
 
   void _testPrint() async {
     // Create a test invoice
-    final testOrder = Order(
+    final testOrder = AppOrder(
       id: 'test',
       number: 'TEST-001',
       dateCreated: DateTime.now(),
@@ -133,7 +135,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
   }
 
   void _previewInvoice() async {
-    final testOrder = Order(
+    final testOrder = AppOrder(
       id: 'test',
       number: 'TEST-001',
       dateCreated: DateTime.now(),

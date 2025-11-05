@@ -8,6 +8,7 @@ import 'dart:io';
 
 import '../app.dart';
 import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
 import 'invoice_model.dart';
 
 class InvoiceService {

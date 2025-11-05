@@ -1,14 +1,19 @@
 // analytics_screen.dart
 import 'dart:math';
 
-import 'package:cloud_firestore/cloud_firestore.dart' hide Order;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mpcm/sales/sales_management_screen.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:provider/provider.dart';
 import 'constants.dart';
 import 'app.dart';
 import 'features/auth/auth_base.dart';
+import 'features/customerBase/customer_base.dart';
+import 'features/orderBase/order_base.dart';
+import 'features/product_addition_restock_base/product_addition_restock_base.dart';
+import 'features/product_selling/product_selling_base.dart';
 import 'main.dart';
 import 'modules/auth/providers/auth_provider.dart';
 
@@ -84,7 +89,7 @@ class DiscountAnalytics {
   final double averageDiscountPerOrder;
   final double discountRate;
   final Map<String, double> discountByType;
-  final List<Order> highestDiscountOrders;
+  final List<AppOrder> highestDiscountOrders;
 
   DiscountAnalytics({
     required this.totalDiscounts,
@@ -340,7 +345,7 @@ class AnalyticsService {
 
       final orders = ordersSnapshot.docs.map((doc) {
         final data = doc.data() as Map<String, dynamic>;
-        return Order.fromFirestore(data, doc.id);
+        return AppOrder.fromFirestore(data, doc.id);
       }).toList();
 
       // Calculate comprehensive financial metrics
@@ -532,7 +537,7 @@ class AnalyticsService {
     );
   }
 
-  Future<List<Order>> _getHighestDiscountOrders(TimePeriod period) async {
+  Future<List<AppOrder>> _getHighestDiscountOrders(TimePeriod period) async {
     final ordersSnapshot = await ordersRef
         .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
         .where('dateCreated', isLessThanOrEqualTo: period.endDate)
@@ -540,7 +545,7 @@ class AnalyticsService {
 
     final orders = ordersSnapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      return Order.fromFirestore(data, doc.id);
+      return AppOrder.fromFirestore(data, doc.id);
     }).toList();
 
     // Sort by discount amount (descending)
@@ -754,7 +759,7 @@ class AnalyticsService {
     }
   }
 
-  Future<List<Order>> getRecentOrders({int limit = 10}) async {
+  Future<List<AppOrder>> getRecentOrders({int limit = 10}) async {
     final snapshot = await ordersRef
         .orderBy('dateCreated', descending: true)
         .limit(limit)
@@ -762,7 +767,7 @@ class AnalyticsService {
 
     return snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-      return Order.fromFirestore(data, doc.id);
+      return AppOrder.fromFirestore(data, doc.id);
     }).toList();
   }
 
@@ -806,7 +811,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
   final AnalyticsService _analyticsService = AnalyticsService();
   TimePeriod _selectedPeriod = TimePeriods.today;
   SalesAnalytics? _analytics;
-  List<Order> _recentOrders = [];
+  List<AppOrder> _recentOrders = [];
   Map<String, dynamic> _cashSummary = {};
   CustomerAnalytics? _customerAnalytics;
   FinancialBreakdown? _financialBreakdown;
@@ -853,7 +858,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
 
       setState(() {
         _analytics = results[0] as SalesAnalytics;
-        _recentOrders = results[1] as List<Order>;
+        _recentOrders = results[1] as List<AppOrder>;
         _cashSummary = results[2] as Map<String, dynamic>;
         _customerAnalytics = results[3] as CustomerAnalytics;
         _financialBreakdown = results[4] as FinancialBreakdown;
@@ -1278,6 +1283,9 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
           _buildHourlySalesChart(),
           SizedBox(height: 20),
           _buildDailySalesChart(),
+          ElevatedButton(onPressed: (){
+            Navigator.push(context, MaterialPageRoute(builder: (context) => SalesManagementScreen(),));
+          }, child: Text("Management"))
         ],
       ),
     );
@@ -1737,7 +1745,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
     );
   }
 
-  Widget _buildDiscountOrderItem(Order order) {
+  Widget _buildDiscountOrderItem(AppOrder order) {
     final orderData = order.toFirestore();
     final discount = (orderData['totalDiscount'] ?? 0.0) as double;
 
@@ -2388,7 +2396,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
     );
   }
 
-  Widget _buildOrderListItem(Order order) {
+  Widget _buildOrderListItem(AppOrder order) {
     return Container(
       margin: EdgeInsets.only(bottom: 12),
       padding: EdgeInsets.all(12),

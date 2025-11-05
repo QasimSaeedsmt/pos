@@ -1,5 +1,18 @@
 
+import 'dart:async';
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+
+import '../../app.dart';
+import '../../constants.dart';
+import '../cartBase/cart_base.dart';
+import '../clientDashboard/client_dashboard.dart';
+import '../invoiceBase/invoice_and_printing_base.dart';
+import '../main_navigation/main_navigation_base.dart';
+import '../product_addition_restock_base/product_addition_restock_base.dart';
 class Product {
   final String id;
   final String name;
@@ -401,6 +414,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   void _onSearchTextChanged(String query) {
     _searchDebounce?.cancel();
+
     if (query.isEmpty) {
       setState(() {
         _isSearching = false;
@@ -408,22 +422,32 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       });
       return;
     }
+
     setState(() => _isSearching = true);
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
-      try {
-        final results = await _posService.searchProducts(query);
-        setState(() {
-          _filteredProducts.clear();
-          _filteredProducts.addAll(results);
-        });
-      } catch (e) {
-        setState(() {
-          _searchError = 'Search failed: $e';
-        });
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        _performSearch(query);
       }
     });
   }
 
+  Future<void> _performSearch(String query) async {
+    try {
+      final results = await _posService.searchProducts(query);
+      if (mounted) {
+        setState(() {
+          _filteredProducts.clear();
+          _filteredProducts.addAll(results);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _searchError = 'Search failed: $e';
+        });
+      }
+    }
+  }
   void _applyFilters() {
     List<Product> filtered = List.from(_products);
     if (_selectedCategoryId != 'all') {
@@ -1922,185 +1946,187 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Row(
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
-                  image: widget.product.imageUrl != null
-                      ? DecorationImage(
-                    image: NetworkImage(widget.product.imageUrl!),
-                    fit: BoxFit.cover,
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    image: widget.product.imageUrl != null
+                        ? DecorationImage(
+                      image: NetworkImage(widget.product.imageUrl!),
+                      fit: BoxFit.cover,
+                    )
+                        : null,
+                  ),
+                  child: widget.product.imageUrl == null
+                      ? Center(
+                    child: Icon(Icons.shopping_bag, color: Colors.grey),
                   )
                       : null,
                 ),
-                child: widget.product.imageUrl == null
-                    ? Center(
-                  child: Icon(Icons.shopping_bag, color: Colors.grey),
-                )
-                    : null,
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.product.name,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (widget.product.sku.isNotEmpty)
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        'SKU: ${widget.product.sku}',
-                        style: TextStyle(color: Colors.grey[600]),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-
-          // Price
-          Text(
-            'Price: ${Constants.CURRENCY_NAME}${widget.product.price.toStringAsFixed(0)}',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.green[700],
-            ),
-          ),
-          SizedBox(height: 8),
-
-          // Stock Information
-          Row(
-            children: [
-              Icon(
-                widget.product.inStock ? Icons.check_circle : Icons.error,
-                color: widget.product.inStock ? Colors.green : Colors.red,
-                size: 16,
-              ),
-              SizedBox(width: 4),
-              Text(
-                widget.product.inStock
-                    ? '${widget.product.stockQuantity} in stock'
-                    : 'Out of stock',
-                style: TextStyle(
-                  color: widget.product.inStock
-                      ? Colors.green[600]
-                      : Colors.red[600],
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-
-          // Description
-          if (widget.product.description != null &&
-              widget.product.description!.isNotEmpty)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Description:',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 4),
-                Text(
-                  widget.product.description!,
-                  style: TextStyle(color: Colors.grey[700]),
-                ),
-                SizedBox(height: 16),
-              ],
-            ),
-
-          // Quantity Selector
-          Text('Quantity:', style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Row(
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.remove, size: 20),
-                      onPressed: _decrementQuantity,
-                      padding: EdgeInsets.zero,
-                    ),
-                    SizedBox(
-                      width: 40,
-                      child: Text(
-                        _quantity.toString(),
-                        textAlign: TextAlign.center,
+                        widget.product.name,
                         style: TextStyle(
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
-                          fontSize: 16,
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add, size: 20),
-                      onPressed: _incrementQuantity,
-                      padding: EdgeInsets.zero,
-                    ),
-                  ],
-                ),
-              ),
-              Spacer(),
-              Text(
-                'Total: ${Constants.CURRENCY_NAME}${(widget.product.price * _quantity).toStringAsFixed(0)}',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-            ],
-          ),
-          SizedBox(height: 24),
-
-          // Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Cancel'),
-                ),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: widget.product.inStock
-                      ? _addToCartWithQuantity
-                      : null,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.add_shopping_cart, size: 20),
-                      SizedBox(width: 8),
-                      Text('Add $_quantity to Cart'),
+                      if (widget.product.sku.isNotEmpty)
+                        Text(
+                          'SKU: ${widget.product.sku}',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
                     ],
                   ),
                 ),
+              ],
+            ),
+            SizedBox(height: 16),
+      
+            // Price
+            Text(
+              'Price: ${Constants.CURRENCY_NAME}${widget.product.price.toStringAsFixed(0)}',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.green[700],
               ),
-            ],
-          ),
-        ],
+            ),
+            SizedBox(height: 8),
+      
+            // Stock Information
+            Row(
+              children: [
+                Icon(
+                  widget.product.inStock ? Icons.check_circle : Icons.error,
+                  color: widget.product.inStock ? Colors.green : Colors.red,
+                  size: 16,
+                ),
+                SizedBox(width: 4),
+                Text(
+                  widget.product.inStock
+                      ? '${widget.product.stockQuantity} in stock'
+                      : 'Out of stock',
+                  style: TextStyle(
+                    color: widget.product.inStock
+                        ? Colors.green[600]
+                        : Colors.red[600],
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 16),
+      
+            // Description
+            if (widget.product.description != null &&
+                widget.product.description!.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Description:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    widget.product.description!,
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
+                  SizedBox(height: 16),
+                ],
+              ),
+      
+            // Quantity Selector
+            Text('Quantity:', style: TextStyle(fontWeight: FontWeight.bold)),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove, size: 20),
+                        onPressed: _decrementQuantity,
+                        padding: EdgeInsets.zero,
+                      ),
+                      SizedBox(
+                        width: 40,
+                        child: Text(
+                          _quantity.toString(),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add, size: 20),
+                        onPressed: _incrementQuantity,
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  'Total: ${Constants.CURRENCY_NAME}${(widget.product.price * _quantity).toStringAsFixed(0)}',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            SizedBox(height: 24),
+      
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Cancel'),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: widget.product.inStock
+                        ? _addToCartWithQuantity
+                        : null,
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.add_shopping_cart, size: 20),
+                        SizedBox(width: 8),
+                        Text('Add $_quantity to Cart'),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2216,5 +2242,52 @@ class _FilterBottomSheetState extends State<FilterBottomSheet> {
         ],
       ),
     );
+  }
+}
+class Attribute {
+  final int id;
+  final String name;
+  final String slug;
+  final List<String> options;
+  final bool visible;
+  final bool variation;
+
+  Attribute({
+    required this.id,
+    required this.name,
+    required this.slug,
+    required this.options,
+    required this.visible,
+    required this.variation,
+  });
+
+  factory Attribute.fromFirestore(Map<String, dynamic> data, int id) {
+    final List<String> parsedOptions = [];
+    if (data['options'] is List) {
+      for (var option in data['options']) {
+        if (option != null) {
+          parsedOptions.add(option.toString());
+        }
+      }
+    }
+
+    return Attribute(
+      id: id,
+      name: data['name']?.toString() ?? '',
+      slug: data['slug']?.toString() ?? '',
+      options: parsedOptions,
+      visible: data['visible'] ?? false,
+      variation: data['variation'] ?? false,
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'name': name,
+      'slug': slug,
+      'options': options,
+      'visible': visible,
+      'variation': variation,
+    };
   }
 }

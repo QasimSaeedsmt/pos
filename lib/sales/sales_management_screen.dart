@@ -9,6 +9,8 @@ import 'package:provider/provider.dart';
 import '../app.dart';
 import '../constants.dart';
 import '../features/auth/auth_base.dart';
+import '../features/clientDashboard/client_dashboard.dart';
+import '../features/main_navigation/main_navigation_base.dart';
 import '../main.dart';
 import '../modules/auth/providers/auth_provider.dart';
 
