@@ -815,58 +815,60 @@ class _CustomerSelectionScreenState extends State<CustomerSelectionScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search customers by name, email, or phone...',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 0,
-                  horizontal: 16,
-                ),
-              ),
-              onChanged: _onSearchTextChanged,
-            ),
-          ),
-
-          // Default Customer Option
-          _buildDefaultCustomerOption(),
-
-          // Results Header
-          if (_showSearchResults && _searchResults.isNotEmpty)
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Search Bar
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  Text(
-                    'Search Results (${_searchResults.length})',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.6),
-                    ),
+              padding: const EdgeInsets.all(16),
+              child: TextField(
+                controller: _searchController,
+                decoration: InputDecoration(
+                  hintText: 'Search customers by name, email, or phone...',
+                  prefixIcon: Icon(Icons.search),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                ],
+                  contentPadding: const EdgeInsets.symmetric(
+                    vertical: 0,
+                    horizontal: 16,
+                  ),
+                ),
+                onChanged: _onSearchTextChanged,
               ),
             ),
-
-          // Customer List
-          Expanded(
-            child: _isLoading ? _buildLoadingState() : _buildCustomerList(),
-          ),
-
-          // Action Buttons
-          _buildActionButtons(),
-        ],
+        
+            // Default Customer Option
+            _buildDefaultCustomerOption(),
+        
+            // Results Header
+            if (_showSearchResults && _searchResults.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Text(
+                      'Search Results (${_searchResults.length})',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+        
+            // Customer List
+            Expanded(
+              child: _isLoading ? _buildLoadingState() : _buildCustomerList(),
+            ),
+        
+            // Action Buttons
+            _buildActionButtons(),
+          ],
+        ),
       ),
     );
   }

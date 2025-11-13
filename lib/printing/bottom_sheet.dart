@@ -4,17 +4,126 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
+import '../constants.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
 import 'invoice_model.dart';
 import 'invoice_service.dart';
 
-class InvoiceOptionsBottomSheet extends StatefulWidget {
+class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
+  final AppOrder order;
+  final Customer? customer;
+  final Map<String, dynamic> businessInfo;
+  final Map<String, dynamic> invoiceSettings;
+
+  const InvoiceOptionsBottomSheetWithNoOptions({
+    super.key,
+    required this.order,
+    this.customer,
+    required this.businessInfo,
+    required this.invoiceSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Order Completed!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Order #${order.number} has been processed successfully',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Total: ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.green[700],
+              ),
+            ),
+            SizedBox(height: 24),
+
+            // Invoice Options
+            if (invoiceSettings['autoPrint'] ?? false)
+              ListTile(
+                leading: Icon(Icons.print, color: Colors.blue),
+                title: Text('Auto-printing invoice...'),
+                trailing: CircularProgressIndicator(),
+              )
+            else
+              Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        // Generate and print invoice
+                        _printInvoice(context);
+                      },
+                      icon: Icon(Icons.print),
+                      label: Text('Print Invoice'),
+                      style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      icon: Icon(Icons.done),
+                      label: Text('Continue'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _printInvoice(BuildContext context) {
+    // Use business info and invoice settings for printing
+    final invoice = Invoice.fromOrder(
+      order,
+      customer,
+      businessInfo,
+      invoiceSettings,
+      templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
+    );
+
+    // Print the invoice
+    InvoiceService().printInvoice(invoice);
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Invoice sent to printer')));
+
+    Navigator.pop(context);
+  }
+}
+
+
+class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
   final AppOrder order;
   final Customer? customer;
   final Map<String, dynamic>? enhancedData;
 
-  const InvoiceOptionsBottomSheet({
+  const InvoiceOptionsBottomSheetWithOptions({
     super.key,
     required this.order,
     this.customer,
@@ -22,10 +131,10 @@ class InvoiceOptionsBottomSheet extends StatefulWidget {
   });
 
   @override
-  _InvoiceOptionsBottomSheetState createState() => _InvoiceOptionsBottomSheetState();
+  _InvoiceOptionsBottomSheetWithOptionsState createState() => _InvoiceOptionsBottomSheetWithOptionsState();
 }
 
-class _InvoiceOptionsBottomSheetState extends State<InvoiceOptionsBottomSheet> {
+class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBottomSheetWithOptions> {
   String _selectedTemplate = 'traditional';
   bool _autoPrint = false;
 
@@ -72,6 +181,7 @@ class _InvoiceOptionsBottomSheetState extends State<InvoiceOptionsBottomSheet> {
     final businessInfo = await _getBusinessInfo();
     final invoiceSettings = await _getInvoiceSettings();
 
+    // Use enhanced invoice creation if enhanced data is available
     final invoice = widget.enhancedData != null
         ? Invoice.fromEnhancedOrder(
       widget.order,
@@ -133,103 +243,105 @@ class _InvoiceOptionsBottomSheetState extends State<InvoiceOptionsBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Generate Invoice',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 16),
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Generate Invoice',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
 
-          // Enhanced Data Indicator
-          if (widget.enhancedData != null)
-            Card(
-              color: Colors.green[50],
-              child: Padding(
-                padding: EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(Icons.discount, color: Colors.green),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Enhanced pricing data available',
-                        style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+            // Enhanced Data Indicator
+            if (widget.enhancedData != null)
+              Card(
+                color: Colors.green[50],
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.discount, color: Colors.green),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Enhanced pricing data available',
+                          style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                        ),
                       ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // Template Selection
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Invoice Template', style: TextStyle(fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
+                        _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
+            SizedBox(height: 16),
 
-          // Template Selection
-          Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Invoice Template', style: TextStyle(fontWeight: FontWeight.bold)),
-                  SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
-                      _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: 16),
-
-          // Auto Print Option
-          Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(Icons.print, color: Colors.blue),
-                  SizedBox(width: 12),
-                  Expanded(child: Text('Auto Print After Generation')),
-                  Switch(
-                    value: _autoPrint,
-                    onChanged: (value) => setState(() => _autoPrint = value),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: 16),
-
-          // Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Skip'),
+            // Auto Print Option
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.print, color: Colors.blue),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Auto Print After Generation')),
+                    Switch(
+                      value: _autoPrint,
+                      onChanged: (value) => setState(() => _autoPrint = value),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _generateInvoice,
-                  icon: Icon(Icons.receipt_long),
-                  label: Text('Generate Invoice'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+            ),
+            SizedBox(height: 16),
+
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Skip'),
                   ),
                 ),
-              ),
-            ],
-          ),
-          SizedBox(height: 8),
-        ],
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _generateInvoice,
+                    icon: Icon(Icons.receipt_long),
+                    label: Text('Generate Invoice'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+          ],
+        ),
       ),
     );
   }

@@ -27,13 +27,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("Settings"),
-        // actions: [
-        //   IconButton(
-        //     icon: const Icon(Icons.security),
-        //     onPressed: settingsProvider.testBiometricAuth,
-        //     tooltip: 'Test Biometric Authentication',
-        //   ),
-        // ],
+
       ),
       body: settingsProvider.loading
           ? const Center(child: CircularProgressIndicator())

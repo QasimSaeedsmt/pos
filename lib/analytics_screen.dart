@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mpcm/sales/sales_management_screen.dart';
+import 'package:mpcm/theme_utils.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:provider/provider.dart';
 import 'constants.dart';
@@ -332,6 +333,7 @@ class AnalyticsService {
       .doc(_currentTenantId)
       .collection('products');
 
+// Enhanced Sales Analytics to include proper discount breakdown
   Future<SalesAnalytics> getSalesAnalytics(TimePeriod period) async {
     try {
       if (_currentTenantId == null) {
@@ -358,50 +360,61 @@ class AnalyticsService {
       double shippingAmount = 0.0;
       double tipAmount = 0.0;
       double taxableAmount = 0.0;
-      final discountTypes = <String, double>{};
+
+      final discountTypes = <String, double>{
+        'Item Discounts': 0.0,
+        'Cart Discounts': 0.0,
+        'Additional Discounts': 0.0,
+      };
+
       final paymentMethodDistribution = <String, double>{};
 
       for (final order in orders) {
-        // Extract financial data from order
         final orderData = order.toFirestore();
+        final cartData = orderData['cartData'] as Map<String, dynamic>?;
+        final pricingBreakdown = cartData?['pricing_breakdown'] as Map<String, dynamic>?;
 
-        // Subtotal
-        subtotalAmount += orderData['subtotal'] ?? order.total;
+        // Extract financial data from cart data and order data
+        if (pricingBreakdown != null) {
+          // Subtotal
+          subtotalAmount += (pricingBreakdown['subtotal'] ?? order.total) as double;
 
-        // Discounts
-        final orderDiscounts = (orderData['totalDiscount'] ?? 0.0) as double;
-        totalDiscounts += orderDiscounts;
+          // Discounts
+          final orderItemDiscounts = (pricingBreakdown['item_discounts'] ?? 0.0) as double;
+          final orderCartDiscounts = (pricingBreakdown['cart_discount_amount'] ?? 0.0) as double;
+          final orderTotalDiscount = (pricingBreakdown['total_discount'] ?? 0.0) as double;
 
-        // Item discounts
-        itemDiscounts += (orderData['itemDiscounts'] ?? 0.0) as double;
+          itemDiscounts += orderItemDiscounts;
+          cartDiscounts += orderCartDiscounts;
+          totalDiscounts += orderTotalDiscount;
 
-        // Cart discounts
-        cartDiscounts += (orderData['cartDiscount'] ?? 0.0) as double;
+          discountTypes['Item Discounts'] = discountTypes['Item Discounts']! + orderItemDiscounts;
+          discountTypes['Cart Discounts'] = discountTypes['Cart Discounts']! + orderCartDiscounts;
 
-        // Additional discounts
-        additionalDiscounts += (orderData['additionalDiscount'] ?? 0.0) as double;
+          // Taxes
+          taxAmount += (pricingBreakdown['tax_amount'] ?? 0.0) as double;
 
-        // Taxes
-        taxAmount += (orderData['taxAmount'] ?? 0.0) as double;
+          // Taxable amount
+          taxableAmount += (pricingBreakdown['taxable_amount'] ?? order.total) as double;
+        } else {
+          // Fallback if pricing breakdown is not available
+          subtotalAmount += order.total;
+        }
 
-        // Shipping
+        // Additional discount from order level
+        final orderAdditionalDiscount = (orderData['additionalDiscount'] ?? 0.0) as double;
+        additionalDiscounts += orderAdditionalDiscount;
+        totalDiscounts += orderAdditionalDiscount;
+        discountTypes['Additional Discounts'] = discountTypes['Additional Discounts']! + orderAdditionalDiscount;
+
+        // Shipping and tips
         shippingAmount += (orderData['shippingAmount'] ?? 0.0) as double;
-
-        // Tips
         tipAmount += (orderData['tipAmount'] ?? 0.0) as double;
-
-        // Taxable amount
-        taxableAmount += (orderData['taxableAmount'] ?? (orderData['subtotal'] ?? order.total) - orderDiscounts) as double;
 
         // Payment method distribution
         final paymentMethod = orderData['paymentMethod'] ?? 'cash';
         paymentMethodDistribution[paymentMethod] =
             (paymentMethodDistribution[paymentMethod] ?? 0.0) + order.total;
-
-        // Discount types (simplified - you might have more detailed discount tracking)
-        if (orderDiscounts > 0) {
-          discountTypes['Total Discounts'] = (discountTypes['Total Discounts'] ?? 0.0) + orderDiscounts;
-        }
       }
 
       final totalSales = orders.fold(0.0, (sum, order) => sum + order.total);
@@ -415,6 +428,7 @@ class AnalyticsService {
 
       final averageOrderValue = totalOrders > 0 ? totalSales / totalOrders : 0.0;
 
+      // Rest of your existing code for salesByHour, salesByDay, topProducts, etc.
       final salesByHour = <String, double>{};
       for (int hour = 0; hour < 24; hour++) {
         final hourSales = orders.where((order) {
@@ -483,7 +497,7 @@ class AnalyticsService {
         topProducts: topProducts.take(5).toList(),
         topCategories: topCategories,
 
-        // New financial breakdown
+        // Corrected financial breakdown
         subtotalAmount: subtotalAmount,
         totalDiscounts: totalDiscounts,
         itemDiscounts: itemDiscounts,
@@ -497,10 +511,10 @@ class AnalyticsService {
         paymentMethodDistribution: paymentMethodDistribution,
       );
     } catch (e) {
+      print('Error in getSalesAnalytics: $e');
       throw Exception('Failed to fetch analytics: $e');
     }
   }
-
   Future<FinancialBreakdown> getFinancialBreakdown(TimePeriod period) async {
     final analytics = await getSalesAnalytics(period);
 
@@ -514,16 +528,84 @@ class AnalyticsService {
     );
   }
 
+// Enhanced Discount Analytics in AnalyticsService class
   Future<DiscountAnalytics> getDiscountAnalytics(TimePeriod period) async {
-    final analytics = await getSalesAnalytics(period);
+    try {
+      if (_currentTenantId == null) {
+        throw Exception('Tenant ID not set');
+      }
 
-    return DiscountAnalytics(
-      totalDiscounts: analytics.totalDiscounts,
-      averageDiscountPerOrder: analytics.totalOrders > 0 ? analytics.totalDiscounts / analytics.totalOrders : 0.0,
-      discountRate: analytics.subtotalAmount > 0 ? (analytics.totalDiscounts / analytics.subtotalAmount) * 100 : 0.0,
-      discountByType: analytics.discountTypes,
-      highestDiscountOrders: await _getHighestDiscountOrders(period),
-    );
+      final ordersSnapshot = await ordersRef
+          .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
+          .where('dateCreated', isLessThanOrEqualTo: period.endDate)
+          .get();
+
+      final orders = ordersSnapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return AppOrder.fromFirestore(data, doc.id);
+      }).toList();
+
+      // Calculate comprehensive discount metrics
+      double totalDiscounts = 0.0;
+      double itemDiscounts = 0.0;
+      double cartDiscounts = 0.0;
+      double additionalDiscounts = 0.0;
+      double subtotalAmount = 0.0;
+
+      final discountByType = <String, double>{
+        'Item Discounts': 0.0,
+        'Cart Discounts': 0.0,
+        'Additional Discounts': 0.0,
+      };
+
+      for (final order in orders) {
+        final orderData = order.toFirestore();
+
+        // Extract cart data which contains the detailed discount breakdown
+        final cartData = orderData['cartData'] as Map<String, dynamic>?;
+        final pricingBreakdown = cartData?['pricing_breakdown'] as Map<String, dynamic>?;
+
+        if (pricingBreakdown != null) {
+          // Extract discounts from pricing breakdown
+          final orderItemDiscounts = (pricingBreakdown['item_discounts'] ?? 0.0) as double;
+          final orderCartDiscounts = (pricingBreakdown['cart_discount_amount'] ?? 0.0) as double;
+          final orderTotalDiscount = (pricingBreakdown['total_discount'] ?? 0.0) as double;
+
+          itemDiscounts += orderItemDiscounts;
+          cartDiscounts += orderCartDiscounts;
+          totalDiscounts += orderTotalDiscount;
+
+          discountByType['Item Discounts'] = discountByType['Item Discounts']! + orderItemDiscounts;
+          discountByType['Cart Discounts'] = discountByType['Cart Discounts']! + orderCartDiscounts;
+        }
+
+        // Extract additional discount from order data
+        final orderAdditionalDiscount = (orderData['additionalDiscount'] ?? 0.0) as double;
+        additionalDiscounts += orderAdditionalDiscount;
+        discountByType['Additional Discounts'] = discountByType['Additional Discounts']! + orderAdditionalDiscount;
+
+        // Calculate subtotal for discount rate calculation
+        subtotalAmount += (cartData?['subtotal'] ?? order.total + totalDiscounts) as double;
+      }
+
+      // Calculate rates and averages
+      final averageDiscountPerOrder = orders.isNotEmpty ? totalDiscounts / orders.length : 0.0;
+      final discountRate = subtotalAmount > 0 ? (totalDiscounts / subtotalAmount) * 100 : 0.0;
+
+      // Get highest discount orders
+      final highestDiscountOrders = await _getHighestDiscountOrders(period);
+
+      return DiscountAnalytics(
+        totalDiscounts: totalDiscounts,
+        averageDiscountPerOrder: averageDiscountPerOrder,
+        discountRate: discountRate,
+        discountByType: discountByType,
+        highestDiscountOrders: highestDiscountOrders,
+      );
+    } catch (e) {
+      print('Error in getDiscountAnalytics: $e');
+      throw Exception('Failed to fetch discount analytics: $e');
+    }
   }
 
   Future<TaxAnalytics> getTaxAnalytics(TimePeriod period) async {
@@ -537,6 +619,7 @@ class AnalyticsService {
     );
   }
 
+// Enhanced method to get highest discount orders
   Future<List<AppOrder>> _getHighestDiscountOrders(TimePeriod period) async {
     final ordersSnapshot = await ordersRef
         .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
@@ -548,16 +631,39 @@ class AnalyticsService {
       return AppOrder.fromFirestore(data, doc.id);
     }).toList();
 
+    // Calculate discount amount for each order and sort by discount
+    final ordersWithDiscounts = orders.map((order) {
+      final orderData = order.toFirestore();
+      final cartData = orderData['cartData'] as Map<String, dynamic>?;
+      final pricingBreakdown = cartData?['pricing_breakdown'] as Map<String, dynamic>?;
+
+      double discountAmount = 0.0;
+
+      if (pricingBreakdown != null) {
+        discountAmount = (pricingBreakdown['total_discount'] ?? 0.0) as double;
+      }
+
+      // Include additional discount
+      discountAmount += (orderData['additionalDiscount'] ?? 0.0) as double;
+
+      return {
+        'order': order,
+        'discountAmount': discountAmount,
+        'discountPercentage': (order.total + discountAmount) > 0 ?
+        (discountAmount / (order.total + discountAmount)) * 100 : 0.0,
+      };
+    }).toList();
+
     // Sort by discount amount (descending)
-    orders.sort((a, b) {
-      final aDiscount = (a.toFirestore()['totalDiscount'] ?? 0.0) as double;
-      final bDiscount = (b.toFirestore()['totalDiscount'] ?? 0.0) as double;
+    ordersWithDiscounts.sort((a, b) {
+      final aDiscount = (a['discountAmount'] ?? 0) as num;
+      final bDiscount = (b['discountAmount'] ?? 0) as num;
       return bDiscount.compareTo(aDiscount);
     });
 
-    return orders.take(5).toList();
-  }
 
+    return ordersWithDiscounts.take(5).map((item) => item['order'] as AppOrder).toList();
+  }
   // Existing customer analytics methods
   Future<CustomerAnalytics> getCustomerAnalytics(TimePeriod period) async {
     try {
@@ -799,6 +905,81 @@ class AnalyticsService {
   }
 }
 
+// Enhanced Sales Breakdown Models
+class DetailedSalesBreakdown {
+  final double grossSales;
+  final double netSales;
+  final double totalDiscounts;
+  final double itemDiscounts;
+  final double cartDiscounts;
+  final double additionalDiscounts;
+  final double taxAmount;
+  final double shippingAmount;
+  final double tipAmount;
+  final double taxableAmount;
+  final int totalOrders;
+  final int totalItems;
+  final double averageOrderValue;
+  final double discountRate;
+  final double effectiveTaxRate;
+
+  DetailedSalesBreakdown({
+    required this.grossSales,
+    required this.netSales,
+    required this.totalDiscounts,
+    required this.itemDiscounts,
+    required this.cartDiscounts,
+    required this.additionalDiscounts,
+    required this.taxAmount,
+    required this.shippingAmount,
+    required this.tipAmount,
+    required this.taxableAmount,
+    required this.totalOrders,
+    required this.totalItems,
+    required this.averageOrderValue,
+    required this.discountRate,
+    required this.effectiveTaxRate,
+  });
+}
+
+class DiscountBreakdown {
+  final double totalDiscounts;
+  final double itemDiscounts;
+  final double cartDiscounts;
+  final double additionalDiscounts;
+  final double discountRate;
+  final double averageDiscountPerOrder;
+  final List<OrderDiscount> highestDiscountOrders;
+
+  DiscountBreakdown({
+    required this.totalDiscounts,
+    required this.itemDiscounts,
+    required this.cartDiscounts,
+    required this.additionalDiscounts,
+    required this.discountRate,
+    required this.averageDiscountPerOrder,
+    required this.highestDiscountOrders,
+  });
+}
+
+class OrderDiscount {
+  final String orderId;
+  final String orderNumber;
+  final DateTime orderDate;
+  final double totalAmount;
+  final double discountAmount;
+  final double discountPercentage;
+
+  OrderDiscount({
+    required this.orderId,
+    required this.orderNumber,
+    required this.orderDate,
+    required this.totalAmount,
+    required this.discountAmount,
+    required this.discountPercentage,
+  });
+}
+
 // Enhanced Analytics Dashboard Screen with Financial Tabs
 class AnalyticsDashboardScreen extends StatefulWidget {
   const AnalyticsDashboardScreen({super.key});
@@ -948,7 +1129,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         children: [
           // Tab Bar
           Container(
-            color: Colors.blue.shade700,
+            color: ThemeUtils.appBar(context).first,
             child: TabBar(
               controller: _tabController,
               labelColor: Colors.white,

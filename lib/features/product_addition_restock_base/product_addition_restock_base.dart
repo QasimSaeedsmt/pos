@@ -1,11 +1,16 @@
 import 'dart:io';
-import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../constants.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
+
+
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
 import '../product_selling/product_selling_base.dart';
 
 class Category {
@@ -45,7 +50,28 @@ class Category {
       'imageUrl': imageUrl,
     };
   }
+
+  Category copyWith({
+    String? id,
+    String? name,
+    String? slug,
+    String? description,
+    int? count,
+    String? imageUrl,
+  }) {
+    return Category(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      slug: slug ?? this.slug,
+      description: description ?? this.description,
+      count: count ?? this.count,
+      imageUrl: imageUrl ?? this.imageUrl,
+    );
+  }
 }
+
+
+
 class CategoryManagementScreen extends StatefulWidget {
   const CategoryManagementScreen({super.key});
 
@@ -58,11 +84,31 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   final EnhancedPOSService _posService = EnhancedPOSService();
   final List<Category> _categories = [];
   bool _isLoading = true;
+  final TextEditingController _searchController = TextEditingController();
+  List<Category> _filteredCategories = [];
 
   @override
   void initState() {
     super.initState();
     _loadCategories();
+    _searchController.addListener(_filterCategories);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _filterCategories() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredCategories = _categories.where((category) {
+        return category.name.toLowerCase().contains(query) ||
+            (category.description?.toLowerCase().contains(query) ?? false) ||
+            category.slug.toLowerCase().contains(query);
+      }).toList();
+    });
   }
 
   Future<void> _loadCategories() async {
@@ -72,214 +118,204 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
       setState(() {
         _categories.clear();
         _categories.addAll(categories);
+        _filteredCategories = List.from(_categories);
       });
     } catch (e) {
-      print('Failed to load categories: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load categories: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showErrorSnackBar('Failed to load categories: $e');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
   void _showAddCategoryDialog() {
-    final nameController = TextEditingController();
-    final descriptionController = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add New Category'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(
-                labelText: 'Category Name *',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            SizedBox(height: 12),
-            TextField(
-              controller: descriptionController,
-              decoration: InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (nameController.text.trim().isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Please enter category name')),
-                );
-                return;
-              }
+      builder: (context) => CategoryEditDialog(
+        category: null,
+        onSave: _addCategory,
+      ),
+    );
+  }
 
-              try {
-                final category = Category(
-                  id: DateTime.now().millisecondsSinceEpoch.toString(),
-                  name: nameController.text.trim(),
-                  slug: nameController.text.trim().toLowerCase().replaceAll(
-                    ' ',
-                    '-',
-                  ),
-                  description: descriptionController.text.trim().isEmpty
-                      ? null
-                      : descriptionController.text.trim(),
-                  count: 0,
-                );
+  void _showEditCategoryDialog(Category category) {
+    showDialog(
+      context: context,
+      builder: (context) => CategoryEditDialog(
+        category: category,
+        onSave: _updateCategory,
+      ),
+    );
+  }
 
-                await _posService.addCategory(category);
-                Navigator.pop(context);
-                _loadCategories();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Category "${category.name}" added successfully',
-                    ),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to add category: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: Text('Add Category'),
-          ),
-        ],
+  Future<void> _addCategory(Category category) async {
+    try {
+      await _posService.addCategory(category);
+      if (!mounted) return;
+      Navigator.pop(context);
+      _loadCategories();
+      _showSuccessSnackBar('Category "${category.name}" added successfully');
+    } catch (e) {
+      _showErrorSnackBar('Failed to add category: $e');
+    }
+  }
+
+  Future<void> _updateCategory(Category category) async {
+    try {
+      await _posService.updateCategory(category);
+      if (!mounted) return;
+      Navigator.pop(context);
+      _loadCategories();
+      _showSuccessSnackBar('Category "${category.name}" updated successfully');
+    } catch (e) {
+      _showErrorSnackBar('Failed to update category: $e');
+    }
+  }
+
+  void _showDeleteDialog(Category category) {
+    showDialog(
+      context: context,
+      builder: (context) => DeleteConfirmationDialog(
+        itemName: category.name,
+        onConfirm: () => _deleteCategory(category),
+      ),
+    );
+  }
+
+  Future<void> _deleteCategory(Category category) async {
+    try {
+      await _posService.deleteCategory(category.id);
+      if (!mounted) return;
+      Navigator.pop(context);
+      _loadCategories();
+      _showSuccessSnackBar('Category "${category.name}" deleted successfully');
+    } catch (e) {
+      _showErrorSnackBar('Failed to delete category: $e');
+    }
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
 
   Widget _buildCategoryList() {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator());
-    }
-
-    if (_categories.isEmpty) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.category_outlined, size: 80, color: Colors.grey[400]),
+            CircularProgressIndicator.adaptive(),
             SizedBox(height: 16),
             Text(
-              'No Categories Yet',
-              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Add categories to organize your products',
-              style: TextStyle(color: Colors.grey),
-            ),
-            SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: _showAddCategoryDialog,
-              icon: Icon(Icons.add),
-              label: Text('Add First Category'),
+              'Loading Categories...',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
       );
     }
 
-    return ListView.builder(
-      itemCount: _categories.length,
-      itemBuilder: (context, index) {
-        final category = _categories[index];
-        return Card(
-          margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: ListTile(
-            leading: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
+    if (_filteredCategories.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.category_outlined,
+              size: 80,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _searchController.text.isEmpty
+                  ? 'No Categories Yet'
+                  : 'No Categories Found',
+              style: TextStyle(
+                fontSize: 18,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
               ),
-              child: Icon(Icons.category, color: Colors.blue),
             ),
-            title: Text(
-              category.name,
-              style: TextStyle(fontWeight: FontWeight.w500),
+            const SizedBox(height: 8),
+            Text(
+              _searchController.text.isEmpty
+                  ? 'Add categories to organize your products'
+                  : 'Try adjusting your search terms',
+              style: TextStyle(color: Colors.grey.shade500),
+              textAlign: TextAlign.center,
             ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (category.description != null) Text(category.description!),
-                SizedBox(height: 4),
-                Text(
-                  '${category.count} products',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                ),
-              ],
-            ),
-            trailing: IconButton(
-              icon: Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _showDeleteDialog(category),
-            ),
-          ),
+            const SizedBox(height: 24),
+            if (_searchController.text.isEmpty)
+              FilledButton.icon(
+                onPressed: _showAddCategoryDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Add First Category'),
+              ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _filteredCategories.length,
+      itemBuilder: (context, index) {
+        final category = _filteredCategories[index];
+        return CategoryCard(
+          category: category,
+          onEdit: () => _showEditCategoryDialog(category),
+          onDelete: () => _showDeleteDialog(category),
         );
       },
     );
   }
 
-  void _showDeleteDialog(Category category) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Delete Category'),
-        content: Text('Are you sure you want to delete "${category.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              try {
-                // Note: You'll need to implement deleteCategory in your POS service
-                // await _posService.deleteCategory(category.id);
-                Navigator.pop(context);
-                _loadCategories();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Category deleted successfully'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Failed to delete category: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
+  Widget _buildSearchField() {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search categories...',
+          prefixIcon: Icon(Icons.search, color: Colors.grey.shade500),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+            icon: Icon(Icons.clear, color: Colors.grey.shade500),
+            onPressed: () {
+              _searchController.clear();
+              _filterCategories();
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: Text('Delete'),
-          ),
-        ],
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        ),
       ),
     );
   }
@@ -288,21 +324,473 @@ class _CategoryManagementScreenState extends State<CategoryManagementScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Manage Categories'),
+        title: const Text(
+          'Manage Categories',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 20,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0.5,
         actions: [
           IconButton(
-            icon: Icon(Icons.add),
-            onPressed: _showAddCategoryDialog,
-            tooltip: 'Add Category',
-          ),
-          IconButton(
-            icon: Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded),
             onPressed: _loadCategories,
             tooltip: 'Refresh',
           ),
+          IconButton(
+            icon: const Icon(Icons.add_rounded),
+            onPressed: _showAddCategoryDialog,
+            tooltip: 'Add Category',
+          ),
+          const SizedBox(width: 8),
         ],
       ),
-      body: _buildCategoryList(),
+      body: Column(
+        children: [
+          _buildSearchField(),
+          Expanded(child: _buildCategoryList()),
+        ],
+      ),
+    );
+  }
+}
+
+class CategoryCard extends StatelessWidget {
+  final Category category;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const CategoryCard({
+    super.key,
+    required this.category,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.blue.shade100,
+                    Colors.purple.shade100,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Icons.category_rounded,
+                color: Colors.blue.shade700,
+                size: 28,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category.name,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (category.description != null) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      category.description!,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          category.slug,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade700,
+                            fontFamily: 'Monospace',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.inventory_2_rounded,
+                              size: 12,
+                              color: Colors.blue.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${category.count}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            PopupMenuButton<String>(
+              icon: Icon(
+                Icons.more_vert_rounded,
+                color: Colors.grey.shade600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              onSelected: (value) {
+                if (value == 'edit') onEdit();
+                if (value == 'delete') onDelete();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_rounded, color: Colors.blue.shade600),
+                      const SizedBox(width: 8),
+                      const Text('Edit'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_rounded, color: Colors.red.shade600),
+                      const SizedBox(width: 8),
+                      const Text('Delete'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class CategoryEditDialog extends StatefulWidget {
+  final Category? category;
+  final Function(Category) onSave;
+
+  const CategoryEditDialog({
+    super.key,
+    this.category,
+    required this.onSave,
+  });
+
+  @override
+  State<CategoryEditDialog> createState() => _CategoryEditDialogState();
+}
+
+class _CategoryEditDialogState extends State<CategoryEditDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _slugController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.category != null) {
+      _nameController.text = widget.category!.name;
+      _descriptionController.text = widget.category!.description ?? '';
+      _slugController.text = widget.category!.slug;
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _slugController.dispose();
+    super.dispose();
+  }
+
+  void _generateSlug() {
+    final name = _nameController.text.trim();
+    if (name.isNotEmpty) {
+      _slugController.text = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '-');
+    }
+  }
+
+  void _saveCategory() {
+    if (_formKey.currentState!.validate()) {
+      final category = Category(
+        id: widget.category?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        name: _nameController.text.trim(),
+        slug: _slugController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
+        count: widget.category?.count ?? 0,
+        imageUrl: widget.category?.imageUrl,
+      );
+      widget.onSave(category);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.category != null;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isEditing ? 'Edit Category' : 'Add New Category',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, color: Colors.grey.shade500),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              TextFormField(
+                controller: _nameController,
+                decoration: InputDecoration(
+                  labelText: 'Category Name *',
+                  hintText: 'Enter category name',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: Icon(Icons.category_rounded, color: Colors.blue.shade600),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter category name';
+                  }
+                  return null;
+                },
+                onChanged: (value) {
+                  if (widget.category == null) {
+                    _generateSlug();
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _slugController,
+                decoration: InputDecoration(
+                  labelText: 'Slug *',
+                  hintText: 'category-slug',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: Icon(Icons.link_rounded, color: Colors.green.shade600),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter slug';
+                  }
+                  if (!RegExp(r'^[a-z0-9-]+$').hasMatch(value)) {
+                    return 'Slug can only contain lowercase letters, numbers, and hyphens';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Enter category description (optional)',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: Icon(Icons.description_rounded, color: Colors.orange.shade600),
+                ),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: _saveCategory,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.blue.shade600,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: Text(isEditing ? 'Update' : 'Create'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class DeleteConfirmationDialog extends StatelessWidget {
+  final String itemName;
+  final VoidCallback onConfirm;
+
+  const DeleteConfirmationDialog({
+    super.key,
+    required this.itemName,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.delete_rounded,
+                size: 32,
+                color: Colors.red.shade600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Delete Category?',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Are you sure you want to delete "$itemName"? This action cannot be undone.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: onConfirm,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade600,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Delete'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -612,6 +1100,8 @@ class AddProductScreen extends StatefulWidget {
 class _AddProductScreenState extends State<AddProductScreen> {
   final EnhancedPOSService _posService = EnhancedPOSService();
   final _formKey = GlobalKey<FormState>();
+  final TextEditingController _purchasePriceController = TextEditingController();
+
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _skuController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
@@ -766,6 +1256,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         name: _nameController.text,
         sku: _skuController.text.trim(),
         price: double.parse(_priceController.text),
+        purchasePrice: double.tryParse(_purchasePriceController.text),
         stockQuantity: int.parse(_stockController.text),
         inStock: true,
         stockStatus: 'instock',
@@ -1083,9 +1574,30 @@ class _AddProductScreenState extends State<AddProductScreen> {
               _buildBarcodeField(),
               SizedBox(height: 16),
               TextFormField(
+                controller: _purchasePriceController,
+                decoration: InputDecoration(
+                  labelText: 'Purchase Price (Cost Price)',
+                  border: OutlineInputBorder(),
+                  prefixText: Constants.CURRENCY_NAME,
+                  prefixIcon: Icon(Icons.money_off_csred),
+                ),
+                keyboardType: TextInputType.numberWithOptions(decimal: true),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter purchase price';
+                  }
+                  final parsed = double.tryParse(value);
+                  if (parsed == null) return 'Please enter a valid number';
+                  if (parsed <= 0) return 'Purchase price must be greater than 0';
+                  return null;
+                },
+              ),
+
+              SizedBox(height: 16),
+              TextFormField(
                 controller: _priceController,
                 decoration: InputDecoration(
-                  labelText: 'Price',
+                  labelText: 'Sale Price',
                   border: OutlineInputBorder(),
                   prefixText: Constants.CURRENCY_NAME,
                   prefixIcon: Icon(Icons.attach_money),
@@ -1140,6 +1652,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
   @override
   void dispose() {
     _nameController.dispose();
+    _purchasePriceController.dispose();
     _skuController.dispose();
     _priceController.dispose();
     _stockController.dispose();

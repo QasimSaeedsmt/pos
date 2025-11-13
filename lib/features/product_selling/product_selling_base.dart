@@ -1,23 +1,24 @@
-
 import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:mpcm/theme_utils.dart';
 
 import '../../app.dart';
 import '../../constants.dart';
 import '../cartBase/cart_base.dart';
-import '../clientDashboard/client_dashboard.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../product_addition_restock_base/product_addition_restock_base.dart';
+import '../product_addition_restock_base/product_addition_restock_base.dart' hide EnhancedPOSService;
+
 class Product {
   final String id;
   final String name;
   final String sku;
   final double price;
+  final double? purchasePrice; // 👈 Added field
   final double? regularPrice;
   final double? salePrice;
   final String? imageUrl;
@@ -49,6 +50,7 @@ class Product {
     required this.name,
     required this.sku,
     required this.price,
+    this.purchasePrice, // 👈 Added to constructor
     this.regularPrice,
     this.salePrice,
     this.imageUrl,
@@ -87,6 +89,7 @@ class Product {
     String? name,
     String? sku,
     double? price,
+    double? purchasePrice, // 👈 Added here
     double? regularPrice,
     double? salePrice,
     String? imageUrl,
@@ -118,6 +121,7 @@ class Product {
       name: name ?? this.name,
       sku: sku ?? this.sku,
       price: price ?? this.price,
+      purchasePrice: purchasePrice ?? this.purchasePrice, // 👈 Added here
       regularPrice: regularPrice ?? this.regularPrice,
       salePrice: salePrice ?? this.salePrice,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -176,7 +180,7 @@ class Product {
       if (dateValue is String) {
         try {
           return DateTime.parse(dateValue);
-        } catch (e) {
+        } catch (_) {
           return null;
         }
       }
@@ -207,6 +211,7 @@ class Product {
       name: data['name']?.toString() ?? 'Unnamed Product',
       sku: data['sku']?.toString() ?? '',
       price: _parseDouble(data['price']) ?? 0.0,
+      purchasePrice: _parseDouble(data['purchasePrice']), // 👈 Added here
       regularPrice: _parseDouble(data['regularPrice']),
       salePrice: _parseDouble(data['salePrice']),
       imageUrl: primaryImageUrl,
@@ -245,6 +250,7 @@ class Product {
       'name': name,
       'sku': sku,
       'price': price,
+      'purchasePrice': purchasePrice, // 👈 Added here
       'regularPrice': regularPrice,
       'salePrice': salePrice,
       'imageUrl': imageUrl,
@@ -325,11 +331,9 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   bool get _isDesktop {
     if (kIsWeb) {
-      // For web, use screen width to determine desktop
       final mediaQuery = MediaQuery.of(context);
       return mediaQuery.size.width > 768;
     }
-    // For mobile apps, check platform
     return Platform.isWindows || Platform.isMacOS || Platform.isLinux;
   }
 
@@ -338,7 +342,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     super.initState();
     _initializeScreen();
     _setupCartListener();
-    // Auto-set POS mode for desktop on init
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_isDesktop && mounted) {
         setState(() {
@@ -365,6 +368,8 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   }
 
   Future<void> _loadProducts() async {
+    if (!mounted) return; // Add this check
+
     setState(() {
       _isLoading = true;
       _searchError = '';
@@ -374,6 +379,8 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         limit: 100,
         inStockOnly: _inStockOnly,
       );
+      if (!mounted) return; // Add this check
+
       setState(() {
         _products.clear();
         _products.addAll(products);
@@ -391,6 +398,8 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   Future<void> _loadCategories() async {
     try {
       final categories = await _posService.getCategories();
+      if (!mounted) return; // Add this check
+
       setState(() {
         _categories.clear();
         _categories.addAll(categories);
@@ -431,63 +440,84 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     });
   }
 
-  Future<void> _performSearch(String query) async {
+  void _performSearch(String query) {
     try {
-      final results = await _posService.searchProducts(query);
-      if (mounted) {
-        setState(() {
-          _filteredProducts.clear();
-          _filteredProducts.addAll(results);
-        });
-      }
+      final searchQuery = query.toLowerCase().trim();
+
+      // Ultra-efficient search with multiple criteria
+      final results = _products.where((product) {
+        // Search in name (most common)
+        if (product.name.toLowerCase().contains(searchQuery)) return true;
+
+        // Search in SKU (exact match preferred)
+        if (product.sku.toLowerCase().contains(searchQuery)) return true;
+
+        // Search in categories
+        for (final category in product.categories) {
+          if (category.name.toLowerCase().contains(searchQuery)) return true;
+        }
+
+        // Search in description (fallback)
+        if (product.description?.toLowerCase().contains(searchQuery) == true) return true;
+
+        return false;
+      }).toList();
+
+      setState(() {
+        _filteredProducts.clear();
+        _filteredProducts.addAll(results);
+        _searchError = '';
+      });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _searchError = 'Search failed: $e';
-        });
-      }
+      setState(() {
+        _searchError = 'Search failed: $e';
+      });
     }
   }
+
   void _applyFilters() {
+    final stopwatch = Stopwatch()..start();
+
     List<Product> filtered = List.from(_products);
+
+    // Apply category filter
     if (_selectedCategoryId != 'all') {
       filtered = filtered.where((product) {
-        return product.categories.any(
-              (category) => category.id == _selectedCategoryId,
-        );
+        return product.categories.any((category) => category.id == _selectedCategoryId);
       }).toList();
     }
+
+    // Apply stock filter
     if (_inStockOnly) {
       filtered = filtered.where((product) => product.inStock).toList();
     }
+
     setState(() {
       _filteredProducts.clear();
       _filteredProducts.addAll(filtered);
     });
+
+    stopwatch.stop();
+    print('Filter applied in ${stopwatch.elapsedMicroseconds} microseconds');
   }
 
   Future<void> _addToCart(Product product) async {
     try {
       await widget.cartManager.addToCart(product);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('${product.name} added to cart'),
-          backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          duration: Duration(seconds: 2),
-        ),
+
+      showSmartSnackBar(
+        context,
+        '${product.name} added to cart',
+        color: Colors.green,
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ),
+      showSmartSnackBar(
+        context,
+        e.toString(),
+        color: Colors.red,
       );
     }
   }
-
   Future<void> _scanAndAddProduct() async {
     final barcode = await UniversalScanningService.scanBarcode(
       context,
@@ -525,6 +555,21 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       }
     }
   }
+  void showSmartSnackBar(BuildContext context, String message, {Color? color}) {
+    final messenger = ScaffoldMessenger.of(context);
+
+    // Remove any current snackbar instantly before showing a new one
+    messenger.removeCurrentSnackBar();
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color ?? Colors.green,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   void _clearSearch() {
     _searchController.clear();
@@ -545,24 +590,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     );
   }
 
-  void _showFilters() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => FilterBottomSheet(
-        categories: _categories,
-        selectedCategoryId: _selectedCategoryId,
-        inStockOnly: _inStockOnly,
-        onFiltersChanged: (categoryId, inStockOnly) {
-          setState(() {
-            _selectedCategoryId = categoryId;
-            _inStockOnly = inStockOnly;
-          });
-          _applyFilters();
-        },
-      ),
-    );
-  }
 
   void _toggleSellingMode() {
     setState(() {
@@ -584,9 +611,8 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   }
 
   Widget _buildProductGrid() {
-    final displayProducts = _isSearching
-        ? _filteredProducts
-        : _filteredProducts;
+    final displayProducts = _isSearching ? _filteredProducts : _filteredProducts;
+
     if (_isLoading) {
       return Center(
         child: Column(
@@ -599,6 +625,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
+
     if (_searchError.isNotEmpty) {
       return Center(
         child: Column(
@@ -613,6 +640,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
+
     if (displayProducts.isEmpty) {
       return Center(
         child: Column(
@@ -636,6 +664,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         ),
       );
     }
+
     return GridView.builder(
       padding: EdgeInsets.all(8),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -743,7 +772,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Left sidebar - Product search and filters
         Container(
           width: 350,
           decoration: BoxDecoration(
@@ -792,18 +820,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
                           ),
                         ),
                         SizedBox(width: 8),
-                        Expanded(
-                          flex: 2,
-                          child: OutlinedButton.icon(
-                            icon: Icon(Icons.filter_list, size: 18),
-                            label: Text('Filters'),
-                            onPressed: _showFilters,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue,
-                              side: BorderSide(color: Colors.blue),
-                            ),
-                          ),
-                        ),
+
                       ],
                     ),
                   ],
@@ -850,7 +867,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
             ],
           ),
         ),
-        // Main content area
         Expanded(
           child: _usePOSMode
               ? _buildPOSModeInterface()
@@ -985,54 +1001,9 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       ]);
     }
 
-    actions.addAll([
-      Stack(
-        clipBehavior: Clip.none,
-        children: [
-          IconButton(
-            icon: Icon(Icons.shopping_cart),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      CartScreen(cartManager: widget.cartManager),
-                ),
-              );
-            },
-          ),
-          if (_cartItemCount > 0)
-            Positioned(
-              right: 4,
-              top: 4,
-              child: Container(
-                padding: EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.red,
-                  shape: BoxShape.circle,
-                ),
-                constraints: BoxConstraints(minWidth: 20, minHeight: 20),
-                child: Text(
-                  '$_cartItemCount',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-        ],
-      ),
-      IconButton(
-        icon: Icon(Icons.filter_list),
-        onPressed: _showFilters,
-        tooltip: 'Filters',
-      ),
-    ]);
 
-    if (!_isDesktop) {
+
+    if (_isDesktop) {
       actions.add(
         IconButton(
           icon: Icon(Icons.add_circle_outline),
@@ -1048,10 +1019,10 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+    appBar:  _isDesktop? AppBar(
         title: Text('Sell Products'),
         actions: _buildAppBarActions(),
-      ),
+      ):null,
       body: _isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
     );
   }
@@ -1104,10 +1075,7 @@ class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
 
       if (product != null && row.quantity > 0) {
         try {
-          // Use custom price if provided, otherwise use product's original price
           final effectivePrice = row.customPrice ?? product.price;
-
-          // Create product with custom price using copyWith
           final productToAdd = product.copyWith(price: effectivePrice);
 
           for (int j = 0; j < row.quantity; j++) {
@@ -1121,7 +1089,6 @@ class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
       }
     }
 
-    // Show results
     if (addedCount > 0) {
       String message = '$addedCount items added to cart';
       if (errors.isNotEmpty) {
@@ -1138,7 +1105,6 @@ class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
       );
 
       if (errors.isNotEmpty) {
-        // Show detailed errors in a dialog
         WidgetsBinding.instance.addPostFrameCallback((_) {
           showDialog(
             context: context,
@@ -1214,9 +1180,10 @@ class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
       return;
     }
 
+    final searchQuery = query.toLowerCase();
     final results = widget.products.where((product) {
-      return product.name.toLowerCase().contains(query.toLowerCase()) ||
-          product.sku.toLowerCase().contains(query.toLowerCase());
+      return product.name.toLowerCase().contains(searchQuery) ||
+          product.sku.toLowerCase().contains(searchQuery);
     }).toList();
 
     _searchResults[index]!.clear();
@@ -1674,7 +1641,6 @@ class POSProductRow {
   POSProductRow({this.quantity = 1, this.customPrice});
 }
 
-// Product Card Widget
 class ProductCard extends StatelessWidget {
   final Product product;
   final VoidCallback onTap;
@@ -1794,15 +1760,15 @@ class ProductCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.zero,
                     backgroundColor: product.inStock
-                        ? Colors.blue
+                        ? ThemeUtils.primary(context)
                         : Colors.grey,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_shopping_cart, size: 16),
+                      Icon(Icons.add_shopping_cart, size: 16,color: ThemeUtils.textOnPrimary(context),),
                       SizedBox(width: 4),
-                      Text('ADD', style: TextStyle(fontSize: 12)),
+                      Text('ADD', style: TextStyle(fontSize: 12,color: ThemeUtils.textOnPrimary(context))),
                     ],
                   ),
                 ),
@@ -1815,7 +1781,6 @@ class ProductCard extends StatelessWidget {
   }
 }
 
-// Recent Product Card (Horizontal List)
 class RecentProductCard extends StatelessWidget {
   final Product product;
   final VoidCallback onTap;
@@ -1835,7 +1800,6 @@ class RecentProductCard extends StatelessWidget {
           padding: EdgeInsets.all(8),
           child: Column(
             children: [
-              // Product Image
               Container(
                 height: 60,
                 width: 60,
@@ -1860,8 +1824,6 @@ class RecentProductCard extends StatelessWidget {
                     : null,
               ),
               SizedBox(height: 4),
-
-              // Product Name
               Text(
                 product.name,
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
@@ -1870,8 +1832,6 @@ class RecentProductCard extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               Spacer(),
-
-              // Price
               Text(
                 '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}',
                 style: TextStyle(
@@ -1880,8 +1840,6 @@ class RecentProductCard extends StatelessWidget {
                   color: Colors.green[700],
                 ),
               ),
-
-              // Stock Status
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
@@ -1906,7 +1864,6 @@ class RecentProductCard extends StatelessWidget {
   }
 }
 
-// Product Detail Bottom Sheet
 class ProductDetailBottomSheet extends StatefulWidget {
   final Product product;
   final VoidCallback onAddToCart;
@@ -1953,7 +1910,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Row(
               children: [
                 Container(
@@ -1998,8 +1954,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
               ],
             ),
             SizedBox(height: 16),
-      
-            // Price
             Text(
               'Price: ${Constants.CURRENCY_NAME}${widget.product.price.toStringAsFixed(0)}',
               style: TextStyle(
@@ -2009,8 +1963,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
               ),
             ),
             SizedBox(height: 8),
-      
-            // Stock Information
             Row(
               children: [
                 Icon(
@@ -2032,8 +1984,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
               ],
             ),
             SizedBox(height: 16),
-      
-            // Description
             if (widget.product.description != null &&
                 widget.product.description!.isNotEmpty)
               Column(
@@ -2051,8 +2001,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
                   SizedBox(height: 16),
                 ],
               ),
-      
-            // Quantity Selector
             Text('Quantity:', style: TextStyle(fontWeight: FontWeight.bold)),
             SizedBox(height: 8),
             Row(
@@ -2096,8 +2044,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
               ],
             ),
             SizedBox(height: 24),
-      
-            // Action Buttons
             Row(
               children: [
                 Expanded(
@@ -2132,118 +2078,7 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
   }
 }
 
-// Filter Bottom Sheet
-class FilterBottomSheet extends StatefulWidget {
-  final List<Category> categories;
-  final String selectedCategoryId;
-  final bool inStockOnly;
-  final Function(String, bool) onFiltersChanged;
 
-  const FilterBottomSheet({
-    super.key,
-    required this.categories,
-    required this.selectedCategoryId,
-    required this.inStockOnly,
-    required this.onFiltersChanged,
-  });
-
-  @override
-  _FilterBottomSheetState createState() => _FilterBottomSheetState();
-}
-
-class _FilterBottomSheetState extends State<FilterBottomSheet> {
-  late String _selectedCategoryId;
-  late bool _inStockOnly;
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedCategoryId = widget.selectedCategoryId;
-    _inStockOnly = widget.inStockOnly;
-  }
-
-  void _applyFilters() {
-    widget.onFiltersChanged(_selectedCategoryId, _inStockOnly);
-    Navigator.pop(context);
-  }
-
-  void _resetFilters() {
-    setState(() {
-      _selectedCategoryId = 'all';
-      _inStockOnly = false;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Filters',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              TextButton(onPressed: _resetFilters, child: Text('Reset')),
-            ],
-          ),
-          SizedBox(height: 16),
-          Text('Category', style: TextStyle(fontWeight: FontWeight.bold)),
-          SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              FilterChip(
-                label: Text('All Categories'),
-                selected: _selectedCategoryId == 'all',
-                onSelected: (selected) {
-                  setState(() => _selectedCategoryId = 'all');
-                },
-              ),
-              ...widget.categories.map((category) {
-                return FilterChip(
-                  label: Text(category.name),
-                  selected: _selectedCategoryId == category.id,
-                  onSelected: (selected) {
-                    setState(() => _selectedCategoryId = category.id);
-                  },
-                );
-              }),
-            ],
-          ),
-          SizedBox(height: 16),
-          Row(
-            children: [
-              Checkbox(
-                value: _inStockOnly,
-                onChanged: (value) {
-                  setState(() => _inStockOnly = value ?? false);
-                },
-              ),
-              Text('Show only in-stock products'),
-            ],
-          ),
-          SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: ElevatedButton(
-              onPressed: _applyFilters,
-              child: Text('APPLY FILTERS'),
-            ),
-          ),
-          SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
 class Attribute {
   final int id;
   final String name;

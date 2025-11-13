@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../app.dart';
 import '../../constants.dart';
-import '../../printing/bottom_sheet.dart' hide InvoiceOptionsBottomSheet;
+import '../../printing/bottom_sheet.dart';
+import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../customerBase/customer_base.dart';
@@ -117,13 +118,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => InvoiceOptionsBottomSheet(
+      builder: (context) => InvoiceOptionsBottomSheetWithOptions(
         order: order,
         customer: _customerSelection.hasCustomer
             ? _customerSelection.customer
             : null,
-        businessInfo: _businessInfo,
-        invoiceSettings: _invoiceSettings,
+        // businessInfo: _businessInfo,
+        // invoiceSettings: _invoiceSettings,
       ),
     ).then((_) {
       // After invoice dialog is closed, reset the screen
@@ -879,7 +880,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_isLoadingSettings) {
       return SafeArea(
         child: Scaffold(
-          appBar: AppBar(title: Text('Checkout')),
+          appBar: AppBar(title: Text('Checkout',),backgroundColor: ThemeUtils.primary(context),),
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -899,8 +900,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         appBar: AppBar(
           title: Text('Checkout'),
           backgroundColor: _posService.isOnline
-              ? Colors.blue[700]
-              : Colors.orange[700],
+              ? ThemeUtils.primary(context)
+              : ThemeUtils.secondary(context),
         ),
         body: Column(
           children: [
@@ -912,19 +913,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     // Customer Section
                     _buildCustomerSection(),
                     SizedBox(height: 16),
-      
+
                     // Order Summary
                     _buildOrderSummary(),
                     SizedBox(height: 16),
-      
+
                     // Additional Options
                     _buildAdditionalOptions(),
                     SizedBox(height: 16),
-      
+
                     // Price Breakdown
                     _buildPriceBreakdown(),
                     SizedBox(height: 16),
-      
+
                     // Payment Section
                     _buildPaymentSection(),
                     SizedBox(height: 16),
@@ -932,7 +933,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
               ),
             ),
-      
+
             // Action Buttons
             _buildActionButtons(),
           ],

@@ -582,4 +582,6 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
       ),
     );
   }
+
 }
+

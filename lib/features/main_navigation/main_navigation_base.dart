@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
+import 'package:mpcm/features/customerBase/customer_management_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synchronized/synchronized.dart';
@@ -17,6 +18,7 @@ import '../../modules/auth/providers/auth_provider.dart';
 import '../../modules/auth/screens/settings_screen.dart';
 import '../../printing/printing_setting_screen.dart';
 import '../../sales/sales_management_screen.dart';
+import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../connectivityBase/local_db_base.dart';
@@ -125,9 +127,233 @@ class NavigationService {
 class EnhancedPOSService {
   final FirestoreServices _firestore = FirestoreServices();
 
+  // Enhanced category methods with complete integration
+  Future<List<Category>> getCategories() async {
+    try {
+      List<Category> categories;
+
+      if (_isOnline) {
+        print('🔄 Fetching categories from Firestore...');
+        categories = await _firestore.getCategories();
+
+        // Always sync Firestore categories to local database for offline access
+        await _localDb.saveCategories(categories);
+        print('✅ Synced ${categories.length} categories to local storage');
+      } else {
+        print('📱 Fetching categories from local database (offline mode)...');
+        categories = await _localDb.getAllCategories();
+        print('✅ Found ${categories.length} categories in local storage');
+      }
+
+      return categories;
+    } catch (e) {
+      print('❌ Error in getCategories: $e');
+
+      // Comprehensive fallback strategy
+      try {
+        final localCategories = await _localDb.getAllCategories();
+        print('🔄 Using fallback local categories: ${localCategories.length} found');
+        return localCategories;
+      } catch (fallbackError) {
+        print('❌ Fallback also failed: $fallbackError');
+        _showErrorSnackBar('Failed to load categories: $e');
+        return [];
+      }
+    }
+  }
+
+  Future<String> addCategory(Category category) async {
+    try {
+      String categoryId;
+
+      if (_isOnline) {
+        print('🔄 Adding category to Firestore: ${category.name}');
+        categoryId = await _firestore.addCategory(category);
+
+        // Update the category with the Firestore ID
+        final updatedCategory = category.copyWith(id: categoryId);
+
+        // Save to local database for offline access
+        await _localDb.saveCategory(updatedCategory);
+        print('✅ Category added to Firestore with ID: $categoryId and saved locally');
+
+        return categoryId;
+      } else {
+        // Generate a local ID for offline use
+        categoryId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+        final localCategory = category.copyWith(id: categoryId);
+
+        // Save to local database only
+        await _localDb.saveCategory(localCategory);
+        print('✅ Category saved locally with ID: $categoryId (offline mode)');
+
+        return categoryId;
+      }
+    } catch (e) {
+      print('❌ Error adding category: $e');
+
+      // Robust fallback: always try to save locally
+      try {
+        final localId = 'local_fallback_${DateTime.now().millisecondsSinceEpoch}';
+        final localCategory = category.copyWith(id: localId);
+        await _localDb.saveCategory(localCategory);
+        print('✅ Category saved locally as fallback with ID: $localId');
+        return localId;
+      } catch (localError) {
+        print('❌ Local save also failed: $localError');
+        _showErrorSnackBar('Failed to add category: $e');
+        rethrow;
+      }
+    }
+  }
+
+  Future<void> updateCategory(Category category) async {
+    try {
+      if (_isOnline) {
+        print('🔄 Updating category in Firestore: ${category.name} (${category.id})');
+        await _firestore.updateCategory(category);
+      }
+
+      // Always update local database for consistency (online or offline)
+      await _localDb.saveCategory(category);
+      print('✅ Category updated locally: ${category.name}');
+
+    } catch (e) {
+      print('❌ Error updating category: $e');
+
+      // Fallback: update local database even if online fails
+      try {
+        await _localDb.saveCategory(category);
+        print('✅ Category updated locally as fallback: ${category.name}');
+
+        if (_isOnline) {
+          // If online failed but we're online, show error but don't throw
+          _showErrorSnackBar('Failed to sync category update online: $e');
+        }
+      } catch (localError) {
+        print('❌ Local update also failed: $localError');
+        _showErrorSnackBar('Failed to update category: $e');
+        rethrow;
+      }
+    }
+  }
+
+  Future<void> deleteCategory(String categoryId) async {
+    try {
+      if (_isOnline) {
+        print('🔄 Deleting category from Firestore: $categoryId');
+        await _firestore.deleteCategory(categoryId);
+      }
+
+      // Always update local database for consistency
+      await _localDb.deleteCategory(categoryId);
+      print('✅ Category deleted locally: $categoryId');
+
+    } catch (e) {
+      print('❌ Error deleting category: $e');
+
+      // Fallback: delete from local database even if online fails
+      try {
+        await _localDb.deleteCategory(categoryId);
+        print('✅ Category deleted locally as fallback: $categoryId');
+
+        if (_isOnline) {
+          _showErrorSnackBar('Failed to sync category deletion online: $e');
+        }
+      } catch (localError) {
+        print('❌ Local delete also failed: $localError');
+        _showErrorSnackBar('Failed to delete category: $e');
+        rethrow;
+      }
+    }
+  }
+
+  Stream<List<Category>> getCategoriesStream() {
+    if (_isOnline) {
+      return _firestore.getCategoriesStream().asyncMap((categories) async {
+        // Sync Firestore categories to local database when they update
+        await _localDb.saveCategories(categories);
+        return categories;
+      }).handleError((error) {
+        print('❌ Categories stream error: $error');
+        // Fallback to local data when stream fails
+        return _localDb.getAllCategories();
+      });
+    } else {
+      return _localDb.getCategoriesStream();
+    }
+  }
+
+  // Enhanced sync method for categories
+  Future<void> _syncPendingCategories() async {
+    if (!_isOnline) {
+      print('📱 Skipping category sync - offline');
+      return;
+    }
+
+    try {
+      final localCategories = await _localDb.getAllCategories();
+      final localOnlyCategories = localCategories.where((cat) => cat.id.startsWith('local_')).toList();
+
+      if (localOnlyCategories.isEmpty) {
+        print('✅ No local-only categories to sync');
+        return;
+      }
+
+      print('🔄 Syncing ${localOnlyCategories.length} local categories to Firestore...');
+
+      for (final localCategory in localOnlyCategories) {
+        try {
+          // Add to Firestore and get the real ID
+          final firestoreId = await _firestore.addCategory(localCategory);
+
+          // Update local category with Firestore ID
+          final updatedCategory = localCategory.copyWith(id: firestoreId);
+          await _localDb.saveCategory(updatedCategory);
+
+          print('✅ Synced local category "${localCategory.name}" to Firestore with ID: $firestoreId');
+        } catch (e) {
+          print('❌ Failed to sync local category "${localCategory.name}": $e');
+          // Continue with other categories even if one fails
+        }
+      }
+    } catch (e) {
+      print('❌ Error syncing pending categories: $e');
+    }
+  }
+
+  // Update the main sync method to include categories
+  Future<void> _triggerSync() async {
+    await _syncLock.synchronized(() async {
+      try {
+        print('🔄 Starting full sync...');
+        await _syncPendingOrders();
+        await _syncPendingRestocks();
+        await _syncPendingReturns();
+        await _syncPendingCategories(); // Add this line
+        await _syncProducts();
+        print('✅ Full sync completed successfully');
+      } catch (e) {
+        print('❌ Sync error: $e');
+      }
+    });
+  }
+
+  // Helper method to show error messages
+  void _showErrorSnackBar(String message) {
+    // This would typically use a ScaffoldMessenger, but we can't access context here
+    print('💬 Error Snackbar: $message');
+  }
   void setTenantContext(String tenantId) {
     _firestore.setTenantId(tenantId);
   }
+// Add these to your FirestoreServices class
+
+  // ... existing properties and methods ...
+
+  // Categories collection reference
+  CollectionReference get categoriesRef => FirebaseFirestore.instance.collection('categories');
+
 
   Future<OrderCreationResult> createOrderWithCustomer(
       List<CartItem> cartItems,
@@ -375,18 +601,7 @@ class EnhancedPOSService {
   }
 
   // Update the main sync method to include returns
-  Future<void> _triggerSync() async {
-    await _syncLock.synchronized(() async {
-      try {
-        await _syncPendingOrders();
-        await _syncPendingRestocks();
-        await _syncPendingReturns(); // Add this line
-        await _syncProducts();
-      } catch (e) {
-        print('Sync error: $e');
-      }
-    });
-  }
+
   // Enhanced Return operations
 
   // Add to EnhancedPOSService class
@@ -839,17 +1054,7 @@ class EnhancedPOSService {
     await _updateLocalProductStock(productId, quantity);
   }
 
-  Stream<List<Category>> getCategoriesStream() {
-    return _firestore.getCategoriesStream();
-  }
 
-  Future<List<Category>> getCategories() async {
-    return await _firestore.getCategories();
-  }
-
-  Future<String> addCategory(Category category) async {
-    return await _firestore.addCategory(category);
-  }
 
   bool get isOnline => _isOnline;
 
@@ -933,13 +1138,14 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ProductManagementScreen(),
       CategoryManagementScreen(),
 
-      ReturnsManagementScreen(), // Add this line
+      ReturnsManagementScreen(),
 
       SettingsScreen(),
       EnhancedUsersScreen(),
       ClientTicketsScreen(),
 
       ProfileScreen(),
+      ModernCustomerManagementScreen(posService: _posService)
     ]);
     setState(() {});
 
@@ -958,6 +1164,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ClientTicketsScreen(),
 
       ProfileScreen(),
+      ModernCustomerManagementScreen(posService: _posService)
+
     ]);
     setState(() {});
     _clientCashierScreens.addAll([
@@ -1160,7 +1368,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
     return LiquidPullToRefresh(
       key: _refreshIndicatorKey,
       onRefresh: _handleRefresh,
-      color: Colors.blue[700]!,
+      color: ThemeUtils.primary(context)!,
       backgroundColor: Colors.white,
       height: 100,
       animSpeedFactor: 2,
@@ -1237,17 +1445,17 @@ class _MainNavScreenState extends State<MainNavScreen> {
           //   ),
 
 
-          IconButton(
-            icon: Icon(Icons.person),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => EnhancedProfileScreen(),
-                ),
-              );
-            },
-          ),
+          // IconButton(
+          //   icon: Icon(Icons.person),
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder: (context) => EnhancedProfileScreen(),
+          //       ),
+          //     );
+          //   },
+          // ),
         ],
         flexibleSpace: Container(),
 
@@ -1258,7 +1466,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
               authProvider.currentTenant?.businessName ??
                   'Your Business (Tenant: ${tenantId.substring(0, min(8, tenantId.length))}...)',
               style: TextStyle(
-                color: Colors.white,
+                color: ThemeUtils.textOnPrimary(context),
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
               ),
@@ -1268,12 +1476,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
                 _connectionStatus,
                 style: TextStyle(
                   fontSize: 12,
-                  color: _isOnline ? Colors.green[200] : Colors.orange[200],
+                  color: _isOnline ? ThemeUtils.textOnPrimary(context) : ThemeUtils.textOnPrimary(context),
                 ),
               ),
           ],
         ),
-        backgroundColor: _isOnline ? Colors.blue[700] : Colors.orange[700],
+        backgroundColor: _isOnline ? ThemeUtils.primary(context) : ThemeUtils.secondary(context),
         elevation: 0,
       ),
       body: _clientAdminScreens.isEmpty
@@ -1283,8 +1491,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
           : _clientAdminScreens[_currentIndex],
       bottomNavigationBar: authProvider.currentUser!.canManageProducts
           ? BottomNavigationBar(
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
+        selectedItemColor: ThemeUtils.primary(context),
+        unselectedItemColor: ThemeUtils.accentColor(context),
         showUnselectedLabels: true,
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex < 5
@@ -1447,6 +1655,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
   }
 
   // More menu dialog
+// More menu dialog
   void _showMoreMenu(BuildContext context, MyAuthProvider authProvider) {
     showModalBottomSheet(
       context: context,
@@ -1455,36 +1664,18 @@ class _MainNavScreenState extends State<MainNavScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (authProvider.currentUser!.canManageProducts ||
-                  authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.inventory_2_outlined),
-                  title: Text('Manage Inventory'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 4 : 4,
-                    );
-
-                    // Navigate to manage screen
-                  },
-                ),
-              if (authProvider.currentUser!.canManageProducts ||
-                  authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.inventory_2_outlined),
-                  title: Text('Product Category'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 5 : 5,
-                    );
-
-                    // Navigate to manage screen
-                  },
-                ),
+              ListTile(
+                leading: Icon(Icons.person),
+                title: Text('Profile'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(
+                        () => _currentIndex =
+                    authProvider.currentUser!.canManageUsers ? 10 : 10,
+                  );
+                  // Navigate to profile screen
+                },
+              ),
               ListTile(
                 leading: Icon(Icons.assignment_return_outlined),
                 title: Text('Returns'),
@@ -1494,24 +1685,21 @@ class _MainNavScreenState extends State<MainNavScreen> {
                         () => _currentIndex =
                     authProvider.currentUser!.canManageUsers ? 6 : 6,
                   );
-
                   // Navigate to returns screen
                 },
               ),
-              if (authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 7 : 6,
-                    );
-
-                    // Navigate to settings screen
-                  },
-                ),
+              ListTile(
+                leading: Icon(Icons.group),
+                title: Text('Manage Customers'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(
+                        () => _currentIndex =
+                    authProvider.currentUser!.canManageUsers ? 11 : 11,
+                  );
+                  // Navigate to profile screen
+                },
+              ),
               if (authProvider.currentUser!.canManageUsers)
                 ListTile(
                   leading: Icon(Icons.people),
@@ -1522,7 +1710,6 @@ class _MainNavScreenState extends State<MainNavScreen> {
                           () => _currentIndex =
                       authProvider.currentUser!.canManageUsers ? 8 : 7,
                     );
-
                     // Navigate to users screen
                   },
                 ),
@@ -1538,25 +1725,53 @@ class _MainNavScreenState extends State<MainNavScreen> {
                   // Navigate to profile screen
                 },
               ),
-              ListTile(
-                leading: Icon(Icons.person),
-                title: Text('Profile'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(
-                        () => _currentIndex =
-                    authProvider.currentUser!.canManageUsers ? 10 : 10,
-                  );
-                  // Navigate to profile screen
-                },
-              ),
+              if (authProvider.currentUser!.canManageProducts ||
+                  authProvider.currentUser!.canManageUsers)
+                ListTile(
+                  leading: Icon(Icons.inventory_2_outlined),
+                  title: Text('Manage Inventory'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(
+                          () => _currentIndex =
+                      authProvider.currentUser!.canManageUsers ? 4 : 4,
+                    );
+                    // Navigate to manage screen
+                  },
+                ),
+              if (authProvider.currentUser!.canManageProducts ||
+                  authProvider.currentUser!.canManageUsers)
+                ListTile(
+                  leading: Icon(Icons.inventory_2_outlined),
+                  title: Text('Product Category'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(
+                          () => _currentIndex =
+                      authProvider.currentUser!.canManageUsers ? 5 : 5,
+                    );
+                    // Navigate to manage screen
+                  },
+                ),
+              if (authProvider.currentUser!.canManageUsers)
+                ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Settings'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    setState(
+                          () => _currentIndex =
+                      authProvider.currentUser!.canManageUsers ? 7 : 6,
+                    );
+                    // Navigate to settings screen
+                  },
+                ),
             ],
           ),
         );
       },
     );
   }
-
   @override
   void dispose() {
     _posService.dispose();

@@ -7,6 +7,7 @@ import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../customerBase/customer_base.dart';
 import '../orderBase/order_base.dart';
+import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../product_selling/product_selling_base.dart';
 import '../returnBase/return_base.dart';
 
@@ -18,7 +19,139 @@ class LocalDatabase {
   static const String _dashboardDataKey = 'dashboard_data';
   static const String _dashboardCacheTimestampKey = 'dashboard_cache_timestamp';
   static const Duration _dashboardCacheDuration = Duration(hours: 1);
+  // Add these category constants and methods
+  static const String _categoriesKey = 'categories';
+  static const String _categoriesTimestampKey = 'categories_cache_timestamp';
 
+  // Category operations
+  Future<List<Category>> getAllCategories() async {
+    try {
+      final prefs = await _prefs;
+      final categoriesJson = prefs.getString(_categoriesKey);
+
+      if (categoriesJson == null) return [];
+
+      final List<dynamic> jsonList = json.decode(categoriesJson);
+      return jsonList.map((json) {
+        final data = Map<String, dynamic>.from(json);
+        final id = data['id']?.toString() ?? '';
+        return Category.fromFirestore(data, id);
+      }).toList();
+    } catch (e) {
+      print('Error getting local categories: $e');
+      return [];
+    }
+  }
+
+  Future<String> saveCategory(Category category) async {
+    try {
+      final prefs = await _prefs;
+      final existingCategories = await getAllCategories();
+
+      // Check if category already exists (for update)
+      final categoryIndex = existingCategories.indexWhere((cat) => cat.id == category.id);
+      final List<Category> updatedCategories;
+
+      if (categoryIndex != -1) {
+        // Update existing category
+        updatedCategories = List.from(existingCategories);
+        updatedCategories[categoryIndex] = category;
+      } else {
+        // Add new category
+        updatedCategories = [...existingCategories, category];
+      }
+
+      // Save back to shared preferences
+      final categoriesJson = updatedCategories.map((cat) {
+        final data = cat.toFirestore();
+        data['id'] = cat.id; // Ensure ID is included
+        return data;
+      }).toList();
+
+      await prefs.setString(_categoriesKey, json.encode(categoriesJson));
+      await prefs.setInt(
+        _categoriesTimestampKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      return category.id;
+    } catch (e) {
+      print('Error saving category locally: $e');
+      throw Exception('Failed to save category locally: $e');
+    }
+  }
+
+  Future<void> deleteCategory(String categoryId) async {
+    try {
+      final prefs = await _prefs;
+      final existingCategories = await getAllCategories();
+
+      // Remove the category
+      final updatedCategories = existingCategories
+          .where((cat) => cat.id != categoryId)
+          .toList();
+
+      // Save back to shared preferences
+      final categoriesJson = updatedCategories.map((cat) {
+        final data = cat.toFirestore();
+        data['id'] = cat.id;
+        return data;
+      }).toList();
+
+      await prefs.setString(_categoriesKey, json.encode(categoriesJson));
+      await prefs.setInt(
+        _categoriesTimestampKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      print('Error deleting category locally: $e');
+      throw Exception('Failed to delete category locally: $e');
+    }
+  }
+
+  Stream<List<Category>> getCategoriesStream() {
+    // Create a stream that emits categories when they change
+    return Stream.periodic(Duration(seconds: 2)).asyncMap((_) => getAllCategories());
+  }
+
+  Future<Category?> getCategoryById(String categoryId) async {
+    final categories = await getAllCategories();
+    try {
+      return categories.firstWhere((cat) => cat.id == categoryId);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<void> saveCategories(List<Category> categories) async {
+    try {
+      final prefs = await _prefs;
+
+      // Save categories
+      final categoriesJson = categories.map((cat) {
+        final data = cat.toFirestore();
+        data['id'] = cat.id;
+        return data;
+      }).toList();
+
+      await prefs.setString(_categoriesKey, json.encode(categoriesJson));
+      await prefs.setInt(
+        _categoriesTimestampKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+
+      print('Saved ${categories.length} categories to local storage');
+    } catch (e) {
+      print('Error saving categories locally: $e');
+      throw Exception('Failed to save categories locally: $e');
+    }
+  }
+
+  Future<void> clearCategories() async {
+    final prefs = await _prefs;
+    await prefs.remove(_categoriesKey);
+    await prefs.remove(_categoriesTimestampKey);
+  }
   // Dashboard operations
   Future<void> saveDashboardData(OfflineDashboardData data) async {
     final prefs = await _prefs;

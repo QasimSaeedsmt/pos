@@ -32,6 +32,7 @@ dependencies:
     sdk: flutter
   camera:
   async:
+  qr_flutter:
   connectivity_plus:
   mobile_scanner:
   path:
@@ -57,9 +58,10 @@ dependencies:
   firebase_app_check:
   path_provider:
   share_plus:
+
   local_auth:
   google_fonts:
-
+  url_launcher:
   # For image handling in PDF
   image:
   # The following adds the Cupertino Icons font to your application.

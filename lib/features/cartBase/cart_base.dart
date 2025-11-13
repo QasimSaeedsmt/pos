@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mpcm/theme_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // import '../../app.dart';
@@ -329,10 +330,16 @@ class _CartScreenState extends State<CartScreen> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
+              style: ButtonStyle(
+                backgroundColor: MaterialStateProperty.all(
+                  ThemeUtils.primary(context),
+                ),
+              ),
+
               onPressed: isEmpty ? null : _proceedToCheckout,
               child: Text(
                 'PROCEED TO CHECKOUT',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,color: ThemeUtils.textPrimary(context)),
               ),
             ),
           ),

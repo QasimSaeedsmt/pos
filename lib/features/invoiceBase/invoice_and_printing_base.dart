@@ -1,5 +1,6 @@
 // Scanner Overlay
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1050,185 +1051,156 @@ class _HardwareScannerScreenState extends State<HardwareScannerScreen> {
 // Cart Item Card
 // Cart Item Card
 
-class OfflineInvoiceBottomSheet extends StatelessWidget {
+class OfflineInvoiceBottomSheet extends StatefulWidget {
   final int pendingOrderId;
   final Customer? customer;
   final Map<String, dynamic> businessInfo;
   final Map<String, dynamic> invoiceSettings;
   final double finalTotal;
   final String paymentMethod;
+  final Map<String, dynamic>? enhancedData;
 
   const OfflineInvoiceBottomSheet({
-    Key? key,
+    super.key,
     required this.pendingOrderId,
     this.customer,
     required this.businessInfo,
     required this.invoiceSettings,
     required this.finalTotal,
     required this.paymentMethod,
-  }) : super(key: key);
+    this.enhancedData,
+  });
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Offline Order Saved',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+  _OfflineInvoiceBottomSheetState createState() => _OfflineInvoiceBottomSheetState();
+}
+
+class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
+  String _selectedTemplate = 'traditional';
+  bool _autoPrint = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedTemplate = prefs.getString('default_invoice_template') ?? 'traditional';
+      _autoPrint = prefs.getBool('auto_print') ?? false;
+    });
+  }
+
+  // void _generateInvoice() async {
+  //   // Create a mock order for offline invoice
+  //   final mockOrder = AppOrder(
+  //     id: 'offline_${widget.pendingOrderId}',
+  //     number: widget.pendingOrderId.toString(),
+  //     lineItems: [],
+  //     // Add other required fields...
+  //   );
+  //
+  //   // Use enhanced invoice creation if enhanced data is available
+  //   final invoice = widget.enhancedData != null
+  //       ? Invoice.fromEnhancedOrder(
+  //     mockOrder,
+  //     widget.customer,
+  //     widget.businessInfo,
+  //     widget.invoiceSettings,
+  //     templateType: _selectedTemplate,
+  //     enhancedData: widget.enhancedData,
+  //   )
+  //       : Invoice.fromOrder(
+  //     mockOrder,
+  //     widget.customer,
+  //     widget.businessInfo,
+  //     widget.invoiceSettings,
+  //     templateType: _selectedTemplate,
+  //   );
+  //
+  //   // Generate PDF
+  //   final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
+  //
+  //   // Auto print if enabled
+  //   if (_autoPrint) {
+  //     await InvoiceService().printInvoice(invoice);
+  //   }
+  //
+  //   // Show success dialog
+  //   _showSuccessDialog(invoice, pdfFile);
+  // }
+
+  void _showSuccessDialog(Invoice invoice, File pdfFile) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Invoice Generated'),
+        content: Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
           ),
-          SizedBox(height: 16),
-          Text('Order ID: OFFLINE-$pendingOrderId'),
-          SizedBox(height: 8),
-          Text('Total: ${Constants.CURRENCY_NAME}${finalTotal.toStringAsFixed(2)}'),
-          SizedBox(height: 8),
-          Text('Payment: ${_getPaymentMethodName(paymentMethod)}'),
-          SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text('Close'),
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: _printInvoice,
-                  child: Text('Print Invoice'),
-                ),
-              ),
-            ],
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              InvoiceService().printInvoice(invoice);
+            },
+            child: Text('Print'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              InvoiceService().shareInvoice(invoice);
+            },
+            child: Text('Share/Export'),
           ),
         ],
       ),
     );
   }
 
-  String _getPaymentMethodName(String method) {
-    switch (method) {
-      case 'cash': return 'Cash';
-      case 'card': return 'Credit Card';
-      case 'mobile_money': return 'Mobile Money';
-      case 'credit': return 'Store Credit';
-      default: return method;
-    }
-  }
-
-  void _printInvoice() {
-    // Implement offline invoice printing logic here
-    // This could use a local printer service or generate a PDF
-    print('Printing offline invoice for order: OFFLINE-$pendingOrderId');
-  }
-}
-
-// Enhanced InvoiceOptionsBottomSheet to use settings
-class InvoiceOptionsBottomSheet extends StatelessWidget {
-  final AppOrder order;
-  final Customer? customer;
-  final Map<String, dynamic> businessInfo;
-  final Map<String, dynamic> invoiceSettings;
-
-  const InvoiceOptionsBottomSheet({
-    super.key,
-    required this.order,
-    this.customer,
-    required this.businessInfo,
-    required this.invoiceSettings,
-  });
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
-        padding: EdgeInsets.all(20),
+        padding: EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Order Completed!',
+              'Generate Offline Invoice',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),
-            Text(
-              'Order #${order.number} has been processed successfully',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Total: ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.green[700],
-              ),
-            ),
-            SizedBox(height: 24),
-      
-            // Invoice Options
-            if (invoiceSettings['autoPrint'] ?? false)
-              ListTile(
-                leading: Icon(Icons.print, color: Colors.blue),
-                title: Text('Auto-printing invoice...'),
-                trailing: CircularProgressIndicator(),
-              )
-            else
-              Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        // Generate and print invoice
-                        _printInvoice(context);
-                      },
-                      icon: Icon(Icons.print),
-                      label: Text('Print Invoice'),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
+
+            if (widget.enhancedData != null)
+              Card(
+                color: Colors.green[50],
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.discount, color: Colors.green),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Enhanced pricing data available',
+                          style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      icon: Icon(Icons.done),
-                      label: Text('Continue'),
-                    ),
-                  ),
-                ],
+                ),
               ),
+
+            // Template Selection and other UI elements...
+            // ... (similar to InvoiceOptionsBottomSheetWithOptions)
           ],
         ),
       ),
     );
-  }
-
-  void _printInvoice(BuildContext context) {
-    // Use business info and invoice settings for printing
-    final invoice = Invoice.fromOrder(
-      order,
-      customer,
-      businessInfo,
-      invoiceSettings,
-      templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
-    );
-
-    // Print the invoice
-    InvoiceService().printInvoice(invoice);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Invoice sent to printer')));
-
-    Navigator.pop(context);
   }
 }

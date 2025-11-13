@@ -1038,20 +1038,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onChanged: (value) => setState(() => _language = value!),
           ),
 
-          _buildDropdownSetting(
-            title: 'Currency',
-            subtitle: 'Default currency',
-            value: _currency,
-            options: ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR'],
-            onChanged: (value) {
-              if (value != null) {
-                setState(() => _currency = value);
-                // Update in Firestore via CurrencyService
-                final currencyService = Provider.of<CurrencyService>(context, listen: false);
-                // currencyService.updateCurrency(authProvider, value);
-              }
-            },
-          ),
+          // _buildDropdownSetting(
+          //   title: 'Currency',
+          //   subtitle: 'Default currency',
+          //   value: _currency,
+          //   options: ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR'],
+          //   onChanged: (value) {
+          //     if (value != null) {
+          //       setState(() => _currency = value);
+          //       // Update in Firestore via CurrencyService
+          //       final currencyService = Provider.of<CurrencyService>(context, listen: false);
+          //       // currencyService.updateCurrency(authProvider, value);
+          //     }
+          //   },
+          // ),
           _buildTextInputSetting(
             title: 'Tax Rate (%)',
             subtitle: 'Default tax rate',

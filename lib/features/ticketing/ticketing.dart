@@ -126,6 +126,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
           try {
             return Ticket.fromFirestore(doc);
           } catch (e) {
+            print('Error parsing ticket: $e');
             return null;
           }
         }).where((ticket) => ticket != null).cast<Ticket>().toList();
@@ -256,6 +257,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
       stream: _getTicketsQuery(status: status, priority: priority).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
+          print('Error loading tickets: ${snapshot.error}');
           return _buildErrorState('Error loading tickets: ${snapshot.error}');
         }
 
@@ -271,6 +273,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
           try {
             return Ticket.fromFirestore(doc);
           } catch (e) {
+            print('Error parsing ticket ${doc.id}: $e');
             return null;
           }
         }).where((ticket) => ticket != null).cast<Ticket>().toList();
@@ -412,7 +415,9 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
                           ),
                           SizedBox(height: 4),
                           Text(
-                            ticket.description,
+                            ticket.description.length > 100
+                                ? '${ticket.description.substring(0, 100)}...'
+                                : ticket.description,
                             style: ThemeUtils.bodyMedium(context).copyWith(color: ThemeUtils.textSecondary(context)),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -557,7 +562,14 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
             textAlign: TextAlign.center,
           ),
           SizedBox(height: 16),
-          ElevatedButton(onPressed: _showCreateTicketDialog, child: Text('Create First Ticket')),
+          ElevatedButton(
+            onPressed: _showCreateTicketDialog,
+            child: Text('Create First Ticket'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThemeUtils.primary(context),
+              foregroundColor: ThemeUtils.textOnPrimary(context),
+            ),
+          ),
         ],
       ),
     );
@@ -952,15 +964,23 @@ class TicketService {
         isInternalNote: isInternalNote,
       );
 
+      // Get current ticket to update replies array
       final ticketDoc = await FirebaseFirestore.instance.collection('tickets').doc(ticketId).get();
-      final ticketData = ticketDoc.data() as Map<String, dynamic>? ?? {};
-      final existingReplies = ticketData['replies'] as List<dynamic>? ?? [];
+      if (!ticketDoc.exists) {
+        throw 'Ticket not found';
+      }
 
-      final updatedReplies = [...existingReplies, reply.toMap()];
+      final ticketData = ticketDoc.data() as Map<String, dynamic>;
+      List<dynamic> existingReplies = ticketData['replies'] ?? [];
 
+      // Convert reply to map and add to existing replies
+      existingReplies.add(reply.toMap());
+
+      // Update the ticket with new replies array
       await FirebaseFirestore.instance.collection('tickets').doc(ticketId).update({
-        'replies': updatedReplies,
+        'replies': existingReplies,
         'updatedAt': FieldValue.serverTimestamp(),
+        'lastReplyAt': FieldValue.serverTimestamp(),
       });
 
       // Auto-update status when admin replies
@@ -1092,7 +1112,11 @@ class TicketService {
     if (!isAdmin && tenantId != null) collectionQuery = collectionQuery.where('tenantId', isEqualTo: tenantId);
 
     return collectionQuery.orderBy('createdAt', descending: true).snapshots().map((snapshot) {
-      return snapshot.docs.map((doc) => Ticket.fromFirestore(doc)).where((ticket) => ticket.subject.toLowerCase().contains(query.toLowerCase()) || ticket.description.toLowerCase().contains(query.toLowerCase()) || ticket.userEmail.toLowerCase().contains(query.toLowerCase())).toList();
+      return snapshot.docs.map((doc) => Ticket.fromFirestore(doc)).where((ticket) =>
+      ticket.subject.toLowerCase().contains(query.toLowerCase()) ||
+          ticket.description.toLowerCase().contains(query.toLowerCase()) ||
+          ticket.userEmail.toLowerCase().contains(query.toLowerCase())
+      ).toList();
     });
   }
 
@@ -1227,9 +1251,9 @@ class Ticket {
       'userEmail': userEmail,
       'subject': subject,
       'description': description,
-      'status': status.toString().split('.').last,
-      'priority': priority.toString().split('.').last,
-      'category': category.toString().split('.').last,
+      'status': _statusToString(status),
+      'priority': _priorityToString(priority),
+      'category': _categoryToString(category),
       'attachments': attachments,
       'replies': replies.map((reply) => reply.toMap()).toList(),
       'assignedTo': assignedTo,
@@ -1274,6 +1298,18 @@ class Ticket {
       case 'account': return TicketCategory.account;
       default: return TicketCategory.general;
     }
+  }
+
+  static String _statusToString(TicketStatus status) {
+    return status.toString().split('.').last;
+  }
+
+  static String _priorityToString(TicketPriority priority) {
+    return priority.toString().split('.').last;
+  }
+
+  static String _categoryToString(TicketCategory category) {
+    return category.toString().split('.').last;
   }
 
   Ticket copyWith({
@@ -1342,18 +1378,7 @@ class TicketReply {
     this.isInternalNote = false,
   });
 
-  factory TicketReply.fromMap(dynamic map) {
-    if (map is! Map<String, dynamic>) {
-      return TicketReply(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        message: 'Invalid reply data',
-        userId: '',
-        userEmail: 'unknown',
-        userRole: 'user',
-        timestamp: DateTime.now(),
-      );
-    }
-
+  factory TicketReply.fromMap(Map<String, dynamic> map) {
     return TicketReply(
       id: map['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
       message: map['message']?.toString() ?? '',
@@ -1498,7 +1523,7 @@ class _AdvancedTicketDetailsDialogState extends State<AdvancedTicketDetailsDialo
                     .doc(_currentTicket.id)
                     .snapshots(),
                 builder: (context, snapshot) {
-                  if (snapshot.hasData) {
+                  if (snapshot.hasData && snapshot.data!.exists) {
                     final updatedTicket = Ticket.fromFirestore(snapshot.data!);
                     _currentTicket = updatedTicket;
 
@@ -1741,7 +1766,7 @@ class _AdvancedTicketDetailsDialogState extends State<AdvancedTicketDetailsDialo
                 StreamBuilder<DocumentSnapshot>(
                   stream: FirebaseFirestore.instance.collection('tickets').doc(_currentTicket.id).snapshots(),
                   builder: (context, snapshot) {
-                    if (snapshot.hasData) {
+                    if (snapshot.hasData && snapshot.data!.exists) {
                       final ticket = Ticket.fromFirestore(snapshot.data!);
                       final publicReplies = ticket.replies.where((reply) => !reply.isInternalNote).length;
                       return Container(
@@ -1778,7 +1803,7 @@ class _AdvancedTicketDetailsDialogState extends State<AdvancedTicketDetailsDialo
                   StreamBuilder<DocumentSnapshot>(
                     stream: FirebaseFirestore.instance.collection('tickets').doc(_currentTicket.id).snapshots(),
                     builder: (context, snapshot) {
-                      if (snapshot.hasData) {
+                      if (snapshot.hasData && snapshot.data!.exists) {
                         final ticket = Ticket.fromFirestore(snapshot.data!);
                         final internalNotes = ticket.replies.where((reply) => reply.isInternalNote).length;
                         if (internalNotes > 0) {
@@ -2474,7 +2499,11 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
     final tenantId = authProvider.currentUser?.tenantId;
 
     if (tenantId == null) {
-      return Scaffold(body: Center(child: Text('Unable to load tenant information')));
+      return Scaffold(
+        body: Center(
+          child: Text('Unable to load tenant information', style: ThemeUtils.bodyMedium(context)),
+        ),
+      );
     }
 
     return Scaffold(
@@ -2609,7 +2638,10 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
     return StreamBuilder<List<Ticket>>(
       stream: TicketService.getTicketsForTenant(tenantId, status: status == 'all' ? null : status),
       builder: (context, snapshot) {
-        if (snapshot.hasError) return _buildErrorState('Error loading tickets: ${snapshot.error}');
+        if (snapshot.hasError) {
+          print('Error loading tickets: ${snapshot.error}');
+          return _buildErrorState('Error loading tickets: ${snapshot.error}');
+        }
         if (snapshot.connectionState == ConnectionState.waiting) return _buildLoadingState();
         final tickets = snapshot.data ?? [];
         final filteredTickets = _filterTickets(tickets, _searchQuery);
@@ -2701,7 +2733,14 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
                             ],
                           ),
                           SizedBox(height: 4),
-                          Text(ticket.description, style: ThemeUtils.bodyMedium(context).copyWith(color: ThemeUtils.textSecondary(context)), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          Text(
+                              ticket.description.length > 100
+                                  ? '${ticket.description.substring(0, 100)}...'
+                                  : ticket.description,
+                              style: ThemeUtils.bodyMedium(context).copyWith(color: ThemeUtils.textSecondary(context)),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis
+                          ),
                         ],
                       ),
                     ),
@@ -2793,7 +2832,14 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
             textAlign: TextAlign.center,
           ),
           SizedBox(height: 16),
-          ElevatedButton(onPressed: () => _showCreateTicketDialog(), child: Text('Create Your First Ticket')),
+          ElevatedButton(
+            onPressed: () => _showCreateTicketDialog(),
+            child: Text('Create Your First Ticket'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ThemeUtils.primary(context),
+              foregroundColor: ThemeUtils.textOnPrimary(context),
+            ),
+          ),
         ],
       ),
     );

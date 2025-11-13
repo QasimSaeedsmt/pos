@@ -14,19 +14,22 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
+
 import 'package:synchronized/synchronized.dart';
 
 import '../../analytics_screen.dart';
 
 import '../../constants.dart';
 import '../../modules/auth/providers/auth_provider.dart';
+import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../customerBase/customer_base.dart';
+import '../customerBase/customer_management_screen.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../orderBase/order_base.dart';
 
-import '../product_addition_restock_base/product_addition_restock_base.dart';
+import '../product_addition_restock_base/product_addition_restock_base.dart' hide EnhancedPOSService;
 import '../product_selling/product_selling_base.dart';
 import '../returnBase/return_base.dart';
 class OrderCreationResult {
@@ -1428,7 +1431,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
           .get();
 
       final productSales = <String, TopSellingProduct>{};
-
       for (final orderDoc in ordersSnapshot.docs) {
         final orderData = orderDoc.data() as Map<String, dynamic>;
         final lineItems = orderData['lineItems'] as List<dynamic>? ?? [];
@@ -1538,34 +1540,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     );
   }
 
-  // Navigation methods
-  void _navigateToSales() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ProductSellingScreen(cartManager: EnhancedCartManager()),
-      ),
-    );
-  }
-
-  void _navigateToInventory() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => ProductManagementScreen()),
-    );
-  }
-
-  void _navigateToAnalytics() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => AnalyticsDashboardScreen()),
-    );
-  }
-
-  void _navigateToCustomers() {
-    // Navigate to customers screen
-    // Navigator.push(context, MaterialPageRoute(builder: (context) => CustomersScreen()));
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1669,6 +1643,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     final user = _authProvider.currentUser;
     final tenantId = user?.tenantId ?? 'No Tenant ID';
     final auth = FirebaseAuth.instance;
+    EnhancedPOSService posService = EnhancedPOSService();
 
     return SliverToBoxAdapter(
       child: Container(
@@ -1676,14 +1651,14 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.blue[700]!, Colors.blue[800]!, Colors.indigo[900]!],
+            colors: ThemeUtils.appBar(context),
           ),
           borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(30),
-            bottomRight: Radius.circular(30),
+            bottomLeft: Radius.circular(ThemeUtils.radius(context)),
+            bottomRight: Radius.circular(ThemeUtils.radius(context)),
           ),
         ),
-        padding: EdgeInsets.fromLTRB(20, 60, 20, 30),
+        padding: const EdgeInsets.fromLTRB(20, 60, 20, 30),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1693,30 +1668,35 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+
+
                       Text(
                         'Good ${_getGreeting()},',
-                        style: TextStyle(color: Colors.white70, fontSize: 16),
+                        style: ThemeUtils.bodyLarge(context).copyWith(
+                          color: Colors.white,
+                        ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         auth.currentUser?.displayName ??
                             'Your Business (Tenant: ${tenantId.substring(0, min(8, tenantId.length))}...)',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                        style: ThemeUtils.headlineLarge(context).copyWith(
+                          color: ThemeUtils.textPrimary(context),
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         'Real-time Business Overview',
-                        style: TextStyle(color: Colors.white70, fontSize: 14),
+                        style: ThemeUtils.bodyMedium(context).copyWith(color: Colors.white),
                       ),
                       if (kDebugMode) ...[
-                        SizedBox(height: 4),
+                        const SizedBox(height: 4),
                         Text(
                           'User: ${user?.uid.substring(0, 8)}... | Tenant: $tenantId',
-                          style: TextStyle(color: Colors.white54, fontSize: 10),
+                          style: ThemeUtils.bodySmall(context).copyWith(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
                         ),
                       ],
                     ],
@@ -1725,19 +1705,23 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                 Column(
                   children: [
                     _buildStatusIndicator(),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 8),
                     if (_isRefreshing)
-                      SizedBox(
+                      const SizedBox(
                         width: 20,
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          // match app bar text contrast color
+                          color: Colors.white, // or ThemeUtils.textOnPrimary(context)
                         ),
                       )
                     else
                       IconButton(
-                        icon: Icon(Icons.refresh, color: Colors.white70),
+                        icon: Icon(
+                          Icons.refresh,
+                          color: ThemeUtils.textSecondary(context),
+                        ),
                         onPressed: _refreshData,
                         tooltip: 'Refresh Data',
                       ),
@@ -1745,7 +1729,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                 ),
               ],
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             _buildQuickStatsBar(),
           ],
         ),
@@ -1848,7 +1832,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
           children: [
             _buildRevenueChart(),
             SizedBox(height: 20),
-            _buildQuickActions(),
+
             // SizedBox(width: 16),
             SizedBox(height: 20),
 
@@ -1985,68 +1969,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     return ((secondHalf - firstHalf) / firstHalf * 100);
   }
 
-  Widget _buildQuickActions() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Actions',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          SizedBox(height: 16),
-          Column(
-            children: [
-              _QuickActionTile(
-                icon: Icons.point_of_sale,
-                title: 'New Sale',
-                subtitle: 'Start a new transaction',
-                color: Colors.blue,
-                onTap: _navigateToSales,
-              ),
-              _QuickActionTile(
-                icon: Icons.inventory_2,
-                title: 'Manage Inventory',
-                subtitle: 'View and update stock',
-                color: Colors.green,
-                onTap: _navigateToInventory,
-              ),
-              _QuickActionTile(
-                icon: Icons.analytics,
-                title: 'View Analytics',
-                subtitle: 'Detailed business insights',
-                color: Colors.purple,
-                onTap: _navigateToAnalytics,
-              ),
-              _QuickActionTile(
-                icon: Icons.people,
-                title: 'Customers',
-                subtitle: 'Manage customer database',
-                color: Colors.orange,
-                onTap: _navigateToCustomers,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildLowStockAlert() {
     return Container(
@@ -2102,24 +2024,9 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                 .map((product) => _LowStockItem(product: product))
                 .toList(),
           ),
-          if (_lowStockProducts.isNotEmpty) ...[
-            SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                onPressed: _navigateToInventory,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.orange[700],
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                ),
-                child: Text(
-                  'View All Low Stock',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
+
+
           ],
-        ],
       ),
     );
   }
