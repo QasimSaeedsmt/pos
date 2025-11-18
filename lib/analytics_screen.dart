@@ -1213,14 +1213,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
       children: [
         _buildMetricCard(
           title: 'Net Sales',
-          value: '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}',
+          value: '${Constants.CURRENCY_NAME}${netSales.toStringAsFixed(0)}',
           subtitle: 'After all adjustments',
           icon: Icons.attach_money,
           color: Colors.green,
         ),
         _buildMetricCard(
           title: 'Gross Sales',
-          value: '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}',
+          value: '${Constants.CURRENCY_NAME}${grossSales.toStringAsFixed(0)}',
           subtitle: 'Before adjustments',
           icon: Icons.bar_chart,
           color: Colors.blue,
@@ -1234,7 +1234,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
         ),
         _buildMetricCard(
           title: 'Total Discounts',
-          value: '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}',
+          value: '-${Constants.CURRENCY_NAME}${totalDiscounts.toStringAsFixed(0)}',
           subtitle: 'Discounts given',
           icon: Icons.discount,
           color: Colors.red,
@@ -1326,7 +1326,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                     ],
                   ),
                   Text(
-                    '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}',
+                    '${Constants.CURRENCY_NAME}${netSales.toStringAsFixed(0)}',
                     style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green[700]),
                   ),
                 ],
@@ -1344,32 +1344,32 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               children: [
                 _buildFinancialMetric(
                   'Gross Sales',
-                  '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}',
+                  '${Constants.CURRENCY_NAME}${grossSales.toStringAsFixed(0)}',
                   'Before adjustments',
                   Colors.blue,
                 ),
                 _buildFinancialMetric(
                   'Total Discounts',
-                  '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}',
+                  '-${Constants.CURRENCY_NAME}${totalDiscounts.toStringAsFixed(0)}',
                   'Discounts applied',
                   Colors.red,
                 ),
                 _buildFinancialMetric(
                   'Taxes',
-                  '${Constants.DEFAULT_CURRENCY}${taxes.toStringAsFixed(0)}',
+                  '${Constants.CURRENCY_NAME}${taxes.toStringAsFixed(0)}',
                   'Tax collected',
                   Colors.orange,
                 ),
                 _buildFinancialMetric(
                   'Shipping',
-                  '${Constants.DEFAULT_CURRENCY}${shipping.toStringAsFixed(0)}',
+                  '${Constants.CURRENCY_NAME}${shipping.toStringAsFixed(0)}',
                   'Shipping charges',
                   Colors.green,
                 ),
                 if (tips > 0)
                   _buildFinancialMetric(
                     'Tips',
-                    '${Constants.DEFAULT_CURRENCY}${tips.toStringAsFixed(0)}',
+                    '${Constants.CURRENCY_NAME}${tips.toStringAsFixed(0)}',
                     'Tips received',
                     Colors.purple,
                   ),
@@ -1388,14 +1388,14 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 children: [
                   Text('Net Sales Calculation', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey[700])),
                   SizedBox(height: 8),
-                  _buildCalculationRow('Gross Sales', '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}'),
-                  _buildCalculationRow('Discounts', '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}'),
-                  _buildCalculationRow('Taxes', '+${Constants.DEFAULT_CURRENCY}${taxes.toStringAsFixed(0)}'),
-                  _buildCalculationRow('Shipping', '+${Constants.DEFAULT_CURRENCY}${shipping.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Gross Sales', '${Constants.CURRENCY_NAME}${grossSales.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Discounts', '-${Constants.CURRENCY_NAME}${totalDiscounts.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Taxes', '+${Constants.CURRENCY_NAME}${taxes.toStringAsFixed(0)}'),
+                  _buildCalculationRow('Shipping', '+${Constants.CURRENCY_NAME}${shipping.toStringAsFixed(0)}'),
                   if (tips > 0)
-                    _buildCalculationRow('Tips', '+${Constants.DEFAULT_CURRENCY}${tips.toStringAsFixed(0)}'),
+                    _buildCalculationRow('Tips', '+${Constants.CURRENCY_NAME}${tips.toStringAsFixed(0)}'),
                   Divider(height: 16),
-                  _buildCalculationRow('Net Sales', '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}', isTotal: true),
+                  _buildCalculationRow('Net Sales', '${Constants.CURRENCY_NAME}${netSales.toStringAsFixed(0)}', isTotal: true),
                 ],
               ),
             ),
@@ -1638,12 +1638,12 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               children: [
                 _buildTaxMetric(
                   'Total Tax Collected',
-                  '${Constants.DEFAULT_CURRENCY}${_taxAnalytics?.totalTaxCollected.toStringAsFixed(0) ?? '0'}',
+                  '${Constants.CURRENCY_NAME}${_taxAnalytics?.totalTaxCollected.toStringAsFixed(0) ?? '0'}',
                   Colors.red,
                 ),
                 _buildTaxMetric(
                   'Avg Tax per Order',
-                  '${Constants.DEFAULT_CURRENCY}${_taxAnalytics?.averageTaxPerOrder.toStringAsFixed(2) ?? '0'}',
+                  '${Constants.CURRENCY_NAME}${_taxAnalytics?.averageTaxPerOrder.toStringAsFixed(2) ?? '0'}',
                   Colors.orange,
                 ),
                 _buildTaxMetric(
@@ -1653,7 +1653,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 ),
                 _buildTaxMetric(
                   'Taxable Amount',
-                  '${Constants.DEFAULT_CURRENCY}${_analytics?.taxableAmount.toStringAsFixed(0) ?? '0'}',
+                  '${Constants.CURRENCY_NAME}${_analytics?.taxableAmount.toStringAsFixed(0) ?? '0'}',
                   Colors.blue,
                 ),
               ],
@@ -1705,7 +1705,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                     dataSource: paymentData,
                     xValueMapper: (ChartData data, _) => data.x,
                     yValueMapper: (ChartData data, _) => data.y,
-                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.CURRENCY_NAME}${data.y.toStringAsFixed(0)}',
                     dataLabelSettings: DataLabelSettings(isVisible: true),
                   ),
                 ],
@@ -1752,7 +1752,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               children: [
                 _buildEfficiencyMetric(
                   'Avg Order Value',
-                  '${Constants.DEFAULT_CURRENCY}${_analytics?.averageOrderValue.toStringAsFixed(0) ?? '0'}',
+                  '${Constants.CURRENCY_NAME}${_analytics?.averageOrderValue.toStringAsFixed(0) ?? '0'}',
                   Colors.purple,
                 ),
                 SizedBox(width: 12),
@@ -1826,12 +1826,12 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
               children: [
                 _buildDiscountMetric(
                   'Total Discounts',
-                  '-${Constants.DEFAULT_CURRENCY}${_discountAnalytics?.totalDiscounts.toStringAsFixed(0) ?? '0'}',
+                  '-${Constants.CURRENCY_NAME}${_discountAnalytics?.totalDiscounts.toStringAsFixed(0) ?? '0'}',
                   Colors.red,
                 ),
                 _buildDiscountMetric(
                   'Avg Discount/Order',
-                  '${Constants.DEFAULT_CURRENCY}${_discountAnalytics?.averageDiscountPerOrder.toStringAsFixed(2) ?? '0'}',
+                  '${Constants.CURRENCY_NAME}${_discountAnalytics?.averageDiscountPerOrder.toStringAsFixed(2) ?? '0'}',
                   Colors.orange,
                 ),
                 _buildDiscountMetric(
@@ -1841,7 +1841,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 ),
                 _buildDiscountMetric(
                   'Item Discounts',
-                  '-${Constants.DEFAULT_CURRENCY}${_analytics?.itemDiscounts.toStringAsFixed(0) ?? '0'}',
+                  '-${Constants.CURRENCY_NAME}${_analytics?.itemDiscounts.toStringAsFixed(0) ?? '0'}',
                   Colors.blue,
                 ),
               ],
@@ -1895,7 +1895,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                     dataSource: discountData,
                     xValueMapper: (ChartData data, _) => data.x,
                     yValueMapper: (ChartData data, _) => data.y,
-                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.CURRENCY_NAME}${data.y.toStringAsFixed(0)}',
                     dataLabelSettings: DataLabelSettings(isVisible: true),
                   ),
                 ],
@@ -1967,12 +1967,12 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '-${Constants.DEFAULT_CURRENCY}${discount.toStringAsFixed(0)}',
+                '-${Constants.CURRENCY_NAME}${discount.toStringAsFixed(0)}',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.red[700]),
               ),
               SizedBox(height: 2),
               Text(
-                '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
+                '${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(0)}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -2048,7 +2048,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 Text(performance.product.name, style: TextStyle(fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
                 SizedBox(height: 4),
                 Text(
-                  '${performance.quantitySold} sold • ${Constants.DEFAULT_CURRENCY}${performance.revenue.toStringAsFixed(0)}',
+                  '${performance.quantitySold} sold • ${Constants.CURRENCY_NAME}${performance.revenue.toStringAsFixed(0)}',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                 ),
               ],
@@ -2086,7 +2086,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                     dataSource: productData,
                     xValueMapper: (ChartData data, _) => data.x,
                     yValueMapper: (ChartData data, _) => data.y,
-                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.DEFAULT_CURRENCY}${data.y.toStringAsFixed(0)}',
+                    dataLabelMapper: (ChartData data, _) => '${data.x}\n${Constants.CURRENCY_NAME}${data.y.toStringAsFixed(0)}',
                     dataLabelSettings: DataLabelSettings(isVisible: true),
                   ),
                 ],
@@ -2158,7 +2158,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                 ),
                 _buildCustomerMetricCard(
                   title: 'Avg Order Value',
-                  value: '${Constants.DEFAULT_CURRENCY}${_customerAnalytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
+                  value: '${Constants.CURRENCY_NAME}${_customerAnalytics?.averageOrderValue?.toStringAsFixed(0) ?? '0'}',
                   subtitle: 'Per customer',
                   icon: Icons.attach_money,
                   color: Colors.blue,
@@ -2382,7 +2382,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '${Constants.DEFAULT_CURRENCY}${customer.totalSpent.toStringAsFixed(0)}',
+                '${Constants.CURRENCY_NAME}${customer.totalSpent.toStringAsFixed(0)}',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green[700]),
               ),
               SizedBox(height: 2),
@@ -2531,7 +2531,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
                           padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(12)),
                           child: Text(
-                            '${Constants.DEFAULT_CURRENCY}${location.totalRevenue.toStringAsFixed(0)}',
+                            '${Constants.CURRENCY_NAME}${location.totalRevenue.toStringAsFixed(0)}',
                             style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue[700]),
                           ),
                         ),
@@ -2611,7 +2611,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             ),
           ),
           Text(
-            '${Constants.DEFAULT_CURRENCY}${order.total.toStringAsFixed(0)}',
+            '${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(0)}',
             style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
           ),
         ],
@@ -2641,21 +2641,21 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen> wit
             SizedBox(height: 16),
             Row(
               children: [
-                _buildCashMetric('Net Sales', '${Constants.DEFAULT_CURRENCY}${netSales.toStringAsFixed(0)}'),
-                _buildCashMetric('Gross Sales', '${Constants.DEFAULT_CURRENCY}${grossSales.toStringAsFixed(0)}'),
+                _buildCashMetric('Net Sales', '${Constants.CURRENCY_NAME}${netSales.toStringAsFixed(0)}'),
+                _buildCashMetric('Gross Sales', '${Constants.CURRENCY_NAME}${grossSales.toStringAsFixed(0)}'),
               ],
             ),
             SizedBox(height: 12),
             Row(
               children: [
-                _buildCashMetric('Total Discounts', '-${Constants.DEFAULT_CURRENCY}${totalDiscounts.toStringAsFixed(0)}'),
+                _buildCashMetric('Total Discounts', '-${Constants.CURRENCY_NAME}${totalDiscounts.toStringAsFixed(0)}'),
                 _buildCashMetric('Transactions', '${_cashSummary['cashOrders'] ?? 0}'),
               ],
             ),
             SizedBox(height: 12),
             Row(
               children: [
-                _buildCashMetric('Avg Transaction', '${Constants.DEFAULT_CURRENCY}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
+                _buildCashMetric('Avg Transaction', '${Constants.CURRENCY_NAME}${_cashSummary['averageTransaction']?.toStringAsFixed(0) ?? '0'}'),
                 _buildCashMetric('Peak Hour', _cashSummary['peakHour'] ?? 'N/A'),
               ],
             ),

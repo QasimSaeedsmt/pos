@@ -111,7 +111,6 @@ class _CartScreenState extends State<CartScreen> {
           ],
         ),
         actions: [
-
           if (item.hasManualDiscount)
             TextButton(
               onPressed: () {
@@ -277,23 +276,23 @@ class _CartScreenState extends State<CartScreen> {
             child: isEmpty
                 ? _buildEmptyState()
                 : ListView.builder(
-              itemCount: _currentCartItems.length,
-              itemBuilder: (context, index) {
-                final item = _currentCartItems[index];
-                return CartItemCard(
-                  item: item,
-                  onUpdateQuantity: (newQuantity) {
-                    _updateItemQuantity(item.product.id, newQuantity);
-                  },
-                  onRemove: () {
-                    _removeItem(item.product.id);
-                  },
-                  onApplyDiscount: () {
-                    _showManualDiscountDialog(item);
-                  },
-                );
-              },
-            ),
+                    itemCount: _currentCartItems.length,
+                    itemBuilder: (context, index) {
+                      final item = _currentCartItems[index];
+                      return CartItemCard(
+                        item: item,
+                        onUpdateQuantity: (newQuantity) {
+                          _updateItemQuantity(item.product.id, newQuantity);
+                        },
+                        onRemove: () {
+                          _removeItem(item.product.id);
+                        },
+                        onApplyDiscount: () {
+                          _showManualDiscountDialog(item);
+                        },
+                      );
+                    },
+                  ),
           ),
           _buildCheckoutSection(isEmpty),
         ],
@@ -331,15 +330,18 @@ class _CartScreenState extends State<CartScreen> {
             height: 50,
             child: ElevatedButton(
               style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(
-                  ThemeUtils.primary(context),
-                ),
+                backgroundColor: WidgetStatePropertyAll(ThemeUtils.primary(context))
+
               ),
 
               onPressed: isEmpty ? null : _proceedToCheckout,
               child: Text(
                 'PROCEED TO CHECKOUT',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold,color: ThemeUtils.textPrimary(context)),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: ThemeUtils.textPrimary(context),
+                ),
               ),
             ),
           ),
@@ -363,11 +365,11 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _buildPriceRow(
-      String label,
-      double amount, {
-        bool isDiscount = false,
-        bool isTotal = false,
-      }) {
+    String label,
+    double amount, {
+    bool isDiscount = false,
+    bool isTotal = false,
+  }) {
     return Padding(
       padding: EdgeInsets.symmetric(vertical: 4),
       child: Row(
@@ -428,14 +430,15 @@ class _CartScreenState extends State<CartScreen> {
     ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
   }
 }
+
 class EnhancedCartManager {
   final List<CartItem> _items = [];
   final StreamController<List<CartItem>> _cartController =
-  StreamController<List<CartItem>>.broadcast();
+      StreamController<List<CartItem>>.broadcast();
   final StreamController<int> _itemCountController =
-  StreamController<int>.broadcast();
+      StreamController<int>.broadcast();
   final StreamController<double> _totalController =
-  StreamController<double>.broadcast();
+      StreamController<double>.broadcast();
   final LocalDatabase _localDb = LocalDatabase();
   bool _isInitialized = false;
 
@@ -463,7 +466,7 @@ class EnhancedCartManager {
   double get totalDiscount {
     final itemDiscounts = _items.fold(
       0.0,
-          (sum, item) => sum + item.discountAmount,
+      (sum, item) => sum + item.discountAmount,
     );
     final cartDiscountAmount =
         _cartDiscount + (subtotal * _cartDiscountPercent / 100);
@@ -505,7 +508,7 @@ class EnhancedCartManager {
   // Enhanced add to cart with settings integration
   Future<void> addToCart(Product product) async {
     final existingIndex = _items.indexWhere(
-          (item) => item.product.id == product.id,
+      (item) => item.product.id == product.id,
     );
 
     if (existingIndex >= 0) {
@@ -531,10 +534,10 @@ class EnhancedCartManager {
 
   // Apply manual discount to specific item
   Future<void> applyItemDiscount(
-      String productId, {
-        double? discountAmount,
-        double? discountPercent,
-      }) async {
+    String productId, {
+    double? discountAmount,
+    double? discountPercent,
+  }) async {
     final itemIndex = _items.indexWhere((item) => item.product.id == productId);
     if (itemIndex >= 0) {
       _items[itemIndex].manualDiscount = discountAmount;
@@ -583,12 +586,12 @@ class EnhancedCartManager {
     return _items
         .map(
           (item) => CartItem(
-        product: item.product,
-        quantity: item.quantity,
-        manualDiscount: item.manualDiscount,
-        manualDiscountPercent: item.manualDiscountPercent,
-      ),
-    )
+            product: item.product,
+            quantity: item.quantity,
+            manualDiscount: item.manualDiscount,
+            manualDiscountPercent: item.manualDiscountPercent,
+          ),
+        )
         .toList();
   }
 
@@ -598,17 +601,17 @@ class EnhancedCartManager {
       'items': _items
           .map(
             (item) => {
-          'productId': item.product.id,
-          'productName': item.product.name,
-          'quantity': item.quantity,
-          'price': item.product.price,
-          'manualDiscount': item.manualDiscount,
-          'manualDiscountPercent': item.manualDiscountPercent,
-          'subtotal': item.subtotal,
-          'baseSubtotal': item.baseSubtotal,
-          'discountAmount': item.discountAmount,
-        },
-      )
+              'productId': item.product.id,
+              'productName': item.product.name,
+              'quantity': item.quantity,
+              'price': item.product.price,
+              'manualDiscount': item.manualDiscount,
+              'manualDiscountPercent': item.manualDiscountPercent,
+              'subtotal': item.subtotal,
+              'baseSubtotal': item.baseSubtotal,
+              'discountAmount': item.discountAmount,
+            },
+          )
           .toList(),
       'subtotal': subtotal,
       'totalDiscount': totalDiscount,
@@ -671,6 +674,7 @@ class EnhancedCartManager {
     _itemCountController.close();
   }
 }
+
 class CartItem {
   final Product product;
   int quantity;
@@ -701,6 +705,7 @@ class CartItem {
   bool get hasManualDiscount =>
       manualDiscount != null || manualDiscountPercent != null;
 }
+
 class CartItemCard extends StatelessWidget {
   final CartItem item;
   final Function(int) onUpdateQuantity;
@@ -731,9 +736,9 @@ class CartItemCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 image: item.product.imageUrl != null
                     ? DecorationImage(
-                  image: NetworkImage(item.product.imageUrl!),
-                  fit: BoxFit.cover,
-                )
+                        image: NetworkImage(item.product.imageUrl!),
+                        fit: BoxFit.cover,
+                      )
                     : null,
               ),
             ),

@@ -58,6 +58,7 @@ dependencies:
   firebase_app_check:
   path_provider:
   share_plus:
+  flutter_flavorizr:
 
   local_auth:
   google_fonts:

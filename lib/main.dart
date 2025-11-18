@@ -13,11 +13,11 @@ import 'modules/auth/providers/auth_provider.dart';
 import 'modules/auth/providers/settings_provider.dart';
 import 'modules/auth/screens/auth_wrapper.dart';
 import 'modules/auth/services/offline_storage_service.dart';
-import 'modules/auth/models/tenant_model.dart';
 import 'modules/auth/widgets/app_lifecycle_wrapper.dart';
 import 'theme_provider.dart';
 
-// ✅ Entry Point
+
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -136,9 +136,7 @@ class ErrorApp extends StatelessWidget {
   }
 }
 
-//
-// --- Main App Widget ---
-//
+
 class MultiTenantSaaSApp extends StatelessWidget {
   const MultiTenantSaaSApp({super.key});
 
