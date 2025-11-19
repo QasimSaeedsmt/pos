@@ -378,12 +378,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             },
             child: Card(
-              child: Center(child: Text("Invoicing"),),
               margin: const EdgeInsets.symmetric(
                 horizontal: AuthMeasurements.innerPadding,
                 vertical: AuthMeasurements.spacingSmall,
               ),
-
+              child: ListTile(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => InvoiceSettingsScreen(),
+                    ),
+                  );
+                },
+                leading: Container(
+                  padding: const EdgeInsets.all(AuthMeasurements.spacingSmall),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(AuthMeasurements.borderRadiusMedium),
+                  ),
+                  child: Icon(
+                    Icons.receipt_long_rounded,
+                    color: theme.colorScheme.primary,
+                    size: AuthMeasurements.iconSizeMedium,
+                  ),
+                ),
+                title: const Text(
+                  "Invoicing Settings",
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+                subtitle: const Text(
+                  "Configure invoice templates and printing options",
+                  style: TextStyle(fontSize: 14),
+                ),
+                trailing: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primary.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: theme.colorScheme.primary,
+                    size: 16,
+                  ),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: AuthMeasurements.innerPadding,
+                  vertical: AuthMeasurements.spacingSmall,
+                ),
+              ),
             ),
           ),
 
