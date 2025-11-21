@@ -35,11 +35,11 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 20),
 
               // Quick Actions
-              _buildQuickActions(context),
-              const SizedBox(height: 20),
-
-              // Settings
-              _buildSettingsSection(context, authProvider),
+              // _buildQuickActions(context),
+              // const SizedBox(height: 20),
+              //
+              // // Settings
+              // _buildSettingsSection(context, authProvider),
               const SizedBox(height: 20),
 
               // Logout Button
@@ -267,156 +267,156 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickActions(BuildContext context) {
-    return Container(
-      decoration: ThemeUtils.cardDecoration(context),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Quick Actions',
-            style: ThemeUtils.headlineMedium(context).copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _buildActionButton(
-                context,
-                Icons.support_rounded,
-                'Support',
-                ThemeUtils.primary(context),
-              ),
-              const SizedBox(width: 12),
-              _buildActionButton(
-                context,
-                Icons.palette_rounded,
-                'Branding',
-                ThemeUtils.accentColor(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _buildActionButton(
-                context,
-                Icons.analytics_rounded,
-                'Analytics',
-                Colors.purple,
-              ),
-              const SizedBox(width: 12),
-              _buildActionButton(
-                context,
-                Icons.notifications_rounded,
-                'Alerts',
-                Colors.orange,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildQuickActions(BuildContext context) {
+  //   return Container(
+  //     decoration: ThemeUtils.cardDecoration(context),
+  //     padding: const EdgeInsets.all(20),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Text(
+  //           'Quick Actions',
+  //           style: ThemeUtils.headlineMedium(context).copyWith(
+  //             fontWeight: FontWeight.bold,
+  //           ),
+  //         ),
+  //         const SizedBox(height: 16),
+  //         Row(
+  //           children: [
+  //             _buildActionButton(
+  //               context,
+  //               Icons.support_rounded,
+  //               'Support',
+  //               ThemeUtils.primary(context),
+  //             ),
+  //             const SizedBox(width: 12),
+  //             _buildActionButton(
+  //               context,
+  //               Icons.palette_rounded,
+  //               'Branding',
+  //               ThemeUtils.accentColor(context),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 12),
+  //         Row(
+  //           children: [
+  //             _buildActionButton(
+  //               context,
+  //               Icons.analytics_rounded,
+  //               'Analytics',
+  //               Colors.purple,
+  //             ),
+  //             const SizedBox(width: 12),
+  //             _buildActionButton(
+  //               context,
+  //               Icons.notifications_rounded,
+  //               'Alerts',
+  //               Colors.orange,
+  //             ),
+  //           ],
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildActionButton(BuildContext context, IconData icon, String label, Color color) {
-    return Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-            onTap: () => _handleActionTap(context, label),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  Icon(icon, color: color, size: 24),
-                  const SizedBox(height: 8),
-                  Text(
-                    label,
-                    style: ThemeUtils.bodyMedium(context).copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  // Widget _buildActionButton(BuildContext context, IconData icon, String label, Color color) {
+  //   return Expanded(
+  //     child: Container(
+  //       decoration: BoxDecoration(
+  //         color: color.withOpacity(0.1),
+  //         borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+  //       ),
+  //       child: Material(
+  //         color: Colors.transparent,
+  //         borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+  //         child: InkWell(
+  //           borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+  //           onTap: () => _handleActionTap(context, label),
+  //           child: Padding(
+  //             padding: const EdgeInsets.all(16),
+  //             child: Column(
+  //               children: [
+  //                 Icon(icon, color: color, size: 24),
+  //                 const SizedBox(height: 8),
+  //                 Text(
+  //                   label,
+  //                   style: ThemeUtils.bodyMedium(context).copyWith(
+  //                     fontWeight: FontWeight.w600,
+  //                   ),
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       ),
+  //     ),
+  //   );
+  // }
 
-  Widget _buildSettingsSection(BuildContext context, MyAuthProvider authProvider) {
-    return Container(
-      decoration: ThemeUtils.cardDecoration(context),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Preferences',
-            style: ThemeUtils.headlineMedium(context).copyWith(
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildSettingItem(
-            context,
-            'Keep me logged in',
-            authProvider.keepMeLoggedIn,
-                (value) => authProvider.setKeepMeLoggedIn(value),
-            Icons.login_rounded,
-          ),
-          const SizedBox(height: 12),
-          _buildSettingItem(
-            context,
-            'Biometric Login',
-            authProvider.fingerprintEnabled,
-                (value) => authProvider.setFingerprintEnabled(value),
-            Icons.fingerprint_rounded,
-          ),
-          const SizedBox(height: 12),
-          _buildSettingItem(
-            context,
-            'App Lock',
-            authProvider.appLockEnabled,
-                (value) => authProvider.setAppLockEnabled(value),
-            Icons.lock_rounded,
-          ),
-        ],
-      ),
-    );
-  }
+  // Widget _buildSettingsSection(BuildContext context, MyAuthProvider authProvider) {
+  //   return Container(
+  //     decoration: ThemeUtils.cardDecoration(context),
+  //     padding: const EdgeInsets.all(20),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Text(
+  //           'Preferences',
+  //           style: ThemeUtils.headlineMedium(context).copyWith(
+  //             fontWeight: FontWeight.bold,
+  //           ),
+  //         ),
+  //         const SizedBox(height: 16),
+  //         _buildSettingItem(
+  //           context,
+  //           'Keep me logged in',
+  //           authProvider.keepMeLoggedIn,
+  //               (value) => authProvider.setKeepMeLoggedIn(value),
+  //           Icons.login_rounded,
+  //         ),
+  //         const SizedBox(height: 12),
+  //         _buildSettingItem(
+  //           context,
+  //           'Biometric Login',
+  //           authProvider.fingerprintEnabled,
+  //               (value) => authProvider.setFingerprintEnabled(value),
+  //           Icons.fingerprint_rounded,
+  //         ),
+  //         const SizedBox(height: 12),
+  //         _buildSettingItem(
+  //           context,
+  //           'App Lock',
+  //           authProvider.appLockEnabled,
+  //               (value) => authProvider.setAppLockEnabled(value),
+  //           Icons.lock_rounded,
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
-  Widget _buildSettingItem(BuildContext context, String title, bool value, Function(bool) onChanged, IconData icon) {
-    return ListTile(
-      leading: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: ThemeUtils.primary(context).withOpacity(0.1),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon, color: ThemeUtils.primary(context), size: 20),
-      ),
-      title: Text(title, style: ThemeUtils.bodyLarge(context)),
-      trailing: Switch(
-        value: value,
-        onChanged: onChanged,
-        activeColor: ThemeUtils.primary(context),
-      ),
-      contentPadding: EdgeInsets.zero,
-    );
-  }
+  // Widget _buildSettingItem(BuildContext context, String title, bool value, Function(bool) onChanged, IconData icon) {
+  //   return ListTile(
+  //     leading: Container(
+  //       width: 40,
+  //       height: 40,
+  //       decoration: BoxDecoration(
+  //         color: ThemeUtils.primary(context).withOpacity(0.1),
+  //         shape: BoxShape.circle,
+  //       ),
+  //       child: Icon(icon, color: ThemeUtils.primary(context), size: 20),
+  //     ),
+  //     title: Text(title, style: ThemeUtils.bodyLarge(context)),
+  //     trailing: Switch(
+  //       value: value,
+  //       onChanged: onChanged,
+  //       activeColor: ThemeUtils.primary(context),
+  //     ),
+  //     contentPadding: EdgeInsets.zero,
+  //   );
+  // }
 
   Widget _buildLogoutButton(BuildContext context, MyAuthProvider authProvider) {
     return SizedBox(

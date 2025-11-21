@@ -411,32 +411,81 @@ class FirestoreServices {
   }
 
   // Enhanced order creation with customer support
+// In FirestoreServices class - UPDATE the createOrderWithCustomer method
   Future<AppOrder> createOrderWithCustomer(
       List<CartItem> cartItems,
-      CustomerSelection customerSelection,
-      ) async {
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? enhancedData, // Add this parameter
+      }) async {
     try {
       final orderRef = ordersRef.doc();
+
+      // Calculate totals with enhanced data if available
+      double subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
+      double totalAmount = cartItems.fold(0.0, (sum, item) => sum + item.subtotal);
+
+      // Use enhanced data if provided
+      if (enhancedData != null) {
+        final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
+        if (cartData != null) {
+          subtotal = cartData['subtotal'] ?? subtotal;
+          totalAmount = cartData['totalAmount'] ?? totalAmount;
+        }
+      }
+
       final orderData = {
         'id': orderRef.id,
         'number': _generateOrderNumber(),
         'status': 'completed',
         'dateCreated': FieldValue.serverTimestamp(),
-        'total': cartItems.fold(0.0, (sum, item) => sum + item.subtotal),
-        'lineItems': cartItems
-            .map(
-              (item) => {
+        'total': totalAmount,
+        'subtotal': subtotal,
+        'lineItems': cartItems.map((item) {
+          final itemData = {
             'productId': item.product.id,
             'productName': item.product.name,
             'quantity': item.quantity,
             'price': item.product.price,
             'subtotal': item.subtotal,
-          },
-        )
-            .toList(),
+            'baseSubtotal': item.baseSubtotal,
+            'hasManualDiscount': item.hasManualDiscount,
+          };
+
+          // Add discount information if available
+          if (item.hasManualDiscount) {
+            itemData['manualDiscount'] = item.manualDiscount??0.0;
+            itemData['manualDiscountPercent'] = item.manualDiscountPercent ?? 0.0;
+            itemData['discountAmount'] = item.discountAmount;
+          }
+
+          return itemData;
+        }).toList(),
         'paymentMethod': 'cash',
         'paymentStatus': 'paid',
       };
+
+      // Add enhanced data if provided
+      if (enhancedData != null) {
+        orderData['enhancedData'] = enhancedData;
+
+        // Add individual discount components
+        final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
+        if (cartData != null) {
+          orderData['pricingBreakdown'] = {
+            'itemDiscounts': cartData['item_discounts'] ?? 0.0,
+            'cartDiscount': cartData['cart_discount'] ?? 0.0,
+            'cartDiscountPercent': cartData['cart_discount_percent'] ?? 0.0,
+            'cartDiscountAmount': cartData['cart_discount_amount'] ?? 0.0,
+            'additionalDiscount': enhancedData['additionalDiscount'] ?? 0.0,
+            'shippingAmount': enhancedData['shippingAmount'] ?? 0.0,
+            'tipAmount': enhancedData['tipAmount'] ?? 0.0,
+            'taxRate': cartData['tax_rate'] ?? 0.0,
+            'taxAmount': cartData['tax_amount'] ?? 0.0,
+            'totalDiscount': cartData['total_discount'] ?? 0.0,
+            'finalTotal': cartData['totalAmount'] ?? totalAmount,
+          };
+        }
+      }
 
       // Add customer information if available
       if (customerSelection.hasCustomer) {
@@ -456,6 +505,7 @@ class FirestoreServices {
       for (final item in cartItems) {
         await productsRef.doc(item.product.id).update({
           'stockQuantity': FieldValue.increment(-item.quantity),
+          'dateModified': FieldValue.serverTimestamp(),
         });
       }
 
@@ -463,7 +513,7 @@ class FirestoreServices {
       if (customerSelection.hasCustomer) {
         await updateCustomerStats(
           customerSelection.customer!.id,
-          cartItems.fold(0.0, (sum, item) => sum + item.subtotal),
+          totalAmount,
         );
       }
 
@@ -473,6 +523,18 @@ class FirestoreServices {
     }
   }
 
+// Add this method to create orders with enhanced data
+  Future<AppOrder> createOrderWithEnhancedData(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection,
+      Map<String, dynamic> enhancedData,
+      ) async {
+    return await createOrderWithCustomer(
+      cartItems,
+      customerSelection,
+      enhancedData: enhancedData,
+    );
+  }
   // Product operations
   Stream<List<Product>> getProductsStream() {
     return productsRef

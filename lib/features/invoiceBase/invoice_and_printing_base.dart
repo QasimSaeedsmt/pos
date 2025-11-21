@@ -7,9 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants.dart';
+import '../../printing/discount_calculator.dart';
 import '../../printing/invoice_model.dart';
 import '../../printing/invoice_service.dart';
 import '../barcode/barcode_base.dart';
+import '../connectivityBase/local_db_base.dart';
 import '../customerBase/customer_base.dart';
 import '../orderBase/order_base.dart';
 
@@ -1051,6 +1053,8 @@ class _HardwareScannerScreenState extends State<HardwareScannerScreen> {
 // Cart Item Card
 // Cart Item Card
 
+
+
 class OfflineInvoiceBottomSheet extends StatefulWidget {
   final int pendingOrderId;
   final Customer? customer;
@@ -1078,11 +1082,14 @@ class OfflineInvoiceBottomSheet extends StatefulWidget {
 class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
   String _selectedTemplate = 'traditional';
   bool _autoPrint = false;
+  Map<String, dynamic>? _pendingOrderData;
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadPendingOrderData();
   }
 
   Future<void> _loadSettings() async {
@@ -1093,51 +1100,165 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
     });
   }
 
-  // void _generateInvoice() async {
-  //   // Create a mock order for offline invoice
-  //   final mockOrder = AppOrder(
-  //     id: 'offline_${widget.pendingOrderId}',
-  //     number: widget.pendingOrderId.toString(),
-  //     lineItems: [],
-  //     // Add other required fields...
-  //   );
-  //
-  //   // Use enhanced invoice creation if enhanced data is available
-  //   final invoice = widget.enhancedData != null
-  //       ? Invoice.fromEnhancedOrder(
-  //     mockOrder,
-  //     widget.customer,
-  //     widget.businessInfo,
-  //     widget.invoiceSettings,
-  //     templateType: _selectedTemplate,
-  //     enhancedData: widget.enhancedData,
-  //   )
-  //       : Invoice.fromOrder(
-  //     mockOrder,
-  //     widget.customer,
-  //     widget.businessInfo,
-  //     widget.invoiceSettings,
-  //     templateType: _selectedTemplate,
-  //   );
-  //
-  //   // Generate PDF
-  //   final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
-  //
-  //   // Auto print if enabled
-  //   if (_autoPrint) {
-  //     await InvoiceService().printInvoice(invoice);
-  //   }
-  //
-  //   // Show success dialog
-  //   _showSuccessDialog(invoice, pdfFile);
-  // }
+  Future<void> _loadPendingOrderData() async {
+    try {
+      final localDb = LocalDatabase();
+      final pendingOrders = await localDb.getPendingOrders();
+
+      final pendingOrder = pendingOrders.firstWhere(
+            (order) => order['id'] == widget.pendingOrderId,
+        orElse: () => {},
+      );
+
+      if (pendingOrder.isNotEmpty) {
+        setState(() {
+          _pendingOrderData = pendingOrder;
+        });
+      }
+    } catch (e) {
+      print('Error loading pending order: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _generateInvoice() async {
+    try {
+      if (_isLoading || _pendingOrderData == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Loading order data...'), backgroundColor: Colors.orange),
+        );
+        return;
+      }
+
+      // Create offline order with real data from local database
+      final offlineOrder = await _createOfflineOrderFromPendingData();
+
+      // Use enhanced invoice creation with all discount data
+      final invoice = _createInvoiceFromPendingOrder(offlineOrder);
+
+      // Generate PDF
+      final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
+
+      // Auto print if enabled
+      if (_autoPrint) {
+        await InvoiceService().printInvoice(invoice);
+      }
+
+      // Show success dialog
+      _showSuccessDialog(invoice, pdfFile);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error generating invoice: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  Future<AppOrder> _createOfflineOrderFromPendingData() async {
+    final orderData = _pendingOrderData!;
+    final orderDataMap = orderData['order_data'] as Map<String, dynamic>;
+
+    // Extract line items with complete pricing information
+    final lineItems = (orderDataMap['line_items'] as List<dynamic>).map((item) {
+      final itemMap = item as Map<String, dynamic>;
+      return {
+        'productName': itemMap['product_name'] ?? 'Unknown Product',
+        'productSku': itemMap['product_sku'] ?? '',
+        'quantity': itemMap['quantity'] ?? 1,
+        'price': (itemMap['price'] as num?)?.toDouble() ?? 0.0,
+        'paymentMethod': widget.paymentMethod,
+        // Enhanced pricing fields
+        'base_price': itemMap['base_price'],
+        'manual_discount': itemMap['manual_discount'],
+        'manual_discount_percent': itemMap['manual_discount_percent'],
+        'discount_amount': itemMap['discount_amount'],
+        'base_subtotal': itemMap['base_subtotal'],
+        'final_subtotal': itemMap['final_subtotal'],
+        'has_manual_discount': itemMap['has_manual_discount'] ?? false,
+      };
+    }).toList();
+
+    // Use the calculated total from pricing breakdown if available
+    final pricingBreakdown = orderDataMap['pricing_breakdown'] as Map<String, dynamic>?;
+    final total = pricingBreakdown?['final_total'] as double? ?? widget.finalTotal;
+
+    return AppOrder(
+      id: 'offline_${widget.pendingOrderId}',
+      number: 'OFF-${widget.pendingOrderId}',
+      dateCreated: DateTime.parse(orderData['created_at']),
+      total: total,
+      lineItems: lineItems,
+    );
+  }
+
+  Invoice _createInvoiceFromPendingOrder(AppOrder order) {
+    // Create enhanced data from pending order
+    final enhancedData = _createEnhancedDataFromPendingOrder();
+
+    return Invoice.fromEnhancedOrder(
+      order,
+      widget.customer,
+      widget.businessInfo,
+      widget.invoiceSettings,
+      templateType: _selectedTemplate,
+      enhancedData: enhancedData,
+    );
+  }
+
+  Map<String, dynamic> _createEnhancedDataFromPendingOrder() {
+    final orderData = _pendingOrderData!;
+    final orderDataMap = orderData['order_data'] as Map<String, dynamic>;
+    final pricingBreakdown = orderDataMap['pricing_breakdown'] as Map<String, dynamic>?;
+    final discountSummary = orderData['discount_summary'] as Map<String, dynamic>?;
+    final paymentData = orderData['payment_data'] as Map<String, dynamic>?;
+
+    return {
+      'cartData': {
+        'items': (orderDataMap['line_items'] as List<dynamic>).map((item) {
+          final itemMap = item as Map<String, dynamic>;
+          return {
+            'productId': itemMap['product_id'],
+            'productName': itemMap['product_name'],
+            'quantity': itemMap['quantity'],
+            'price': itemMap['price'],
+            'base_price': itemMap['base_price'],
+            'manual_discount': itemMap['manual_discount'],
+            'manual_discount_percent': itemMap['manual_discount_percent'],
+            'discount_amount': itemMap['discount_amount'],
+            'base_subtotal': itemMap['base_subtotal'],
+            'final_subtotal': itemMap['final_subtotal'],
+            'has_manual_discount': itemMap['has_manual_discount'] ?? false,
+          };
+        }).toList(),
+        'subtotal': pricingBreakdown?['subtotal'] ?? orderDataMap['total'],
+        'totalDiscount': pricingBreakdown?['total_discount'] ?? 0.0,
+        'taxAmount': pricingBreakdown?['tax_amount'] ?? 0.0,
+        'totalAmount': pricingBreakdown?['final_total'] ?? orderDataMap['total'],
+        'cartDiscount': pricingBreakdown?['cart_discount'] ?? 0.0,
+        'cartDiscountPercent': pricingBreakdown?['cart_discount_percent'] ?? 0.0,
+        'pricing_breakdown': pricingBreakdown,
+      },
+      'additionalDiscount': pricingBreakdown?['additional_discount'] ?? 0.0,
+      'shippingAmount': pricingBreakdown?['shipping_amount'] ?? 0.0,
+      'tipAmount': pricingBreakdown?['tip_amount'] ?? 0.0,
+      'paymentMethod': paymentData?['method'] ?? widget.paymentMethod,
+      'discountSummary': discountSummary,
+    };
+  }
 
   void _showSuccessDialog(Invoice invoice, File pdfFile) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Invoice Generated'),
-        content: Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+            SizedBox(height: 16),
+            _buildInvoiceSummary(invoice),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -1162,6 +1283,83 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
     );
   }
 
+  Widget _buildInvoiceSummary(Invoice invoice) {
+    final pricingBreakdown = DiscountCalculator.getCompletePricingBreakdown(invoice);
+
+    return Container(
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Invoice Summary', style: TextStyle(fontWeight: FontWeight.bold)),
+          SizedBox(height: 8),
+          _buildSummaryRow('Gross Amount', pricingBreakdown['gross_amount']),
+          _buildSummaryRow('Total Savings', -pricingBreakdown['total_savings'], isDiscount: true),
+          _buildSummaryRow('Net Amount', pricingBreakdown['net_amount']),
+          if (pricingBreakdown['tax_amount'] > 0)
+            _buildSummaryRow('Tax', pricingBreakdown['tax_amount']),
+          if (pricingBreakdown['shipping_amount'] > 0)
+            _buildSummaryRow('Shipping', pricingBreakdown['shipping_amount']),
+          if (pricingBreakdown['tip_amount'] > 0)
+            _buildSummaryRow('Tip', pricingBreakdown['tip_amount']),
+          Divider(),
+          _buildSummaryRow('Final Total', pricingBreakdown['final_total'], isTotal: true),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(String label, double amount, {bool isDiscount = false, bool isTotal = false}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: isTotal ? 14 : 12,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : Colors.black,
+            ),
+          ),
+          Text(
+            '${isDiscount && amount > 0 ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: isTotal ? 14 : 12,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+              color: isDiscount ? Colors.green : (isTotal ? Colors.green[700] : Colors.black),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTemplateOption(String label, String value, IconData icon) {
+    final isSelected = _selectedTemplate == value;
+    return ChoiceChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+      selected: isSelected,
+      onSelected: (selected) => setState(() => _selectedTemplate = value),
+      selectedColor: Colors.blue[100],
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.blue[800] : Colors.grey[800],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -1176,28 +1374,167 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
             ),
             SizedBox(height: 16),
 
-            if (widget.enhancedData != null)
-              Card(
-                color: Colors.green[50],
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Icon(Icons.discount, color: Colors.green),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Enhanced pricing data available',
-                          style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+            if (_isLoading)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 20),
+                child: CircularProgressIndicator(),
+              )
+            else ...[
+              if (widget.enhancedData != null)
+                Card(
+                  color: Colors.green[50],
+                  child: Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.discount, color: Colors.green),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Enhanced pricing data available',
+                            style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Template Selection
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Invoice Template', style: TextStyle(fontWeight: FontWeight.bold)),
+                      SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
+                          _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
+                        ],
                       ),
                     ],
                   ),
                 ),
               ),
+              SizedBox(height: 16),
 
-            // Template Selection and other UI elements...
-            // ... (similar to InvoiceOptionsBottomSheetWithOptions)
+              // Auto Print Option
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.print, color: Colors.blue),
+                      SizedBox(width: 12),
+                      Expanded(child: Text('Auto Print After Generation')),
+                      Switch(
+                        value: _autoPrint,
+                        onChanged: (value) => setState(() => _autoPrint = value),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+
+              // Order Summary
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Order Summary', style: TextStyle(fontWeight: FontWeight.bold)),
+                      SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Order ID:'),
+                          Text('#OFF-${widget.pendingOrderId}', style: TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Total Amount:'),
+                          Text(
+                            '${Constants.CURRENCY_NAME}${widget.finalTotal.toStringAsFixed(2)}',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green[700]),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Payment Method:'),
+                          Text(widget.paymentMethod.toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      if (widget.customer != null) ...[
+                        SizedBox(height: 4),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Customer:'),
+                            Text(widget.customer!.displayName, style: TextStyle(fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
+                      if (_pendingOrderData != null) ...[
+                        SizedBox(height: 8),
+                        Divider(),
+                        SizedBox(height: 8),
+                        Text('Enhanced Data Available:', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                        SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle, size: 16, color: Colors.green),
+                            SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Complete discount breakdown and pricing information',
+                                style: TextStyle(fontSize: 12, color: Colors.green[700]),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ]
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+
+              // Action Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Skip'),
+                    ),
+                  ),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _generateInvoice,
+                      icon: Icon(Icons.receipt_long),
+                      label: Text('Generate Invoice'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            SizedBox(height: 8),
           ],
         ),
       ),

@@ -343,11 +343,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+// In checkout_base.dart - UPDATE the _processOrder method
   Future<void> _processOrder() async {
     if (widget.cartItems.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Cart is empty')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Cart is empty')));
       return;
     }
 
@@ -369,10 +368,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'businessInfo': _businessInfo,
       };
 
-      final result = await _posService.createOrderWithCustomer(
+      // Use the enhanced order creation method
+      final result = await _posService.createOrderWithEnhancedData(
         widget.cartItems,
         _customerSelection,
         additionalData: orderData,
+        cartManager: widget.cartManager, // Add this line
+
       );
 
       if (result.success) {
@@ -393,9 +395,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (result.pendingOrderId != null) {
             _showOfflineInvoiceOptions(result.pendingOrderId!);
           } else if (result.order != null) {
-            _showInvoiceOptions(result.order!);
+            _showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
-            // If no order object but success, still show basic success and reset
             _resetCheckoutScreen();
           }
         } else {
@@ -407,9 +408,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           );
 
-          // Show invoice for online order
+          // Show enhanced invoice for online order
           if (result.order != null) {
-            _showInvoiceOptions(result.order!);
+            _showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
             _resetCheckoutScreen();
           }
@@ -438,6 +439,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
+// Add this method to show enhanced invoice options
+  void _showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => InvoiceOptionsBottomSheetWithOptions(
+        order: order,
+        customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
+        enhancedData: enhancedData,
+      ),
+    ).then((_) {
+      _resetCheckoutScreen();
+    });
+  }
   Widget _buildCustomerSection() {
     return Card(
       child: Padding(

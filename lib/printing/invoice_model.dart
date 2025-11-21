@@ -1,5 +1,356 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../app.dart';
+import '../constants.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
+import 'invoice_service.dart';
+
+class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
+  final AppOrder order;
+  final Customer? customer;
+  final Map<String, dynamic> businessInfo;
+  final Map<String, dynamic> invoiceSettings;
+
+  const InvoiceOptionsBottomSheetWithNoOptions({
+    super.key,
+    required this.order,
+    this.customer,
+    required this.businessInfo,
+    required this.invoiceSettings,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Order Completed!',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+            Text(
+              'Order #${order.number} has been processed successfully',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Total: ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.green[700],
+              ),
+            ),
+            SizedBox(height: 24),
+
+            // Invoice Options
+            if (invoiceSettings['autoPrint'] ?? false)
+              ListTile(
+                leading: Icon(Icons.print, color: Colors.blue),
+                title: Text('Auto-printing invoice...'),
+                trailing: CircularProgressIndicator(),
+              )
+            else
+              Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        _printInvoice(context);
+                      },
+                      icon: Icon(Icons.print),
+                      label: Text('Print Invoice'),
+                      style: ElevatedButton.styleFrom(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                      },
+                      icon: Icon(Icons.done),
+                      label: Text('Continue'),
+                    ),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _printInvoice(BuildContext context) {
+    final invoice = Invoice.fromOrder(
+      order,
+      customer,
+      businessInfo,
+      invoiceSettings,
+      templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
+    );
+
+    InvoiceService().printInvoice(invoice);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Invoice sent to printer'))
+    );
+
+    Navigator.pop(context);
+  }
+}
+
+class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
+  final AppOrder order;
+  final Customer? customer;
+  final Map<String, dynamic>? enhancedData;
+
+  const InvoiceOptionsBottomSheetWithOptions({
+    super.key,
+    required this.order,
+    this.customer,
+    this.enhancedData,
+  });
+
+  @override
+  _InvoiceOptionsBottomSheetWithOptionsState createState() => _InvoiceOptionsBottomSheetWithOptionsState();
+}
+
+class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBottomSheetWithOptions> {
+  String _selectedTemplate = 'traditional';
+  bool _autoPrint = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _selectedTemplate = prefs.getString('default_invoice_template') ?? 'traditional';
+      _autoPrint = prefs.getBool('auto_print') ?? false;
+    });
+  }
+
+  Future<Map<String, dynamic>> _getBusinessInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'name': prefs.getString('business_name') ?? 'Your Business Name',
+      'address': prefs.getString('business_address') ?? '',
+      'phone': prefs.getString('business_phone') ?? '',
+      'email': prefs.getString('business_email') ?? '',
+      'website': prefs.getString('business_website') ?? '',
+      'tagline': prefs.getString('business_tagline') ?? '',
+      'taxNumber': prefs.getString('business_tax_number') ?? '',
+    };
+  }
+
+  Future<Map<String, dynamic>> _getInvoiceSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'defaultTemplate': prefs.getString('default_invoice_template') ?? 'traditional',
+      'taxRate': prefs.getDouble('tax_rate') ?? 0.0,
+      'discountRate': prefs.getDouble('discount_rate') ?? 0.0,
+      'autoPrint': prefs.getBool('auto_print') ?? false,
+      'includeCustomerDetails': prefs.getBool('include_customer_details') ?? true,
+      'defaultNotes': prefs.getString('default_notes') ?? 'Thank you for your business!',
+    };
+  }
+
+  void _generateInvoice() async {
+    final businessInfo = await _getBusinessInfo();
+    final invoiceSettings = await _getInvoiceSettings();
+
+    final invoice = widget.enhancedData != null
+        ? Invoice.fromEnhancedOrder(
+      widget.order,
+      widget.customer,
+      businessInfo,
+      invoiceSettings,
+      templateType: _selectedTemplate,
+      enhancedData: widget.enhancedData,
+    )
+        : Invoice.fromOrder(
+      widget.order,
+      widget.customer,
+      businessInfo,
+      invoiceSettings,
+      templateType: _selectedTemplate,
+    );
+
+    final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
+
+    if (_autoPrint) {
+      await InvoiceService().printInvoice(invoice);
+    }
+
+    _showSuccessDialog(invoice, pdfFile);
+  }
+
+  void _showSuccessDialog(Invoice invoice, File pdfFile) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Invoice Generated'),
+        content: Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              InvoiceService().printInvoice(invoice);
+            },
+            child: Text('Print'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              InvoiceService().shareInvoice(invoice);
+            },
+            child: Text('Share/Export'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Generate Invoice',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+
+            if (widget.enhancedData != null)
+              Card(
+                color: Colors.green[50],
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.discount, color: Colors.green),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Enhanced pricing data available',
+                          style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Invoice Template', style: TextStyle(fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
+                        _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.print, color: Colors.blue),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Auto Print After Generation')),
+                    Switch(
+                      value: _autoPrint,
+                      onChanged: (value) => setState(() => _autoPrint = value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text('Skip'),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _generateInvoice,
+                    icon: Icon(Icons.receipt_long),
+                    label: Text('Generate Invoice'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTemplateOption(String label, String value, IconData icon) {
+    final isSelected = _selectedTemplate == value;
+    return ChoiceChip(
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16),
+          SizedBox(width: 4),
+          Text(label),
+        ],
+      ),
+      selected: isSelected,
+      onSelected: (selected) => setState(() => _selectedTemplate = value),
+      selectedColor: Colors.blue[100],
+      labelStyle: TextStyle(
+        color: isSelected ? Colors.blue[800] : Colors.grey[800],
+      ),
+    );
+  }
+}
 
 class Invoice {
   final String id;
@@ -19,12 +370,9 @@ class Invoice {
   final Map<String, dynamic> businessInfo;
   final Map<String, dynamic> invoiceSettings;
   final String templateType;
-
-  // Enhanced fields - optional for backward compatibility
   final Map<String, dynamic>? enhancedData;
   final bool hasEnhancedPricing;
 
-  // Logo support
   String? get logoPath => businessInfo['logoPath'] as String?;
   bool get includeLogo => invoiceSettings['includeLogo'] as bool? ?? true;
 
@@ -50,7 +398,6 @@ class Invoice {
     this.hasEnhancedPricing = false,
   });
 
-  // Enhanced factory method with detailed pricing
   factory Invoice.fromEnhancedOrder(
       AppOrder order,
       Customer? customer,
@@ -59,29 +406,41 @@ class Invoice {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
       }) {
-    print('DEBUG: Creating enhanced invoice with data: $enhancedData');
 
-    // Use enhanced data if available, otherwise fall back to basic calculation
-    if (enhancedData != null && enhancedData['cartData'] != null) {
-      final cartData = enhancedData['cartData'] as Map<String, dynamic>;
-      print('DEBUG: Cart data found: $cartData');
+    // Use DiscountCalculator to ensure consistent discount calculations
+    final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData??{});
 
-      return _createEnhancedInvoice(
-        order,
-        customer,
-        businessInfo,
-        invoiceSettings,
-        templateType,
-        enhancedData,
-        cartData,
-      );
-    }
+    // Calculate totals using the enhanced data
+    final cartData = enhancedData?['cartData'] as Map<String, dynamic>?;
+    final discountBreakdown = enhancedData?['discountBreakdown'] as Map<String, dynamic>?;
 
-    print('DEBUG: No enhanced data, falling back to basic invoice');
-    // Fallback to original method if no enhanced data
-    return Invoice.fromOrder(order, customer, businessInfo, invoiceSettings, templateType: templateType);
+    final subtotal = (cartData?['subtotal'] as num?)?.toDouble() ?? 0.0;
+    final taxAmount = (discountBreakdown?['tax_amount'] as num?)?.toDouble() ?? 0.0;
+    final totalAmount = (cartData?['totalAmount'] as num?)?.toDouble() ?? 0.0;
+    final totalDiscount = (discountBreakdown?['total_savings'] as num?)?.toDouble() ?? 0.0;
+
+    return Invoice(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      orderId: order.id,
+      invoiceNumber: 'INV-${DateTime.now().year}${DateTime.now().month.toString().padLeft(2, '0')}${DateTime.now().day.toString().padLeft(2, '0')}-${order.number}',
+      issueDate: DateTime.now(),
+      dueDate: DateTime.now().add(Duration(days: 30)),
+      customer: customer,
+      items: enhancedItems,
+      subtotal: subtotal,
+      taxAmount: taxAmount,
+      discountAmount: totalDiscount,
+      totalAmount: totalAmount,
+      paymentMethod: enhancedData?['paymentMethod']?.toString() ?? 'cash',
+      status: 'paid',
+      notes: invoiceSettings['defaultNotes']?.toString() ?? 'Thank you for your business!',
+      businessInfo: businessInfo,
+      invoiceSettings: invoiceSettings,
+      templateType: templateType,
+      enhancedData: enhancedData,
+      hasEnhancedPricing: true,
+    );
   }
-
   static Invoice _createEnhancedInvoice(
       AppOrder order,
       Customer? customer,
@@ -93,15 +452,11 @@ class Invoice {
       ) {
     print('DEBUG: Creating enhanced invoice with cart data');
 
-    // Create enhanced items with discount information
     final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData);
 
-    // Calculate totals from cart data
     final subtotal = (cartData['subtotal'] as num?)?.toDouble() ?? 0.0;
     final taxAmount = (cartData['taxAmount'] as num?)?.toDouble() ?? 0.0;
     final totalAmount = (cartData['totalAmount'] as num?)?.toDouble() ?? 0.0;
-
-    // Calculate total discount for backward compatibility
     final totalDiscount = (cartData['totalDiscount'] as num?)?.toDouble() ?? 0.0;
 
     print('DEBUG: Enhanced invoice totals - subtotal: $subtotal, tax: $taxAmount, total: $totalAmount, discount: $totalDiscount');
@@ -154,7 +509,6 @@ class Invoice {
         total: (enhancedItem?['final_subtotal'] as num?)?.toDouble() ??
             (enhancedItem?['subtotal'] as num?)?.toDouble() ??
             ((item['price'] as num?)?.toDouble() ?? 0.0) * ((item['quantity'] as num?)?.toInt() ?? 1),
-        // Enhanced fields
         basePrice: (enhancedItem?['base_price'] as num?)?.toDouble() ?? (item['price'] as num?)?.toDouble(),
         manualDiscount: (enhancedItem?['manual_discount'] as num?)?.toDouble() ?? (enhancedItem?['manualDiscount'] as num?)?.toDouble(),
         manualDiscountPercent: (enhancedItem?['manual_discount_percent'] as num?)?.toDouble() ?? (enhancedItem?['manualDiscountPercent'] as num?)?.toDouble(),
@@ -165,12 +519,11 @@ class Invoice {
     }).toList();
   }
 
-  // COMPLETE DISCOUNT CALCULATIONS - INDEPENDENT OF SETTINGS
   double get totalItemDiscounts {
     if (hasEnhancedPricing) {
       return items.fold(0.0, (sum, item) => sum + (item.discountAmount ?? 0.0));
     }
-    return discountAmount; // Fallback to legacy discount
+    return discountAmount;
   }
 
   double get cartDiscountAmount {
@@ -194,46 +547,31 @@ class Invoice {
 
   double get netAmount => subtotal - totalSavings;
 
-  // Get all applied discounts independently
   Map<String, double> get allDiscounts {
     final discounts = <String, double>{};
 
     if (hasEnhancedPricing) {
-      // Item-level discounts
       discounts['item_discounts'] = totalItemDiscounts;
-
-      // Cart-level discounts
       discounts['cart_discount'] = cartDiscountAmount;
-
-      // Additional discounts
       discounts['additional_discount'] = additionalDiscountAmount;
 
-      // Settings-based discount (for backward compatibility)
       final settingsDiscountRate = (invoiceSettings['discountRate'] as num?)?.toDouble() ?? 0.0;
       final settingsDiscount = subtotal * settingsDiscountRate / 100;
       discounts['settings_discount'] = settingsDiscount;
     } else {
-      // Legacy discount calculation
       discounts['legacy_discount'] = discountAmount;
     }
 
     return discounts;
   }
 
-  // Enhanced display flags
   bool get showCustomerDetails => customer != null && (invoiceSettings['includeCustomerDetails'] ?? true);
-
   bool get showItemDiscounts => hasEnhancedPricing && items.any((item) => item.hasManualDiscount);
-
   bool get showCartDiscount => hasEnhancedPricing && cartDiscountAmount > 0;
-
   bool get showAdditionalDiscount => hasEnhancedPricing && additionalDiscountAmount > 0;
-
   bool get showShipping => hasEnhancedPricing && shippingAmount > 0;
-
   bool get showTip => hasEnhancedPricing && tipAmount > 0;
 
-  // Get enhanced pricing breakdown
   Map<String, dynamic>? get pricingBreakdown => hasEnhancedPricing
       ? enhancedData?['cartData']?['pricing_breakdown'] as Map<String, dynamic>?
       : null;
@@ -246,11 +584,32 @@ class Invoice {
       ? (enhancedData?['tipAmount'] as num? ?? 0.0).toDouble()
       : 0.0;
 
-  // Original factory method - preserved for backward compatibility
-  factory Invoice.fromOrder(AppOrder order, Customer? customer,
-      Map<String, dynamic> businessInfo, Map<String, dynamic> invoiceSettings,
-      {String templateType = 'traditional'}) {
+// In invoice_model.dart - UPDATE the fromOrder factory constructor
+  factory Invoice.fromOrder(
+      AppOrder order,
+      Customer? customer,
+      Map<String, dynamic> businessInfo,
+      Map<String, dynamic> invoiceSettings,
+      {String templateType = 'traditional',
+        Map<String, dynamic>? enhancedData}) { // Add enhancedData parameter
 
+    // Try to extract enhanced data from order if available
+    final hasEnhancedData = enhancedData != null ||
+        (order.lineItems.isNotEmpty && order.lineItems[0].containsKey('base_price'));
+
+    if (hasEnhancedData) {
+      // Use enhanced invoice creation if enhanced data is available
+      return Invoice.fromEnhancedOrder(
+        order,
+        customer,
+        businessInfo,
+        invoiceSettings,
+        templateType: templateType,
+        enhancedData: enhancedData,
+      );
+    }
+
+    // Fallback to basic invoice creation
     final items = (order.lineItems).map((item) {
       return InvoiceItem(
         name: item['productName']?.toString() ?? 'Unknown Product',
@@ -263,11 +622,9 @@ class Invoice {
 
     final subtotal = items.fold(0.0, (sum, item) => sum + item.total);
 
-    // Calculate discounts independently from settings
     final taxRate = (invoiceSettings['taxRate'] as num?)?.toDouble() ?? 0.0;
     final taxAmount = subtotal * taxRate / 100;
 
-    // For legacy invoices, we only use the settings discount
     final discountRate = (invoiceSettings['discountRate'] as num?)?.toDouble() ?? 0.0;
     final discountAmount = subtotal * discountRate / 100;
 
@@ -295,7 +652,6 @@ class Invoice {
       hasEnhancedPricing: false,
     );
   }
-
   Map<String, dynamic> toMap() {
     final data = {
       'id': id,
@@ -317,7 +673,6 @@ class Invoice {
       'templateType': templateType,
     };
 
-    // Add enhanced data if available
     if (hasEnhancedPricing && enhancedData != null) {
       data['enhancedData'] = enhancedData;
       data['hasEnhancedPricing'] = true;
@@ -326,7 +681,6 @@ class Invoice {
     return data;
   }
 
-  // Backward compatibility - create from map
   factory Invoice.fromMap(Map<String, dynamic> data) {
     final items = (data['items'] as List).map((item) => InvoiceItem.fromMap(item)).toList();
 
@@ -353,7 +707,6 @@ class Invoice {
     );
   }
 
-  // Copy with method for creating modified instances
   Invoice copyWith({
     String? id,
     String? orderId,
@@ -405,8 +758,6 @@ class InvoiceItem {
   final int quantity;
   final double unitPrice;
   final double total;
-
-  // Enhanced fields - optional
   final double? basePrice;
   final double? manualDiscount;
   final double? manualDiscountPercent;
@@ -437,7 +788,6 @@ class InvoiceItem {
       'total': total,
     };
 
-    // Add enhanced fields if available
     if (hasManualDiscount) {
       data.addAll({
         'basePrice': ?basePrice,
@@ -468,7 +818,6 @@ class InvoiceItem {
     );
   }
 
-  // Copy with method
   InvoiceItem copyWith({
     String? name,
     String? description,

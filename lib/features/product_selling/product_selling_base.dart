@@ -18,7 +18,7 @@ class Product {
   final String name;
   final String sku;
   final double price;
-  final double? purchasePrice; // 👈 Added field
+  final double? purchasePrice;
   final double? regularPrice;
   final double? salePrice;
   final String? imageUrl;
@@ -50,7 +50,7 @@ class Product {
     required this.name,
     required this.sku,
     required this.price,
-    this.purchasePrice, // 👈 Added to constructor
+    this.purchasePrice,
     this.regularPrice,
     this.salePrice,
     this.imageUrl,
@@ -89,7 +89,7 @@ class Product {
     String? name,
     String? sku,
     double? price,
-    double? purchasePrice, // 👈 Added here
+    double? purchasePrice,
     double? regularPrice,
     double? salePrice,
     String? imageUrl,
@@ -121,7 +121,7 @@ class Product {
       name: name ?? this.name,
       sku: sku ?? this.sku,
       price: price ?? this.price,
-      purchasePrice: purchasePrice ?? this.purchasePrice, // 👈 Added here
+      purchasePrice: purchasePrice ?? this.purchasePrice,
       regularPrice: regularPrice ?? this.regularPrice,
       salePrice: salePrice ?? this.salePrice,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -211,7 +211,7 @@ class Product {
       name: data['name']?.toString() ?? 'Unnamed Product',
       sku: data['sku']?.toString() ?? '',
       price: _parseDouble(data['price']) ?? 0.0,
-      purchasePrice: _parseDouble(data['purchasePrice']), // 👈 Added here
+      purchasePrice: _parseDouble(data['purchasePrice']),
       regularPrice: _parseDouble(data['regularPrice']),
       salePrice: _parseDouble(data['salePrice']),
       imageUrl: primaryImageUrl,
@@ -250,7 +250,7 @@ class Product {
       'name': name,
       'sku': sku,
       'price': price,
-      'purchasePrice': purchasePrice, // 👈 Added here
+      'purchasePrice': purchasePrice,
       'regularPrice': regularPrice,
       'salePrice': salePrice,
       'imageUrl': imageUrl,
@@ -302,6 +302,95 @@ class Product {
 
   @override
   int get hashCode => id.hashCode;
+}
+
+class ProductImage extends StatelessWidget {
+  final String? imageUrl;
+  final List<String> imageUrls;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final BorderRadiusGeometry? borderRadius;
+
+  const ProductImage({
+    super.key,
+    this.imageUrl,
+    this.imageUrls = const [],
+    this.width,
+    this.height,
+    this.fit = BoxFit.cover,
+    this.borderRadius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final effectiveImageUrl = _getEffectiveImageUrl();
+
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        color: Colors.grey[100],
+      ),
+      child: ClipRRect(
+        borderRadius: borderRadius ?? BorderRadius.zero,
+        child: _buildImageContent(effectiveImageUrl),
+      ),
+    );
+  }
+
+  String? _getEffectiveImageUrl() {
+    if (imageUrl != null && imageUrl!.isNotEmpty) return imageUrl;
+    if (imageUrls.isNotEmpty) return imageUrls.first;
+    return null;
+  }
+
+  Widget _buildImageContent(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Image.asset(
+        'assets/product-placeholder.jpeg',
+        fit: BoxFit.cover,
+        width: width,
+        height: height,
+      );
+    }
+
+    return Image.network(
+      imageUrl,
+      fit: fit,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+
+        return Stack(
+          children: [
+            Image.asset(
+              'assets/product-placeholder.jpeg',
+              fit: BoxFit.cover,
+              width: width,
+              height: height,
+            ),
+            Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                    loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            ),
+          ],
+        );
+      },
+      errorBuilder: (context, error, stackTrace) {
+        return Image.asset(
+          'assets/product-placeholder.jpeg',
+          fit: BoxFit.cover,
+          width: width,
+          height: height,
+        );
+      },
+    );
+  }
 }
 
 class ProductSellingScreen extends StatefulWidget {
@@ -368,7 +457,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   }
 
   Future<void> _loadProducts() async {
-    if (!mounted) return; // Add this check
+    if (!mounted) return;
 
     setState(() {
       _isLoading = true;
@@ -379,7 +468,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
         limit: 100,
         inStockOnly: _inStockOnly,
       );
-      if (!mounted) return; // Add this check
+      if (!mounted) return;
 
       setState(() {
         _products.clear();
@@ -398,7 +487,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   Future<void> _loadCategories() async {
     try {
       final categories = await _posService.getCategories();
-      if (!mounted) return; // Add this check
+      if (!mounted) return;
 
       setState(() {
         _categories.clear();
@@ -444,22 +533,13 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     try {
       final searchQuery = query.toLowerCase().trim();
 
-      // Ultra-efficient search with multiple criteria
       final results = _products.where((product) {
-        // Search in name (most common)
         if (product.name.toLowerCase().contains(searchQuery)) return true;
-
-        // Search in SKU (exact match preferred)
         if (product.sku.toLowerCase().contains(searchQuery)) return true;
-
-        // Search in categories
         for (final category in product.categories) {
           if (category.name.toLowerCase().contains(searchQuery)) return true;
         }
-
-        // Search in description (fallback)
         if (product.description?.toLowerCase().contains(searchQuery) == true) return true;
-
         return false;
       }).toList();
 
@@ -480,14 +560,12 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
     List<Product> filtered = List.from(_products);
 
-    // Apply category filter
     if (_selectedCategoryId != 'all') {
       filtered = filtered.where((product) {
         return product.categories.any((category) => category.id == _selectedCategoryId);
       }).toList();
     }
 
-    // Apply stock filter
     if (_inStockOnly) {
       filtered = filtered.where((product) => product.inStock).toList();
     }
@@ -518,6 +596,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       );
     }
   }
+
   Future<void> _scanAndAddProduct() async {
     final barcode = await UniversalScanningService.scanBarcode(
       context,
@@ -555,10 +634,10 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       }
     }
   }
+
   void showSmartSnackBar(BuildContext context, String message, {Color? color}) {
     final messenger = ScaffoldMessenger.of(context);
 
-    // Remove any current snackbar instantly before showing a new one
     messenger.removeCurrentSnackBar();
 
     messenger.showSnackBar(
@@ -589,7 +668,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       ),
     );
   }
-
 
   void _toggleSellingMode() {
     setState(() {
@@ -820,7 +898,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
                           ),
                         ),
                         SizedBox(width: 8),
-
                       ],
                     ),
                   ],
@@ -1001,8 +1078,6 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
       ]);
     }
 
-
-
     if (_isDesktop) {
       actions.add(
         IconButton(
@@ -1019,10 +1094,10 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-    appBar:  _isDesktop? AppBar(
+      appBar: _isDesktop ? AppBar(
         title: Text('Sell Products'),
         actions: _buildAppBarActions(),
-      ):null,
+      ) : null,
       body: _isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
     );
   }
@@ -1507,7 +1582,11 @@ class _POSProductSelectionSheetState extends State<POSProductSelectionSheet> {
                             radius: 16,
                           )
                               : CircleAvatar(
-                            child: Icon(Icons.inventory_2, size: 16),
+                            child: Image.asset(
+                              'assets/product-placeholder.jpeg',
+                              width: 24,
+                              height: 24,
+                            ),
                             radius: 16,
                           ),
                           title: Text(
@@ -1660,41 +1739,30 @@ class ProductCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.all(8),
+          padding: const EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 height: 100,
                 width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
+                child: ProductImage(
+                  imageUrl: product.imageUrl,
+                  imageUrls: product.imageUrls,
                   borderRadius: BorderRadius.circular(8),
-                  image: product.imageUrl != null
-                      ? DecorationImage(
-                    image: NetworkImage(product.imageUrl!),
-                    fit: BoxFit.cover,
-                  )
-                      : null,
                 ),
-                child: product.imageUrl == null
-                    ? Center(
-                  child: Icon(
-                    Icons.shopping_bag,
-                    size: 40,
-                    color: Colors.grey[400],
-                  ),
-                )
-                    : null,
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
                 product.name,
-                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    fontSize: 14
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               if (product.sku.isNotEmpty)
                 Text(
                   product.sku,
@@ -1704,12 +1772,12 @@ class ProductCard extends StatelessWidget {
                 ),
               if (product.categories.isNotEmpty)
                 Padding(
-                  padding: EdgeInsets.only(top: 4),
+                  padding: const EdgeInsets.only(top: 4),
                   child: Wrap(
                     spacing: 4,
                     children: product.categories.take(2).map((category) {
                       return Container(
-                        padding: EdgeInsets.symmetric(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: 6,
                           vertical: 2,
                         ),
@@ -1728,7 +1796,7 @@ class ProductCard extends StatelessWidget {
                     }).toList(),
                   ),
                 ),
-              Spacer(),
+              const Spacer(),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1751,7 +1819,7 @@ class ProductCard extends StatelessWidget {
                   ),
                 ],
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 height: 32,
@@ -1766,9 +1834,19 @@ class ProductCard extends StatelessWidget {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.add_shopping_cart, size: 16,color: ThemeUtils.textOnPrimary(context),),
-                      SizedBox(width: 4),
-                      Text('ADD', style: TextStyle(fontSize: 12,color: ThemeUtils.textOnPrimary(context))),
+                      Icon(
+                        Icons.add_shopping_cart,
+                        size: 16,
+                        color: ThemeUtils.textOnPrimary(context),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'ADD',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: ThemeUtils.textOnPrimary(context)
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1797,41 +1875,30 @@ class RecentProductCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.all(8),
+          padding: const EdgeInsets.all(8),
           child: Column(
             children: [
               Container(
                 height: 60,
                 width: 60,
-                decoration: BoxDecoration(
-                  color: Colors.grey[100],
+                child: ProductImage(
+                  imageUrl: product.imageUrl,
+                  imageUrls: product.imageUrls,
                   borderRadius: BorderRadius.circular(8),
-                  image: product.imageUrl != null
-                      ? DecorationImage(
-                    image: NetworkImage(product.imageUrl!),
-                    fit: BoxFit.cover,
-                  )
-                      : null,
                 ),
-                child: product.imageUrl == null
-                    ? Center(
-                  child: Icon(
-                    Icons.shopping_bag,
-                    size: 24,
-                    color: Colors.grey[400],
-                  ),
-                )
-                    : null,
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
                 product.name,
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
               ),
-              Spacer(),
+              const Spacer(),
               Text(
                 '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}',
                 style: TextStyle(
@@ -1841,7 +1908,7 @@ class RecentProductCard extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
                 decoration: BoxDecoration(
                   color: product.inStock ? Colors.green[50] : Colors.red[50],
                   borderRadius: BorderRadius.circular(4),
@@ -1915,21 +1982,11 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
                 Container(
                   width: 60,
                   height: 60,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
+                  child: ProductImage(
+                    imageUrl: widget.product.imageUrl,
+                    imageUrls: widget.product.imageUrls,
                     borderRadius: BorderRadius.circular(8),
-                    image: widget.product.imageUrl != null
-                        ? DecorationImage(
-                      image: NetworkImage(widget.product.imageUrl!),
-                      fit: BoxFit.cover,
-                    )
-                        : null,
                   ),
-                  child: widget.product.imageUrl == null
-                      ? Center(
-                    child: Icon(Icons.shopping_bag, color: Colors.grey),
-                  )
-                      : null,
                 ),
                 SizedBox(width: 12),
                 Expanded(
@@ -2078,7 +2135,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
   }
 }
 
-
 class Attribute {
   final int id;
   final String name;
@@ -2126,3 +2182,4 @@ class Attribute {
     };
   }
 }
+

@@ -353,46 +353,163 @@ class EnhancedPOSService {
 
   // Categories collection reference
   CollectionReference get categoriesRef => FirebaseFirestore.instance.collection('categories');
+// In EnhancedPOSService class - ADD this corrected method
+  Map<String, dynamic> _createEnhancedCartData(
+      List<CartItem> cartItems,
+      Map<String, dynamic>? additionalData,
+      {double? cartDiscount,
+        double? cartDiscountPercent,
+        double? taxRate}
+      ) {
+    // Calculate basic totals
+    final subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
+    final itemDiscounts = cartItems.fold(0.0, (sum, item) => sum + item.discountAmount);
 
+    // Use provided cart discounts or get from additionalData
+    final effectiveCartDiscount = cartDiscount ?? additionalData?['cartData']?['cartDiscount'] ?? 0.0;
+    final effectiveCartDiscountPercent = cartDiscountPercent ?? additionalData?['cartData']?['cartDiscountPercent'] ?? 0.0;
+    final cartDiscountAmount = effectiveCartDiscount + (subtotal * effectiveCartDiscountPercent / 100);
 
-  Future<OrderCreationResult> createOrderWithCustomer(
+    final totalDiscount = itemDiscounts + cartDiscountAmount;
+    final taxableAmount = subtotal - totalDiscount;
+
+    // Use provided tax rate or get from additionalData
+    final effectiveTaxRate = taxRate ?? additionalData?['cartData']?['taxRate'] ?? 0.0;
+    final taxAmount = taxableAmount * effectiveTaxRate / 100;
+
+    // Extract additional charges
+    final additionalDiscount = additionalData?['additionalDiscount'] ?? 0.0;
+    final shippingAmount = additionalData?['shippingAmount'] ?? 0.0;
+    final tipAmount = additionalData?['tipAmount'] ?? 0.0;
+
+    final finalTotal = taxableAmount + taxAmount + shippingAmount + tipAmount - additionalDiscount;
+
+    return {
+      'items': cartItems.map((item) => {
+        'productId': item.product.id,
+        'productName': item.product.name,
+        'quantity': item.quantity,
+        'price': item.product.price,
+        'base_price': item.product.price,
+        'manual_discount': item.manualDiscount,
+        'manual_discount_percent': item.manualDiscountPercent,
+        'discount_amount': item.discountAmount,
+        'base_subtotal': item.baseSubtotal,
+        'final_subtotal': item.subtotal,
+        'has_manual_discount': item.hasManualDiscount,
+      }).toList(),
+      'subtotal': subtotal,
+      'item_discounts': itemDiscounts,
+      'cart_discount': effectiveCartDiscount,
+      'cart_discount_percent': effectiveCartDiscountPercent,
+      'cart_discount_amount': cartDiscountAmount,
+      'additional_discount': additionalDiscount,
+      'total_discount': totalDiscount + additionalDiscount,
+      'taxable_amount': taxableAmount - additionalDiscount,
+      'tax_rate': effectiveTaxRate,
+      'tax_amount': taxAmount,
+      'shipping_amount': shippingAmount,
+      'tip_amount': tipAmount,
+      'totalAmount': finalTotal,
+      'pricing_breakdown': {
+        'gross_amount': subtotal,
+        'total_savings': totalDiscount + additionalDiscount,
+        'net_amount': taxableAmount - additionalDiscount,
+        'tax_amount': taxAmount,
+        'shipping_amount': shippingAmount,
+        'tip_amount': tipAmount,
+        'final_total': finalTotal,
+      },
+    };
+  }
+// In EnhancedPOSService class - ADD this method
+
+// In EnhancedPOSService class - ADD this method
+// In EnhancedPOSService class - UPDATE the createOrderWithEnhancedData method
+  Future<OrderCreationResult> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
         Map<String, dynamic>? additionalData,
+        EnhancedCartManager? cartManager, // Optional cart manager for discount data
       }) async {
-    if (_isOnline) {
-      try {
-        final order = await _firestore.createOrderWithCustomer(
-          cartItems,
-          customerSelection,
-        );
+    try {
+      if (_isOnline) {
+        // Extract discount data from cart manager if provided
+        double? cartDiscount;
+        double? cartDiscountPercent;
+        double? taxRate;
 
-        // Apply additional data if provided
-        if (additionalData != null) {
-          await _firestore.ordersRef.doc(order.id).update({
-            'additionalData': additionalData,
-            'dateModified': FieldValue.serverTimestamp(),
-          });
+        if (cartManager != null) {
+          cartDiscount = cartManager.cartDiscount;
+          cartDiscountPercent = cartManager.cartDiscountPercent;
+          taxRate = cartManager.taxRate;
         }
 
+        // Create enhanced order data with all discount information
+        final enhancedData = _createEnhancedCartData(
+          cartItems,
+          additionalData,
+          cartDiscount: cartDiscount,
+          cartDiscountPercent: cartDiscountPercent,
+          taxRate: taxRate,
+        );
+
+        // Add additional charges/discounts
+        enhancedData['additionalDiscount'] = additionalData?['additionalDiscount'] ?? 0.0;
+        enhancedData['shippingAmount'] = additionalData?['shippingAmount'] ?? 0.0;
+        enhancedData['tipAmount'] = additionalData?['tipAmount'] ?? 0.0;
+        enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
+        enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
+
+        final order = await _firestore.createOrderWithEnhancedData(
+          cartItems,
+          customerSelection,
+          enhancedData,
+        );
+
         return OrderCreationResult.success(order);
-      } catch (e) {
-        print('Online order creation failed, saving locally: $e');
+      } else {
+        // Use existing offline method which already handles enhanced data
         return await _createOfflineOrderWithCustomer(
           cartItems,
           customerSelection,
           additionalData: additionalData,
         );
       }
-    } else {
-      return await _createOfflineOrderWithCustomer(
-        cartItems,
-        customerSelection,
-        additionalData: additionalData,
-      );
+    } catch (e) {
+      print('Enhanced order creation failed: $e');
+
+      // Fallback to basic order creation
+      try {
+        if (_isOnline) {
+          final order = await _firestore.createOrderWithCustomer(cartItems, customerSelection);
+          return OrderCreationResult.success(order);
+        } else {
+          return await _createOfflineOrderWithCustomer(
+            cartItems,
+            customerSelection,
+            additionalData: additionalData,
+          );
+        }
+      } catch (fallbackError) {
+        print('Fallback order creation also failed: $fallbackError');
+        return OrderCreationResult.error('Failed to create order: $fallbackError');
+      }
     }
   }
-
+// Update the existing createOrderWithCustomer to use enhanced data
+  Future<OrderCreationResult> createOrderWithCustomer(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? additionalData,
+      }) async {
+    // Use the enhanced method by default
+    return await createOrderWithEnhancedData(
+      cartItems,
+      customerSelection,
+      additionalData: additionalData,
+    );
+  }
   Future<OrderCreationResult> _createOfflineOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {

@@ -1,22 +1,12 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'dart:io';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import 'invoice_model.dart';
-
-
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import 'dart:io';
 import '../constants.dart';
 import '../features/customerBase/customer_base.dart';
 import 'invoice_model.dart';
@@ -26,7 +16,6 @@ class InvoiceService {
   factory InvoiceService() => _instance;
   InvoiceService._internal();
 
-  // Generate PDF Invoice
   Future<File> generatePdfInvoice(Invoice invoice) async {
     final pdf = pw.Document();
 
@@ -53,37 +42,22 @@ class InvoiceService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // Header Section
                 _buildProfessionalThermalHeader(invoice),
                 pw.SizedBox(height: 8),
-
-                // Invoice Details
                 _buildThermalInvoiceDetails(invoice),
                 pw.SizedBox(height: 8),
-
-                // Customer Info (if shown)
                 if (invoice.showCustomerDetails && invoice.customer != null)
                   _buildCompactCustomerInfo(invoice.customer!),
                 if (invoice.showCustomerDetails && invoice.customer != null)
                   pw.SizedBox(height: 8),
-
-                // Items Table
                 _buildProfessionalItemsTable(invoice),
                 pw.SizedBox(height: 8),
-
-                // Totals Section with Independent Discounts
                 _buildEnhancedThermalTotals(invoice),
                 pw.SizedBox(height: 8),
-
-                // Payment & Footer
                 _buildPaymentAndFooter(invoice),
                 pw.SizedBox(height: 8),
-
-                // QR Code Section
                 _buildCompactQRCode(invoice),
                 pw.SizedBox(height: 8),
-
-                // Final Thank You
                 _buildThankYouFooter(invoice),
               ],
             ),
@@ -93,13 +67,11 @@ class InvoiceService {
     );
   }
 
-  // Professional Header with centered business info
   pw.Widget _buildProfessionalThermalHeader(Invoice invoice) {
     final business = invoice.businessInfo;
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
       children: [
-        // Business Name - Emphasized
         pw.Container(
           width: double.infinity,
           child: pw.Text(
@@ -112,8 +84,6 @@ class InvoiceService {
             textAlign: pw.TextAlign.center,
           ),
         ),
-
-        // Business Tagline (if available)
         if (business['tagline'] != null)
           pw.Text(
             business['tagline']!,
@@ -123,8 +93,6 @@ class InvoiceService {
             ),
             textAlign: pw.TextAlign.center,
           ),
-
-        // Contact Information in compact format
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.center,
           children: [
@@ -142,16 +110,12 @@ class InvoiceService {
               ),
           ],
         ),
-
-        // Address (wrapped properly)
         if (business['address'] != null)
           pw.Text(
             business['address']!,
             style: pw.TextStyle(fontSize: 7),
             textAlign: pw.TextAlign.center,
           ),
-
-        // Separator line
         pw.Container(
           width: double.infinity,
           height: 1,
@@ -166,7 +130,6 @@ class InvoiceService {
     );
   }
 
-  // Compact Invoice Details
   pw.Widget _buildThermalInvoiceDetails(Invoice invoice) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -185,7 +148,6 @@ class InvoiceService {
             fontSize: 9,
           ),
         ),
-
         pw.Text(
           'Date: ${DateFormat('dd/MM/yyyy').format(invoice.issueDate)}',
           style: pw.TextStyle(fontSize: 8),
@@ -203,7 +165,6 @@ class InvoiceService {
     );
   }
 
-  // Compact Customer Information
   pw.Widget _buildCompactCustomerInfo(Customer customer) {
     return pw.Container(
       width: double.infinity,
@@ -231,19 +192,17 @@ class InvoiceService {
     );
   }
 
-  // Professional Items Table optimized for thermal width
   pw.Widget _buildProfessionalItemsTable(Invoice invoice) {
     return pw.Table(
       border: pw.TableBorder.all(width: 0.3),
       columnWidths: {
-        0: pw.FlexColumnWidth(3.5), // Item name
-        1: pw.FlexColumnWidth(1.0), // Qty
-        2: pw.FlexColumnWidth(1.5), // Price
-        3: pw.FlexColumnWidth(1.5), // Total
+        0: pw.FlexColumnWidth(3.5),
+        1: pw.FlexColumnWidth(1.0),
+        2: pw.FlexColumnWidth(1.5),
+        3: pw.FlexColumnWidth(1.5),
       },
       defaultVerticalAlignment: pw.TableCellVerticalAlignment.top,
       children: [
-        // Header Row
         pw.TableRow(
           decoration: pw.BoxDecoration(color: PdfColors.grey100),
           children: [
@@ -265,8 +224,6 @@ class InvoiceService {
             ),
           ],
         ),
-
-        // Item Rows
         ...invoice.items.map((item) => pw.TableRow(
           children: [
             pw.Padding(
@@ -287,7 +244,6 @@ class InvoiceService {
                       maxLines: 2,
                       overflow: pw.TextOverflow.clip,
                     ),
-                  // Discount indicator
                   if (invoice.hasEnhancedPricing && item.hasManualDiscount)
                     pw.Container(
                       margin: pw.EdgeInsets.only(top: 1),
@@ -329,7 +285,6 @@ class InvoiceService {
     );
   }
 
-  // ENHANCED Thermal Totals with Independent Discounts
   pw.Widget _buildEnhancedThermalTotals(Invoice invoice) {
     final bool hasEnhanced = invoice.hasEnhancedPricing;
     final allDiscounts = invoice.allDiscounts;
@@ -338,34 +293,20 @@ class InvoiceService {
       width: double.infinity,
       child: pw.Column(
         children: [
-          // Subtotal
           _buildTotalLine('Subtotal', invoice.subtotal),
-
-          // INDEPENDENT DISCOUNT BREAKDOWN
           if (hasEnhanced)
             ..._buildIndependentDiscounts(invoice, allDiscounts)
           else
-          // Legacy discount display
             if (invoice.discountAmount > 0)
               _buildDiscountLine('Discount', invoice.discountAmount),
-
-          // Net Amount (after all discounts, before tax)
           if (hasEnhanced)
             _buildTotalLine('Net Amount', invoice.netAmount, isEmphasized: true),
-
-          // Tax
           if (invoice.taxAmount > 0)
             _buildTotalLine('Tax', invoice.taxAmount),
-
-          // Shipping
           if (hasEnhanced && invoice.showShipping && invoice.shippingAmount > 0)
             _buildTotalLine('Shipping', invoice.shippingAmount),
-
-          // Tip
           if (hasEnhanced && invoice.showTip && invoice.tipAmount > 0)
             _buildTotalLine('Tip', invoice.tipAmount),
-
-          // Double line separator
           pw.Container(
             width: double.infinity,
             margin: pw.EdgeInsets.symmetric(vertical: 2),
@@ -377,8 +318,6 @@ class InvoiceService {
             ),
             height: 2,
           ),
-
-          // FINAL TOTAL
           pw.Container(
             width: double.infinity,
             padding: pw.EdgeInsets.symmetric(vertical: 4),
@@ -404,8 +343,6 @@ class InvoiceService {
               ],
             ),
           ),
-
-          // Total Savings Summary
           if (invoice.totalSavings > 0)
             pw.Container(
               width: double.infinity,
@@ -438,7 +375,6 @@ class InvoiceService {
                       ),
                     ],
                   ),
-                  // Detailed savings breakdown
                   if (hasEnhanced && allDiscounts.isNotEmpty)
                     pw.Container(
                       margin: pw.EdgeInsets.only(top: 2),
@@ -469,26 +405,21 @@ class InvoiceService {
     );
   }
 
-  // Build independent discount breakdown
   List<pw.Widget> _buildIndependentDiscounts(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 
-    // Item discounts
     if (discounts['item_discounts'] != null && discounts['item_discounts']! > 0) {
       widgets.add(_buildDiscountLine('Item Discounts', discounts['item_discounts']!));
     }
 
-    // Cart discounts
     if (discounts['cart_discount'] != null && discounts['cart_discount']! > 0) {
       widgets.add(_buildDiscountLine('Cart Discount', discounts['cart_discount']!));
     }
 
-    // Additional discounts
     if (discounts['additional_discount'] != null && discounts['additional_discount']! > 0) {
       widgets.add(_buildDiscountLine('Additional Discount', discounts['additional_discount']!));
     }
 
-    // Settings-based discounts (for backward compatibility)
     if (discounts['settings_discount'] != null && discounts['settings_discount']! > 0) {
       widgets.add(_buildDiscountLine('Standard Discount', discounts['settings_discount']!));
     }
@@ -513,7 +444,6 @@ class InvoiceService {
     }
   }
 
-  // Helper for total lines
   pw.Widget _buildTotalLine(String label, double amount, {bool isEmphasized = false}) {
     return pw.Container(
       width: double.infinity,
@@ -540,7 +470,6 @@ class InvoiceService {
     );
   }
 
-  // Helper for discount lines
   pw.Widget _buildDiscountLine(String label, double amount) {
     return pw.Container(
       width: double.infinity,
@@ -568,11 +497,9 @@ class InvoiceService {
     );
   }
 
-  // Payment and Footer Section
   pw.Widget _buildPaymentAndFooter(Invoice invoice) {
     return pw.Column(
       children: [
-        // Payment Method
         pw.Container(
           width: double.infinity,
           padding: pw.EdgeInsets.symmetric(vertical: 4),
@@ -606,7 +533,6 @@ class InvoiceService {
     );
   }
 
-  // Compact QR Code Section
   pw.Widget _buildCompactQRCode(Invoice invoice) {
     final qrData = _generateQRData(invoice);
     return pw.Container(
@@ -647,7 +573,7 @@ class InvoiceService {
   }
 
   String _generateQRData(Invoice invoice) {
-    final qrData = '''
+    return '''
 INVOICE REFERENCE
 Invoice: ${invoice.invoiceNumber}
 Order: ${invoice.orderId}
@@ -657,11 +583,8 @@ Business: ${invoice.businessInfo['name']}
 Customer: ${invoice.customer?.fullName ?? 'Walk-in'}
 For returns or inquiries, present this QR code
     ''';
-
-    return qrData;
   }
 
-  // Final Thank You Footer
   pw.Widget _buildThankYouFooter(Invoice invoice) {
     return pw.Container(
       width: double.infinity,
@@ -693,11 +616,8 @@ For returns or inquiries, present this QR code
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
-              // Header with logo
               _buildTraditionalHeader(invoice),
               pw.SizedBox(height: 20),
-
-              // Invoice and Customer Details
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -708,22 +628,14 @@ For returns or inquiries, present this QR code
                 ],
               ),
               pw.SizedBox(height: 20),
-
-              // Items Table
               _buildTraditionalItemsTable(invoice),
               pw.SizedBox(height: 20),
-
-              // Enhanced Totals with independent discount breakdown
               _buildEnhancedTraditionalTotals(invoice),
               pw.SizedBox(height: 20),
-
-              // QR Code Section
               pw.Center(
                 child: _buildTraditionalQRCode(invoice),
               ),
               pw.SizedBox(height: 20),
-
-              // Notes and Footer
               _buildTraditionalFooter(invoice),
             ],
           );
@@ -732,7 +644,6 @@ For returns or inquiries, present this QR code
     );
   }
 
-  // Traditional QR Code Section
   pw.Widget _buildTraditionalQRCode(Invoice invoice) {
     final qrData = _generateQRData(invoice);
 
@@ -790,7 +701,6 @@ For returns or inquiries, present this QR code
     );
   }
 
-  // Traditional Invoice Components
   pw.Widget _buildTraditionalHeader(Invoice invoice) {
     final business = invoice.businessInfo;
     return pw.Row(
@@ -902,7 +812,6 @@ For returns or inquiries, present this QR code
                   pw.Text(item.name, style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                   if (item.description.isNotEmpty)
                     pw.Text(item.description, style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600)),
-                  // Show discount details for enhanced pricing
                   if (invoice.hasEnhancedPricing && item.hasManualDiscount)
                     pw.Container(
                       margin: pw.EdgeInsets.only(top: 4),
@@ -932,7 +841,6 @@ For returns or inquiries, present this QR code
     );
   }
 
-  // ENHANCED Traditional Totals with Independent Discount Breakdown
   pw.Widget _buildEnhancedTraditionalTotals(Invoice invoice) {
     final bool hasEnhanced = invoice.hasEnhancedPricing;
     final allDiscounts = invoice.allDiscounts;
@@ -949,39 +857,22 @@ For returns or inquiries, present this QR code
                 width: 300,
                 child: pw.Column(
                   children: [
-                    // Gross Amount
                     _enhancedTotalRow('Gross Amount', invoice.subtotal, isHeader: true),
-
-                    // INDEPENDENT DISCOUNT BREAKDOWN
                     if (hasEnhanced)
                       ..._buildEnhancedDiscountBreakdown(invoice, allDiscounts)
                     else
-                    // Legacy discount
                       if (invoice.discountAmount > 0)
                         _enhancedTotalRow('Discount', -invoice.discountAmount, isDiscount: true),
-
-                    // NET AMOUNT (After all discounts, before tax)
                     if (hasEnhanced)
                       _enhancedTotalRow('NET AMOUNT', invoice.netAmount, isNetAmount: true),
-
-                    // Tax
                     if (invoice.taxAmount > 0)
                       _enhancedTotalRow('Tax', invoice.taxAmount),
-
-                    // Shipping
                     if (hasEnhanced && invoice.showShipping)
                       _enhancedTotalRow('Shipping', invoice.shippingAmount),
-
-                    // Tip
                     if (hasEnhanced && invoice.showTip)
                       _enhancedTotalRow('Tip', invoice.tipAmount),
-
                     pw.Divider(thickness: 2),
-
-                    // FINAL TOTAL
                     _enhancedTotalRow('FINAL TOTAL', invoice.totalAmount, isTotal: true),
-
-                    // Total Savings Summary with detailed breakdown
                     if (invoice.totalSavings > 0)
                       pw.Container(
                         margin: pw.EdgeInsets.only(top: 8),
@@ -1001,7 +892,6 @@ For returns or inquiries, present this QR code
                                     style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
                               ],
                             ),
-                            // Detailed discount breakdown
                             if (hasEnhanced && allDiscounts.isNotEmpty)
                               pw.Container(
                                 margin: pw.EdgeInsets.only(top: 8),
@@ -1046,22 +936,18 @@ For returns or inquiries, present this QR code
   List<pw.Widget> _buildEnhancedDiscountBreakdown(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 
-    // Item Discounts
     if (discounts['item_discounts'] != null && discounts['item_discounts']! > 0) {
       widgets.add(_enhancedTotalRow('Item Discounts', -discounts['item_discounts']!, isDiscount: true));
     }
 
-    // Cart Discount
     if (discounts['cart_discount'] != null && discounts['cart_discount']! > 0) {
       widgets.add(_enhancedTotalRow('Cart Discount', -discounts['cart_discount']!, isDiscount: true));
     }
 
-    // Additional Discount
     if (discounts['additional_discount'] != null && discounts['additional_discount']! > 0) {
       widgets.add(_enhancedTotalRow('Additional Discount', -discounts['additional_discount']!, isDiscount: true));
     }
 
-    // Settings Discount
     if (discounts['settings_discount'] != null && discounts['settings_discount']! > 0) {
       widgets.add(_enhancedTotalRow('Standard Discount', -discounts['settings_discount']!, isDiscount: true));
     }
@@ -1074,7 +960,6 @@ For returns or inquiries, present this QR code
     bool isDiscount = false,
     bool isNetAmount = false,
     bool isHeader = false,
-    bool isSubtotal = false,
   }) {
     return pw.Container(
       padding: pw.EdgeInsets.symmetric(vertical: isHeader ? 6 : 4),
@@ -1146,7 +1031,6 @@ For returns or inquiries, present this QR code
     );
   }
 
-  // Print Invoice
   Future<void> printInvoice(Invoice invoice) async {
     final pdfFile = await generatePdfInvoice(invoice);
     await Printing.layoutPdf(
@@ -1156,13 +1040,11 @@ For returns or inquiries, present this QR code
     );
   }
 
-  // Share/Export Invoice
   Future<void> shareInvoice(Invoice invoice) async {
     final pdfFile = await generatePdfInvoice(invoice);
     await Share.shareXFiles([XFile(pdfFile.path)], text: 'Invoice ${invoice.invoiceNumber}');
   }
 
-  // Print directly (for thermal printers)
   Future<void> printDirect(Invoice invoice) async {
     if (invoice.templateType == 'thermal') {
       await _printThermalInvoice(invoice);
@@ -1173,7 +1055,6 @@ For returns or inquiries, present this QR code
 
   Future<void> _printThermalInvoice(Invoice invoice) async {
     print('Printing thermal invoice: ${invoice.invoiceNumber}');
-
     if (invoice.hasEnhancedPricing) {
       await _printEnhancedThermalInvoice(invoice);
     } else {
@@ -1183,7 +1064,6 @@ For returns or inquiries, present this QR code
 
   Future<void> _printTraditionalInvoice(Invoice invoice) async {
     print('Printing traditional invoice: ${invoice.invoiceNumber}');
-
     if (invoice.hasEnhancedPricing) {
       await _printEnhancedTraditionalInvoice(invoice);
     } else {
