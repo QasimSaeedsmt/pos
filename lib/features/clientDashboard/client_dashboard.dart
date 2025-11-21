@@ -877,28 +877,45 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
       print('Loading dashboard for tenant: $tenantId, user: ${currentUser.email}');
 
-      // Check if we have recent cached data first
-      final cachedData = await _localDb.getDashboardData(tenantId);
-      if (cachedData != null && !_isRefreshing) {
-        print('Loading dashboard from cache');
-        _loadCachedData(cachedData);
-        _isOfflineMode = false;
+      // First, check if we actually have network connectivity
+      final connectivityResult = await Connectivity().checkConnectivity();
+      final hasNetwork = connectivityResult != ConnectivityResult.none;
+
+      if (!hasNetwork) {
+        print('No network connectivity - loading offline data');
+        await _loadOfflineData(tenantId);
+        _isOfflineMode = true;
         return;
       }
 
-      // Try to load online data
+      // Check if we have recent cached data first (but don't use it if we're refreshing)
+      if (!_isRefreshing) {
+        final cachedData = await _localDb.getDashboardData(tenantId);
+        if (cachedData != null) {
+          print('Loading dashboard from cache while checking online data');
+          _loadCachedData(cachedData);
+        }
+      }
+
+      // Try to load online data with proper error handling
+      bool onlineSuccess = false;
       try {
         await _loadOnlineData(tenantId);
+        onlineSuccess = true;
         _isOfflineMode = false;
       } catch (onlineError) {
         print('Online data loading failed: $onlineError');
+        onlineSuccess = false;
+      }
 
-        // Fall back to offline data generation
+      // If online failed, try offline data
+      if (!onlineSuccess) {
+        print('Falling back to offline data');
         await _loadOfflineData(tenantId);
         _isOfflineMode = true;
 
-        // Show offline mode warning
-        if (mounted) {
+        // Only show offline warning if we actually failed to get online data
+        if (mounted && hasNetwork) { // We have network but online loading failed
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
@@ -954,7 +971,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       }
     }
   }
-
   void _loadCachedData(OfflineDashboardData cachedData) {
     if (mounted) {
       setState(() {
@@ -1083,18 +1099,19 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       stream: _posService.onlineStatusStream,
       builder: (context, snapshot) {
         final isOnline = snapshot.data ?? true;
-        final isActuallyOnline = isOnline && !_isOfflineMode;
+        // Only show as offline if we're actually in offline mode
+        final showAsOffline = _isOfflineMode;
 
         return Container(
           padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: isActuallyOnline ? Colors.green[400] : Colors.orange[400],
+            color: showAsOffline ? Colors.orange[400] : Colors.green[400],
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: isActuallyOnline
-                    ? Colors.green[400]!.withOpacity(0.3)
-                    : Colors.orange[400]!.withOpacity(0.3),
+                color: showAsOffline
+                    ? Colors.orange[400]!.withOpacity(0.3)
+                    : Colors.green[400]!.withOpacity(0.3),
                 blurRadius: 8,
                 spreadRadius: 1,
               ),
@@ -1113,14 +1130,14 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
               ),
               SizedBox(width: 6),
               Text(
-                isActuallyOnline ? 'Live Data' : 'Offline Mode',
+                showAsOffline ? 'Offline Mode' : 'Live Data',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (!isActuallyOnline) ...[
+              if (showAsOffline) ...[
                 SizedBox(width: 4),
                 Icon(Icons.wifi_off, size: 12, color: Colors.white),
               ],
@@ -1130,7 +1147,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       },
     );
   }
-
   // Update your _buildLoadingState to show offline status
   Widget _buildLoadingState() {
     return Center(
