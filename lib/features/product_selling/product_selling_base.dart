@@ -1823,13 +1823,12 @@ class ProductCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 height: 32,
-                child: ElevatedButton(
-                  onPressed: product.inStock ? onAddToCart : null,
+                child: product.inStock && product.stockQuantity > 0
+                    ? ElevatedButton(
+                  onPressed: onAddToCart,
                   style: ElevatedButton.styleFrom(
                     padding: EdgeInsets.zero,
-                    backgroundColor: product.inStock
-                        ? ThemeUtils.primary(context)
-                        : Colors.grey,
+                    backgroundColor: ThemeUtils.primary(context),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1843,8 +1842,35 @@ class ProductCard extends StatelessWidget {
                       Text(
                         'ADD',
                         style: TextStyle(
-                            fontSize: 12,
-                            color: ThemeUtils.textOnPrimary(context)
+                          fontSize: 12,
+                          color: ThemeUtils.textOnPrimary(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+                    : OutlinedButton(
+                  onPressed: null, // Disabled button
+                  style: OutlinedButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    side: BorderSide(color: Colors.grey[400]!),
+                    backgroundColor: Colors.grey[50],
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.inventory_2_outlined,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'OUT OF STOCK',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -1858,7 +1884,6 @@ class ProductCard extends StatelessWidget {
     );
   }
 }
-
 class RecentProductCard extends StatelessWidget {
   final Product product;
   final VoidCallback onTap;
@@ -1871,9 +1896,14 @@ class RecentProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isOutOfStock = !product.inStock || product.stockQuantity == 0;
+
     return Card(
+      elevation: isOutOfStock ? 1 : 2,
+      color: isOutOfStock ? Colors.grey[50] : Colors.white,
       child: InkWell(
-        onTap: onTap,
+        onTap: isOutOfStock ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
           padding: const EdgeInsets.all(8),
           child: Column(
@@ -1881,18 +1911,37 @@ class RecentProductCard extends StatelessWidget {
               Container(
                 height: 60,
                 width: 60,
-                child: ProductImage(
-                  imageUrl: product.imageUrl,
-                  imageUrls: product.imageUrls,
-                  borderRadius: BorderRadius.circular(8),
+                child: Stack(
+                  children: [
+                    ProductImage(
+                      imageUrl: product.imageUrl,
+                      imageUrls: product.imageUrls,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    if (isOutOfStock)
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: Colors.white70,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.inventory_2_outlined,
+                          color: Colors.grey[500],
+                          size: 20,
+                        ),
+                      ),
+                  ],
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 product.name,
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: isOutOfStock ? Colors.grey[600] : Colors.black87,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1904,23 +1953,38 @@ class RecentProductCard extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green[700],
+                  color: isOutOfStock ? Colors.grey[500] : Colors.green[700],
                 ),
               ),
+              const SizedBox(height: 4),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: product.inStock ? Colors.green[50] : Colors.red[50],
+                  color: isOutOfStock ? Colors.grey[100] : Colors.green[50],
                   borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  product.inStock ? 'In Stock' : 'Out of Stock',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: product.inStock
-                        ? Colors.green[700]
-                        : Colors.red[700],
+                  border: Border.all(
+                    color: isOutOfStock ? Colors.grey[300]! : Colors.green[100]!,
+                    width: 1,
                   ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isOutOfStock ? Icons.inventory_2_outlined : Icons.check_circle_outline,
+                      size: 10,
+                      color: isOutOfStock ? Colors.grey[500] : Colors.green[600],
+                    ),
+                    const SizedBox(width: 2),
+                    Text(
+                      isOutOfStock ? 'Out of Stock' : 'In Stock',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                        color: isOutOfStock ? Colors.grey[600] : Colors.green[700],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -1930,7 +1994,6 @@ class RecentProductCard extends StatelessWidget {
     );
   }
 }
-
 class ProductDetailBottomSheet extends StatefulWidget {
   final Product product;
   final VoidCallback onAddToCart;
@@ -1970,6 +2033,8 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final isOutOfStock = !widget.product.inStock || widget.product.stockQuantity == 0;
+
     return SafeArea(
       child: Container(
         padding: EdgeInsets.all(16),
@@ -1982,10 +2047,28 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
                 Container(
                   width: 60,
                   height: 60,
-                  child: ProductImage(
-                    imageUrl: widget.product.imageUrl,
-                    imageUrls: widget.product.imageUrls,
-                    borderRadius: BorderRadius.circular(8),
+                  child: Stack(
+                    children: [
+                      ProductImage(
+                        imageUrl: widget.product.imageUrl,
+                        imageUrls: widget.product.imageUrls,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      if (isOutOfStock)
+                        Container(
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            Icons.block,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 SizedBox(width: 12),
@@ -2016,26 +2099,24 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Colors.green[700],
+                color: isOutOfStock ? Colors.grey[600] : Colors.green[700],
               ),
             ),
             SizedBox(height: 8),
             Row(
               children: [
                 Icon(
-                  widget.product.inStock ? Icons.check_circle : Icons.error,
-                  color: widget.product.inStock ? Colors.green : Colors.red,
+                  isOutOfStock ? Icons.error : Icons.check_circle,
+                  color: isOutOfStock ? Colors.red : Colors.green,
                   size: 16,
                 ),
                 SizedBox(width: 4),
                 Text(
-                  widget.product.inStock
-                      ? '${widget.product.stockQuantity} in stock'
-                      : 'Out of stock',
+                  isOutOfStock
+                      ? 'Out of stock'
+                      : '${widget.product.stockQuantity} in stock',
                   style: TextStyle(
-                    color: widget.product.inStock
-                        ? Colors.green[600]
-                        : Colors.red[600],
+                    color: isOutOfStock ? Colors.red[600] : Colors.green[600],
                   ),
                 ),
               ],
@@ -2058,64 +2139,81 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
                   SizedBox(height: 16),
                 ],
               ),
-            Text('Quantity:', style: TextStyle(fontWeight: FontWeight.bold)),
-            SizedBox(height: 8),
-            Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[300]!),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(Icons.remove, size: 20),
-                        onPressed: _decrementQuantity,
-                        padding: EdgeInsets.zero,
-                      ),
-                      SizedBox(
-                        width: 40,
-                        child: Text(
-                          _quantity.toString(),
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
+            if (!isOutOfStock) ...[
+              Text('Quantity:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey[300]!),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.remove, size: 20),
+                          onPressed: _decrementQuantity,
+                          padding: EdgeInsets.zero,
+                        ),
+                        SizedBox(
+                          width: 40,
+                          child: Text(
+                            _quantity.toString(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.add, size: 20),
-                        onPressed: _incrementQuantity,
-                        padding: EdgeInsets.zero,
-                      ),
-                    ],
+                        IconButton(
+                          icon: Icon(Icons.add, size: 20),
+                          onPressed: _incrementQuantity,
+                          padding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Spacer(),
-                Text(
-                  'Total: ${Constants.CURRENCY_NAME}${(widget.product.price * _quantity).toStringAsFixed(0)}',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            SizedBox(height: 24),
+                  Spacer(),
+                  Text(
+                    'Total: ${Constants.CURRENCY_NAME}${(widget.product.price * _quantity).toStringAsFixed(0)}',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              SizedBox(height: 24),
+            ],
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel'),
+                    child: Text('Close'),
                   ),
                 ),
                 SizedBox(width: 12),
                 Expanded(
-                  child: ElevatedButton(
-                    onPressed: widget.product.inStock
-                        ? _addToCartWithQuantity
-                        : null,
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+                  child: isOutOfStock
+                      ? ElevatedButton(
+                    onPressed: null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.grey[400],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.inventory_2_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Text('Out of Stock'),
+                      ],
+                    ),
+                  )
+                      : ElevatedButton(
+                    onPressed: _addToCartWithQuantity,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -2134,7 +2232,6 @@ class _ProductDetailBottomSheetState extends State<ProductDetailBottomSheet> {
     );
   }
 }
-
 class Attribute {
   final int id;
   final String name;

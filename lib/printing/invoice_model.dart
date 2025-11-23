@@ -375,6 +375,73 @@ class Invoice {
 
   String? get logoPath => businessInfo['logoPath'] as String?;
   bool get includeLogo => invoiceSettings['includeLogo'] as bool? ?? true;
+  bool get showCustomerDetails => customer != null && (invoiceSettings['includeCustomerDetails'] ?? true);
+  bool get showItemDiscounts => hasEnhancedPricing && items.any((item) => item.hasManualDiscount);
+  bool get showCartDiscount => hasEnhancedPricing && cartDiscountAmount > 0;
+  bool get showAdditionalDiscount => hasEnhancedPricing && additionalDiscountAmount > 0;
+  bool get showShipping => hasEnhancedPricing && shippingAmount > 0;
+  bool get showTip => hasEnhancedPricing && tipAmount > 0;
+  bool get showTax => taxAmount > 0;
+
+  double get totalItemDiscounts {
+    if (hasEnhancedPricing) {
+      return items.fold(0.0, (sum, item) => sum + (item.discountAmount ?? 0.0));
+    }
+    return discountAmount;
+  }
+
+  double get cartDiscountAmount {
+    if (hasEnhancedPricing) {
+      final cartData = enhancedData?['cartData'] as Map<String, dynamic>?;
+      if (cartData != null) {
+        final cartDiscount = (cartData['cartDiscount'] as num?)?.toDouble() ?? 0.0;
+        final cartDiscountPercent = (cartData['cartDiscountPercent'] as num?)?.toDouble() ?? 0.0;
+        final cartSubtotal = (cartData['subtotal'] as num?)?.toDouble() ?? subtotal;
+        return cartDiscount + (cartSubtotal * cartDiscountPercent / 100);
+      }
+    }
+    return 0.0;
+  }
+
+  double get additionalDiscountAmount => hasEnhancedPricing
+      ? (enhancedData?['additionalDiscount'] as num? ?? 0.0).toDouble()
+      : 0.0;
+
+  double get totalSavings => totalItemDiscounts + cartDiscountAmount + additionalDiscountAmount;
+
+  double get netAmount => subtotal - totalSavings;
+
+  double get shippingAmount => hasEnhancedPricing
+      ? (enhancedData?['shippingAmount'] as num? ?? 0.0).toDouble()
+      : 0.0;
+
+  double get tipAmount => hasEnhancedPricing
+      ? (enhancedData?['tipAmount'] as num? ?? 0.0).toDouble()
+      : 0.0;
+
+  Map<String, double> get allDiscounts {
+    final discounts = <String, double>{};
+
+    if (hasEnhancedPricing) {
+      discounts['item_discounts'] = totalItemDiscounts;
+      discounts['cart_discount'] = cartDiscountAmount;
+      discounts['additional_discount'] = additionalDiscountAmount;
+
+      final settingsDiscountRate = (invoiceSettings['discountRate'] as num?)?.toDouble() ?? 0.0;
+      final settingsDiscount = subtotal * settingsDiscountRate / 100;
+      if (settingsDiscount > 0) {
+        discounts['settings_discount'] = settingsDiscount;
+      }
+    } else {
+      discounts['legacy_discount'] = discountAmount;
+    }
+
+    return discounts;
+  }
+
+  Map<String, dynamic>? get pricingBreakdown => hasEnhancedPricing
+      ? enhancedData?['cartData']?['pricing_breakdown'] as Map<String, dynamic>?
+      : null;
 
   Invoice({
     required this.id,
@@ -406,18 +473,40 @@ class Invoice {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
       }) {
-
-    // Use DiscountCalculator to ensure consistent discount calculations
-    final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData??{});
+    // Use enhanced invoice creation if enhanced data is available
+    final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData ?? {});
 
     // Calculate totals using the enhanced data
     final cartData = enhancedData?['cartData'] as Map<String, dynamic>?;
     final discountBreakdown = enhancedData?['discountBreakdown'] as Map<String, dynamic>?;
 
     final subtotal = (cartData?['subtotal'] as num?)?.toDouble() ?? 0.0;
-    final taxAmount = (discountBreakdown?['tax_amount'] as num?)?.toDouble() ?? 0.0;
-    final totalAmount = (cartData?['totalAmount'] as num?)?.toDouble() ?? 0.0;
     final totalDiscount = (discountBreakdown?['total_savings'] as num?)?.toDouble() ?? 0.0;
+
+    // Calculate net amount (after all discounts)
+    final netAmount = subtotal - totalDiscount;
+
+    // Get shipping and tip amounts
+    final shippingAmount = (enhancedData?['shippingAmount'] as num?)?.toDouble() ?? 0.0;
+    final tipAmount = (enhancedData?['tipAmount'] as num?)?.toDouble() ?? 0.0;
+
+    // Ensure tax is properly calculated and included
+    final taxRate = (invoiceSettings['taxRate'] as num?)?.toDouble() ?? 0.0;
+    final taxAmount = (discountBreakdown?['tax_amount'] as num?)?.toDouble() ??
+        (netAmount * taxRate / 100);
+
+    // Calculate final total
+    final totalAmount = netAmount + taxAmount + shippingAmount + tipAmount;
+
+    print('DEBUG: Enhanced invoice creation -');
+    print('DEBUG: Subtotal: $subtotal');
+    print('DEBUG: Total Discount: $totalDiscount');
+    print('DEBUG: Net Amount: $netAmount');
+    print('DEBUG: Tax Rate: $taxRate%');
+    print('DEBUG: Tax Amount: $taxAmount');
+    print('DEBUG: Shipping: $shippingAmount');
+    print('DEBUG: Tip: $tipAmount');
+    print('DEBUG: Final Total: $totalAmount');
 
     return Invoice(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -432,48 +521,6 @@ class Invoice {
       discountAmount: totalDiscount,
       totalAmount: totalAmount,
       paymentMethod: enhancedData?['paymentMethod']?.toString() ?? 'cash',
-      status: 'paid',
-      notes: invoiceSettings['defaultNotes']?.toString() ?? 'Thank you for your business!',
-      businessInfo: businessInfo,
-      invoiceSettings: invoiceSettings,
-      templateType: templateType,
-      enhancedData: enhancedData,
-      hasEnhancedPricing: true,
-    );
-  }
-  static Invoice _createEnhancedInvoice(
-      AppOrder order,
-      Customer? customer,
-      Map<String, dynamic> businessInfo,
-      Map<String, dynamic> invoiceSettings,
-      String templateType,
-      Map<String, dynamic> enhancedData,
-      Map<String, dynamic> cartData,
-      ) {
-    print('DEBUG: Creating enhanced invoice with cart data');
-
-    final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData);
-
-    final subtotal = (cartData['subtotal'] as num?)?.toDouble() ?? 0.0;
-    final taxAmount = (cartData['taxAmount'] as num?)?.toDouble() ?? 0.0;
-    final totalAmount = (cartData['totalAmount'] as num?)?.toDouble() ?? 0.0;
-    final totalDiscount = (cartData['totalDiscount'] as num?)?.toDouble() ?? 0.0;
-
-    print('DEBUG: Enhanced invoice totals - subtotal: $subtotal, tax: $taxAmount, total: $totalAmount, discount: $totalDiscount');
-
-    return Invoice(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      orderId: order.id,
-      invoiceNumber: 'INV-${DateTime.now().year}${DateTime.now().month.toString().padLeft(2, '0')}${DateTime.now().day.toString().padLeft(2, '0')}-${order.number}',
-      issueDate: DateTime.now(),
-      dueDate: DateTime.now().add(Duration(days: 30)),
-      customer: customer,
-      items: enhancedItems,
-      subtotal: subtotal,
-      taxAmount: taxAmount,
-      discountAmount: totalDiscount,
-      totalAmount: totalAmount,
-      paymentMethod: enhancedData['paymentMethod']?.toString() ?? 'cash',
       status: 'paid',
       notes: invoiceSettings['defaultNotes']?.toString() ?? 'Thank you for your business!',
       businessInfo: businessInfo,
@@ -519,80 +566,14 @@ class Invoice {
     }).toList();
   }
 
-  double get totalItemDiscounts {
-    if (hasEnhancedPricing) {
-      return items.fold(0.0, (sum, item) => sum + (item.discountAmount ?? 0.0));
-    }
-    return discountAmount;
-  }
-
-  double get cartDiscountAmount {
-    if (hasEnhancedPricing) {
-      final cartData = enhancedData?['cartData'] as Map<String, dynamic>?;
-      if (cartData != null) {
-        final cartDiscount = (cartData['cartDiscount'] as num?)?.toDouble() ?? 0.0;
-        final cartDiscountPercent = (cartData['cartDiscountPercent'] as num?)?.toDouble() ?? 0.0;
-        final cartSubtotal = (cartData['subtotal'] as num?)?.toDouble() ?? subtotal;
-        return cartDiscount + (cartSubtotal * cartDiscountPercent / 100);
-      }
-    }
-    return 0.0;
-  }
-
-  double get additionalDiscountAmount => hasEnhancedPricing
-      ? (enhancedData?['additionalDiscount'] as num? ?? 0.0).toDouble()
-      : 0.0;
-
-  double get totalSavings => totalItemDiscounts + cartDiscountAmount + additionalDiscountAmount;
-
-  double get netAmount => subtotal - totalSavings;
-
-  Map<String, double> get allDiscounts {
-    final discounts = <String, double>{};
-
-    if (hasEnhancedPricing) {
-      discounts['item_discounts'] = totalItemDiscounts;
-      discounts['cart_discount'] = cartDiscountAmount;
-      discounts['additional_discount'] = additionalDiscountAmount;
-
-      final settingsDiscountRate = (invoiceSettings['discountRate'] as num?)?.toDouble() ?? 0.0;
-      final settingsDiscount = subtotal * settingsDiscountRate / 100;
-      discounts['settings_discount'] = settingsDiscount;
-    } else {
-      discounts['legacy_discount'] = discountAmount;
-    }
-
-    return discounts;
-  }
-
-  bool get showCustomerDetails => customer != null && (invoiceSettings['includeCustomerDetails'] ?? true);
-  bool get showItemDiscounts => hasEnhancedPricing && items.any((item) => item.hasManualDiscount);
-  bool get showCartDiscount => hasEnhancedPricing && cartDiscountAmount > 0;
-  bool get showAdditionalDiscount => hasEnhancedPricing && additionalDiscountAmount > 0;
-  bool get showShipping => hasEnhancedPricing && shippingAmount > 0;
-  bool get showTip => hasEnhancedPricing && tipAmount > 0;
-
-  Map<String, dynamic>? get pricingBreakdown => hasEnhancedPricing
-      ? enhancedData?['cartData']?['pricing_breakdown'] as Map<String, dynamic>?
-      : null;
-
-  double get shippingAmount => hasEnhancedPricing
-      ? (enhancedData?['shippingAmount'] as num? ?? 0.0).toDouble()
-      : 0.0;
-
-  double get tipAmount => hasEnhancedPricing
-      ? (enhancedData?['tipAmount'] as num? ?? 0.0).toDouble()
-      : 0.0;
-
-// In invoice_model.dart - UPDATE the fromOrder factory constructor
   factory Invoice.fromOrder(
       AppOrder order,
       Customer? customer,
       Map<String, dynamic> businessInfo,
-      Map<String, dynamic> invoiceSettings,
-      {String templateType = 'traditional',
-        Map<String, dynamic>? enhancedData}) { // Add enhancedData parameter
-
+      Map<String, dynamic> invoiceSettings, {
+        String templateType = 'traditional',
+        Map<String, dynamic>? enhancedData,
+      }) {
     // Try to extract enhanced data from order if available
     final hasEnhancedData = enhancedData != null ||
         (order.lineItems.isNotEmpty && order.lineItems[0].containsKey('base_price'));
@@ -630,6 +611,13 @@ class Invoice {
 
     final totalAmount = subtotal + taxAmount - discountAmount;
 
+    print('DEBUG: Basic invoice creation -');
+    print('DEBUG: Subtotal: $subtotal');
+    print('DEBUG: Tax Rate: $taxRate%');
+    print('DEBUG: Tax Amount: $taxAmount');
+    print('DEBUG: Discount: $discountAmount');
+    print('DEBUG: Final Total: $totalAmount');
+
     return Invoice(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       orderId: order.id,
@@ -652,6 +640,7 @@ class Invoice {
       hasEnhancedPricing: false,
     );
   }
+
   Map<String, dynamic> toMap() {
     final data = {
       'id': id,

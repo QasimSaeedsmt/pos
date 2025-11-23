@@ -3126,68 +3126,68 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
                         },
                       ),
                       SizedBox(height: 16),
-                      Text('Attachments', style: ThemeUtils.bodyMedium(context).copyWith(fontWeight: FontWeight.w600)),
-                      SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          GestureDetector(
-                            onTap: _addAttachment,
-                            child: Container(
-                              width: 80,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: ThemeUtils.backgroundSolid(context),
-                                borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-                                border: Border.all(color: ThemeUtils.secondary(context).withOpacity(0.3), style: BorderStyle.solid),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.add, color: ThemeUtils.textSecondary(context)),
-                                  SizedBox(height: 4),
-                                  Text('Add', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context))),
-                                ],
-                              ),
-                            ),
-                          ),
-                          ..._attachments.asMap().entries.map((entry) {
-                            final index = entry.key;
-                            final file = entry.value;
-                            return Stack(
-                              children: [
-                                Container(
-                                    width: 80,
-                                    height: 80,
-                                    decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-                                        image: DecorationImage(
-                                            image: FileImage(file),
-                                            fit: BoxFit.cover
-                                        )
-                                    )
-                                ),
-                                Positioned(
-                                  top: 4,
-                                  right: 4,
-                                  child: GestureDetector(
-                                    onTap: () => _removeAttachment(index),
-                                    child: Container(
-                                        padding: EdgeInsets.all(4),
-                                        decoration: BoxDecoration(
-                                            color: Colors.black.withOpacity(0.5),
-                                            shape: BoxShape.circle
-                                        ),
-                                        child: Icon(Icons.close, size: 12, color: Colors.white)
-                                    ),
-                                  ),
-                                )
-                              ],
-                            );
-                          }),
-                        ],
-                      ),
+                      // Text('Attachments', style: ThemeUtils.bodyMedium(context).copyWith(fontWeight: FontWeight.w600)),
+                      // SizedBox(height: 8),
+                      // Wrap(
+                      //   spacing: 8,
+                      //   runSpacing: 8,
+                      //   children: [
+                      //     GestureDetector(
+                      //       onTap: _addAttachment,
+                      //       child: Container(
+                      //         width: 80,
+                      //         height: 80,
+                      //         decoration: BoxDecoration(
+                      //           color: ThemeUtils.backgroundSolid(context),
+                      //           borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+                      //           border: Border.all(color: ThemeUtils.secondary(context).withOpacity(0.3), style: BorderStyle.solid),
+                      //         ),
+                      //         child: Column(
+                      //           mainAxisAlignment: MainAxisAlignment.center,
+                      //           children: [
+                      //             Icon(Icons.add, color: ThemeUtils.textSecondary(context)),
+                      //             SizedBox(height: 4),
+                      //             Text('Add', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context))),
+                      //           ],
+                      //         ),
+                      //       ),
+                      //     ),
+                      //     ..._attachments.asMap().entries.map((entry) {
+                      //       final index = entry.key;
+                      //       final file = entry.value;
+                      //       return Stack(
+                      //         children: [
+                      //           Container(
+                      //               width: 80,
+                      //               height: 80,
+                      //               decoration: BoxDecoration(
+                      //                   borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+                      //                   image: DecorationImage(
+                      //                       image: FileImage(file),
+                      //                       fit: BoxFit.cover
+                      //                   )
+                      //               )
+                      //           ),
+                      //           Positioned(
+                      //             top: 4,
+                      //             right: 4,
+                      //             child: GestureDetector(
+                      //               onTap: () => _removeAttachment(index),
+                      //               child: Container(
+                      //                   padding: EdgeInsets.all(4),
+                      //                   decoration: BoxDecoration(
+                      //                       color: Colors.black.withOpacity(0.5),
+                      //                       shape: BoxShape.circle
+                      //                   ),
+                      //                   child: Icon(Icons.close, size: 12, color: Colors.white)
+                      //               ),
+                      //             ),
+                      //           )
+                      //         ],
+                      //       );
+                      //     }),
+                      //   ],
+                      // ),
                       if (_attachments.isNotEmpty) ...[
                         SizedBox(height: 8),
                         Text('${_attachments.length} file${_attachments.length == 1 ? '' : 's'} attached', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context))),

@@ -23,6 +23,7 @@ import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../customerBase/customer_base.dart';
+import '../expense_management.dart';
 import '../orderBase/order_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../product_selling/product_selling_base.dart';
@@ -1187,6 +1188,7 @@ class EnhancedPOSService {
 }
 
 class MainNavScreen extends StatefulWidget {
+
   const MainNavScreen({super.key});
 
   @override
@@ -1205,6 +1207,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
   final List<Widget> _clientAdminScreens = [];
   final List<Widget> _clientSalesManagerScreens = [];
   final List<Widget> _clientCashierScreens = [];
+  AnalyticsService _analyticsService = AnalyticsService();
 
   @override
   void initState() {
@@ -1215,11 +1218,13 @@ class _MainNavScreenState extends State<MainNavScreen> {
   Future<void> _initializeApp() async {
     final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
     final tenantId = authProvider.currentUser?.tenantId;
+    _analyticsService = AnalyticsService();
 
     if (tenantId != null && tenantId != 'super_admin') {
       _posService.setTenantContext(tenantId);
       print('Tenant context set: $tenantId'); // Add this for debugging
     }
+    _analyticsService.setTenantId(tenantId!); // Make sure AnalyticsService has this method
 
     _posService.initialize();
     await _cartManager.initialize();
@@ -1262,7 +1267,9 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ClientTicketsScreen(),
 
       ProfileScreen(),
-      ModernCustomerManagementScreen(posService: _posService)
+      ModernCustomerManagementScreen(posService: _posService),
+      ExpenseManagementScreen(analyticsService: _analyticsService), // Add this line
+
     ]);
     setState(() {});
 
@@ -1281,7 +1288,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ClientTicketsScreen(),
 
       ProfileScreen(),
-      ModernCustomerManagementScreen(posService: _posService)
+      ModernCustomerManagementScreen(posService: _posService),
+      ExpenseManagementScreen(analyticsService: _analyticsService), // Add this line
+
+
 
     ]);
     setState(() {});
@@ -1774,119 +1784,398 @@ class _MainNavScreenState extends State<MainNavScreen> {
   // More menu dialog
 // More menu dialog
   void _showMoreMenu(BuildContext context, MyAuthProvider authProvider) {
+    final user = authProvider.currentUser;
+
+    // Define menu sections based on user roles
+    final List<MenuSection> menuSections = [
+      // Core Features - Available to all users
+      MenuSection(
+        title: 'Core Features',
+        items: [
+          MenuItem(
+            icon: Icons.person_outline,
+            title: 'Profile',
+            description: 'Manage your account settings',
+            color: Colors.blue,
+            index: 10,
+          ),
+          MenuItem(
+            icon: Icons.assignment_return_outlined,
+            title: 'Returns',
+            description: 'Process product returns',
+            color: Colors.orange,
+            index: 6,
+          ),
+          MenuItem(
+            icon: Icons.group_outlined,
+            title: 'Customers',
+            description: 'Manage customer database',
+            color: Colors.teal,
+            index: 11,
+          ),
+          MenuItem(
+            icon: Icons.report_problem_outlined,
+            title: 'Support Tickets',
+            description: 'Get technical assistance',
+            color: Colors.red,
+            index: 9,
+          ),
+        ],
+      ),
+
+      // Business Management - Admin & Sales Manager
+      if (user!.canManageUsers || user.canManageProducts)
+        MenuSection(
+          title: 'Business Management',
+          items: [
+            if (user.canManageUsers || user.canManageProducts)
+              MenuItem(
+                icon: Icons.receipt_long_outlined,
+                title: 'Expense Management',
+                description: 'Track business expenses',
+                color: Colors.purple,
+                index: 12,
+              ),
+            if (user.canManageProducts || user.canManageUsers)
+              MenuItem(
+                icon: Icons.inventory_2_outlined,
+                title: 'Inventory',
+                description: 'Manage product stock',
+                color: Colors.green,
+                index: 4,
+              ),
+            if (user.canManageProducts || user.canManageUsers)
+              MenuItem(
+                icon: Icons.category_outlined,
+                title: 'Categories',
+                description: 'Organize product categories',
+                color: Colors.indigo,
+                index: 5,
+              ),
+          ],
+        ),
+
+      // Administration - Admin only
+      if (user.canManageUsers)
+        MenuSection(
+          title: 'Administration',
+          items: [
+            MenuItem(
+              icon: Icons.people_outline,
+              title: 'Users',
+              description: 'Manage team members',
+              color: Colors.deepOrange,
+              index: 8,
+            ),
+            MenuItem(
+              icon: Icons.settings_outlined,
+              title: 'Settings',
+              description: 'System configuration',
+              color: Colors.grey,
+              index: 7,
+            ),
+          ],
+        ),
+    ];
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(Icons.person),
-                title: Text('Profile'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(
-                        () => _currentIndex =
-                    authProvider.currentUser!.canManageUsers ? 10 : 10,
-                  );
-                  // Navigate to profile screen
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.assignment_return_outlined),
-                title: Text('Returns'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(
-                        () => _currentIndex =
-                    authProvider.currentUser!.canManageUsers ? 6 : 6,
-                  );
-                  // Navigate to returns screen
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.group),
-                title: Text('Manage Customers'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(
-                        () => _currentIndex =
-                    authProvider.currentUser!.canManageUsers ? 11 : 11,
-                  );
-                  // Navigate to profile screen
-                },
-              ),
-              if (authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.people),
-                  title: Text('Users'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 8 : 7,
-                    );
-                    // Navigate to users screen
-                  },
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.85,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                ThemeUtils.surface(context),
+                ThemeUtils.surface(context).withOpacity(0.95),
+              ],
+            ),
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(32),
+              topRight: Radius.circular(32),
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Header with blur effect
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(32),
+                      topRight: Radius.circular(32),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'More Options',
+                              style: ThemeUtils.headlineMedium(context)?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 24,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Quick access to all features',
+                              style: ThemeUtils.bodySmall(context)?.copyWith(
+                                color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                              ),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ThemeUtils.primary(context)!.withOpacity(0.1),
+                          ),
+                          child: IconButton(
+                            icon: Icon(Icons.close_rounded,
+                                color: ThemeUtils.primary(context)),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
-              ListTile(
-                leading: Icon(Icons.report_problem),
-                title: Text('Ticket'),
-                onTap: () {
-                  Navigator.pop(context);
-                  setState(
-                        () => _currentIndex =
-                    authProvider.currentUser!.canManageUsers ? 9 : 9,
-                  );
-                  // Navigate to profile screen
-                },
-              ),
-              if (authProvider.currentUser!.canManageProducts ||
-                  authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.inventory_2_outlined),
-                  title: Text('Manage Inventory'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 4 : 4,
-                    );
-                    // Navigate to manage screen
-                  },
+
+                // User info card
+                Container(
+                  margin: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        ThemeUtils.primary(context)!.withOpacity(0.1),
+                        ThemeUtils.primary(context)!.withOpacity(0.05),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: ThemeUtils.primary(context)!.withOpacity(0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 50,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: ThemeUtils.accent(context),
+                          ),
+                        ),
+                        child: Icon(Icons.person, color: Colors.white),
+                      ),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              user.displayName ?? 'User',
+                              style: ThemeUtils.bodyLarge(context)?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              _getUserRole(user),
+                              style: ThemeUtils.bodySmall(context)?.copyWith(
+                                color: ThemeUtils.primary(context),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _isOnline ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _isOnline ? Colors.green.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _isOnline ? Colors.green : Colors.orange,
+                              ),
+                            ),
+                            SizedBox(width: 6),
+                            Text(
+                              _isOnline ? 'Online' : 'Offline',
+                              style: ThemeUtils.bodySmall(context)?.copyWith(
+                                color: _isOnline ? Colors.green : Colors.orange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              if (authProvider.currentUser!.canManageProducts ||
-                  authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.inventory_2_outlined),
-                  title: Text('Product Category'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 5 : 5,
-                    );
-                    // Navigate to manage screen
-                  },
+
+                // Menu sections
+                Expanded(
+                  child: CustomScrollView(
+                    slivers: [
+                      // Quick Actions
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Text(
+                            'Quick Actions',
+                            style: ThemeUtils.bodyLarge(context)?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: ThemeUtils.textSecondary(context),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Quick action chips
+                      SliverToBoxAdapter(
+                        child: Container(
+                          height: 80,
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            children: [
+                              _buildQuickActionChip(
+                                context,
+                                icon: Icons.qr_code_scanner,
+                                label: 'Scan',
+                                onTap: () => _handleQuickAction('scan'),
+                              ),
+                              _buildQuickActionChip(
+                                context,
+                                icon: Icons.receipt,
+                                label: 'Invoices',
+                                onTap: () => _handleQuickAction('invoices'),
+                              ),
+                              _buildQuickActionChip(
+                                context,
+                                icon: Icons.analytics,
+                                label: 'Reports',
+                                onTap: () => _handleQuickAction('reports'),
+                              ),
+                              _buildQuickActionChip(
+                                context,
+                                icon: Icons.sync,
+                                label: 'Sync',
+                                onTap: _manualSync,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Main menu sections
+                      ...menuSections.map((section) => SliverList(
+                        delegate: SliverChildListDelegate([
+                          SizedBox(height: 16),
+                          Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 16),
+                            child: Text(
+                              section.title,
+                              style: ThemeUtils.bodyLarge(context)?.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: ThemeUtils.textSecondary(context),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          ...section.items.map((item) => _buildModernMenuItem(
+                            context,
+                            item: item,
+                            onTap: () {
+                              Navigator.pop(context);
+                              setState(() => _currentIndex = item.index);
+                            },
+                          )),
+                        ]),
+                      )),
+
+                      // Bottom spacing
+                      SliverToBoxAdapter(
+                        child: SizedBox(height: 30),
+                      ),
+                    ],
+                  ),
                 ),
-              if (authProvider.currentUser!.canManageUsers)
-                ListTile(
-                  leading: Icon(Icons.settings_outlined),
-                  title: Text('Settings'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(
-                          () => _currentIndex =
-                      authProvider.currentUser!.canManageUsers ? 7 : 6,
-                    );
-                    // Navigate to settings screen
-                  },
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+// Helper method to build consistent menu items
+  Widget _buildMoreMenuItem(
+      BuildContext context, {
+        required IconData icon,
+        required String title,
+        String? subtitle,
+        required VoidCallback onTap,
+      }) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: ThemeUtils.card(context)[0],
+        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+      ),
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: ThemeUtils.primary(context)!.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+          ),
+          child: Icon(icon, color: ThemeUtils.primary(context), size: 20),
+        ),
+        title: Text(
+          title,
+          style: ThemeUtils.bodyLarge(context)?.copyWith(
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        subtitle: subtitle != null ? Text(
+          subtitle,
+          style: ThemeUtils.bodySmall(context)?.copyWith(
+            color: ThemeUtils.textSecondary(context),
+          ),
+        ) : null,
+        trailing: Icon(
+          Icons.arrow_forward_ios_rounded,
+          size: 16,
+          color: ThemeUtils.textSecondary(context),
+        ),
+        onTap: onTap,
+        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+      ),
     );
   }
   @override
@@ -1894,5 +2183,174 @@ class _MainNavScreenState extends State<MainNavScreen> {
     _posService.dispose();
     _cartManager.dispose();
     super.dispose();
+  }
+}
+// Supporting classes and methods
+class MenuSection {
+  final String title;
+  final List<MenuItem> items;
+
+  MenuSection({required this.title, required this.items});
+}
+
+class MenuItem {
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color color;
+  final int index;
+
+  MenuItem({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.color,
+    required this.index,
+  });
+}
+
+String _getUserRole(AppUser user) {
+  if (user.canManageUsers) return 'Administrator';
+  if (user.canManageProducts) return 'Sales Manager';
+  return 'Cashier';
+}
+
+Widget _buildModernMenuItem(
+    BuildContext context, {
+      required MenuItem item,
+      required VoidCallback onTap,
+    }) {
+  return Container(
+    margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: ThemeUtils.card(context)[0].withOpacity(0.5),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: ThemeUtils.card(context)[1].withOpacity(0.1),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Icon with gradient background
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      item.color.withOpacity(0.2),
+                      item.color.withOpacity(0.1),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  item.icon,
+                  color: item.color,
+                  size: 24,
+                ),
+              ),
+              SizedBox(width: 16),
+
+              // Text content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      style: ThemeUtils.bodyLarge(context)?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      item.description,
+                      style: ThemeUtils.bodySmall(context)?.copyWith(
+                        color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Chevron icon
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: ThemeUtils.textSecondary(context).withOpacity(0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildQuickActionChip(
+    BuildContext context, {
+      required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+    }) {
+  return Container(
+    margin: EdgeInsets.only(right: 12),
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: ThemeUtils.primary(context)!.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: ThemeUtils.primary(context)!.withOpacity(0.2),
+            ),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: ThemeUtils.primary(context),
+              ),
+              SizedBox(height: 6),
+              Text(
+                label,
+                style: ThemeUtils.bodySmall(context)?.copyWith(
+                  color: ThemeUtils.primary(context),
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+void _handleQuickAction(String action) {
+  switch (action) {
+    case 'scan':
+    // Implement scan functionality
+      break;
+    case 'invoices':
+    // Implement invoices functionality
+      break;
+    case 'reports':
+    // Implement reports functionality
+      break;
   }
 }

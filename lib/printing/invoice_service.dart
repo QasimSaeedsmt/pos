@@ -294,19 +294,26 @@ class InvoiceService {
       child: pw.Column(
         children: [
           _buildTotalLine('Subtotal', invoice.subtotal),
+
           if (hasEnhanced)
             ..._buildIndependentDiscounts(invoice, allDiscounts)
           else
             if (invoice.discountAmount > 0)
               _buildDiscountLine('Discount', invoice.discountAmount),
+
           if (hasEnhanced)
             _buildTotalLine('Net Amount', invoice.netAmount, isEmphasized: true),
+
+          // ALWAYS SHOW TAX - FIXED
           if (invoice.taxAmount > 0)
             _buildTotalLine('Tax', invoice.taxAmount),
+
           if (hasEnhanced && invoice.showShipping && invoice.shippingAmount > 0)
             _buildTotalLine('Shipping', invoice.shippingAmount),
+
           if (hasEnhanced && invoice.showTip && invoice.tipAmount > 0)
             _buildTotalLine('Tip', invoice.tipAmount),
+
           pw.Container(
             width: double.infinity,
             margin: pw.EdgeInsets.symmetric(vertical: 2),
@@ -318,6 +325,7 @@ class InvoiceService {
             ),
             height: 2,
           ),
+
           pw.Container(
             width: double.infinity,
             padding: pw.EdgeInsets.symmetric(vertical: 4),
@@ -343,6 +351,7 @@ class InvoiceService {
               ],
             ),
           ),
+
           if (invoice.totalSavings > 0)
             pw.Container(
               width: double.infinity,
@@ -375,27 +384,20 @@ class InvoiceService {
                       ),
                     ],
                   ),
-                  if (hasEnhanced && allDiscounts.isNotEmpty)
-                    pw.Container(
-                      margin: pw.EdgeInsets.only(top: 2),
-                      child: pw.Column(
-                        children: allDiscounts.entries
-                            .where((entry) => entry.value > 0)
-                            .map((entry) => pw.Row(
-                          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                          children: [
-                            pw.Text(
-                              _getDiscountLabel(entry.key),
-                              style: pw.TextStyle(fontSize: 6, color: PdfColors.green),
-                            ),
-                            pw.Text(
-                              '-${Constants.CURRENCY_NAME}${entry.value.toStringAsFixed(2)}',
-                              style: pw.TextStyle(fontSize: 6, color: PdfColors.green),
-                            ),
-                          ],
-                        ))
-                            .toList(),
-                      ),
+                  // Add tax to savings breakdown if applicable
+                  if (invoice.taxAmount > 0)
+                    pw.Row(
+                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                      children: [
+                        pw.Text(
+                          'Tax Included:',
+                          style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+                        ),
+                        pw.Text(
+                          '${Constants.CURRENCY_NAME}${invoice.taxAmount.toStringAsFixed(2)}',
+                          style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700),
+                        ),
+                      ],
                     ),
                 ],
               ),
@@ -404,7 +406,6 @@ class InvoiceService {
       ),
     );
   }
-
   List<pw.Widget> _buildIndependentDiscounts(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 
@@ -858,22 +859,30 @@ For returns or inquiries, present this QR code
                 child: pw.Column(
                   children: [
                     _enhancedTotalRow('Gross Amount', invoice.subtotal, isHeader: true),
+
                     if (hasEnhanced)
                       ..._buildEnhancedDiscountBreakdown(invoice, allDiscounts)
                     else
                       if (invoice.discountAmount > 0)
                         _enhancedTotalRow('Discount', -invoice.discountAmount, isDiscount: true),
+
                     if (hasEnhanced)
                       _enhancedTotalRow('NET AMOUNT', invoice.netAmount, isNetAmount: true),
+
+                    // ALWAYS SHOW TAX - FIXED
                     if (invoice.taxAmount > 0)
                       _enhancedTotalRow('Tax', invoice.taxAmount),
+
                     if (hasEnhanced && invoice.showShipping)
                       _enhancedTotalRow('Shipping', invoice.shippingAmount),
+
                     if (hasEnhanced && invoice.showTip)
                       _enhancedTotalRow('Tip', invoice.tipAmount),
+
                     pw.Divider(thickness: 2),
                     _enhancedTotalRow('FINAL TOTAL', invoice.totalAmount, isTotal: true),
-                    if (invoice.totalSavings > 0)
+
+                    if (invoice.totalSavings > 0 || invoice.taxAmount > 0)
                       pw.Container(
                         margin: pw.EdgeInsets.only(top: 8),
                         padding: pw.EdgeInsets.all(12),
@@ -883,15 +892,32 @@ For returns or inquiries, present this QR code
                         ),
                         child: pw.Column(
                           children: [
-                            pw.Row(
-                              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                              children: [
-                                pw.Text('TOTAL SAVINGS:',
-                                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
-                                pw.Text('-${Constants.CURRENCY_NAME}${invoice.totalSavings.toStringAsFixed(2)}',
-                                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
-                              ],
-                            ),
+                            if (invoice.totalSavings > 0)
+                              pw.Row(
+                                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                                children: [
+                                  pw.Text('TOTAL SAVINGS:',
+                                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
+                                  pw.Text('-${Constants.CURRENCY_NAME}${invoice.totalSavings.toStringAsFixed(2)}',
+                                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
+                                ],
+                              ),
+
+                            // Always show tax breakdown
+                            if (invoice.taxAmount > 0)
+                              pw.Padding(
+                                padding: pw.EdgeInsets.only(top: 8),
+                                child: pw.Row(
+                                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    pw.Text('Tax Applied:',
+                                        style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                                    pw.Text('${Constants.CURRENCY_NAME}${invoice.taxAmount.toStringAsFixed(2)}',
+                                        style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700)),
+                                  ],
+                                ),
+                              ),
+
                             if (hasEnhanced && allDiscounts.isNotEmpty)
                               pw.Container(
                                 margin: pw.EdgeInsets.only(top: 8),
@@ -932,7 +958,6 @@ For returns or inquiries, present this QR code
       ),
     );
   }
-
   List<pw.Widget> _buildEnhancedDiscountBreakdown(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 

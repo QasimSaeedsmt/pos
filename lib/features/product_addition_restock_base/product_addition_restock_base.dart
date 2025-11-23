@@ -1294,77 +1294,77 @@ class _AddProductScreenState extends State<AddProductScreen> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
         ),
         SizedBox(height: 8),
-        GestureDetector(
-          onTap: _pickImages,
-          child: Container(
-            height: 200,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: _selectedImages.isEmpty
-                ? Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.add_photo_alternate,
-                  size: 50,
-                  color: Colors.grey,
-                ),
-                Text('Tap to add product images'),
-                SizedBox(height: 4),
-                Text(
-                  'Max 5 images',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
-                ),
-              ],
-            )
-                : Stack(
-              children: [
-                PageView.builder(
-                  itemCount: _selectedImages.length,
-                  itemBuilder: (context, index) {
-                    return Stack(
-                      children: [
-                        Image.file(
-                          File(_selectedImages[index].path),
-                          fit: BoxFit.cover,
-                        ),
-                        Positioned(
-                          top: 8,
-                          right: 8,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.black54,
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              icon: Icon(
-                                Icons.close,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              onPressed: () => _removeImage(index),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-                if (_selectedImages.length < 5)
-                  Positioned(
-                    bottom: 8,
-                    right: 8,
-                    child: FloatingActionButton.small(
-                      onPressed: _pickImages,
-                      child: Icon(Icons.add),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
+        // GestureDetector(
+        //   onTap: _pickImages,
+        //   child: Container(
+        //     height: 200,
+        //     decoration: BoxDecoration(
+        //       border: Border.all(color: Colors.grey),
+        //       borderRadius: BorderRadius.circular(8),
+        //     ),
+        //     child: _selectedImages.isEmpty
+        //         ? Column(
+        //       mainAxisAlignment: MainAxisAlignment.center,
+        //       children: [
+        //         Icon(
+        //           Icons.add_photo_alternate,
+        //           size: 50,
+        //           color: Colors.grey,
+        //         ),
+        //         Text('Tap to add product images'),
+        //         SizedBox(height: 4),
+        //         Text(
+        //           'Max 5 images',
+        //           style: TextStyle(fontSize: 12, color: Colors.grey),
+        //         ),
+        //       ],
+        //     )
+        //         : Stack(
+        //       children: [
+        //         PageView.builder(
+        //           itemCount: _selectedImages.length,
+        //           itemBuilder: (context, index) {
+        //             return Stack(
+        //               children: [
+        //                 Image.file(
+        //                   File(_selectedImages[index].path),
+        //                   fit: BoxFit.cover,
+        //                 ),
+        //                 Positioned(
+        //                   top: 8,
+        //                   right: 8,
+        //                   child: Container(
+        //                     decoration: BoxDecoration(
+        //                       color: Colors.black54,
+        //                       shape: BoxShape.circle,
+        //                     ),
+        //                     child: IconButton(
+        //                       icon: Icon(
+        //                         Icons.close,
+        //                         color: Colors.white,
+        //                         size: 20,
+        //                       ),
+        //                       onPressed: () => _removeImage(index),
+        //                     ),
+        //                   ),
+        //                 ),
+        //               ],
+        //             );
+        //           },
+        //         ),
+        //         if (_selectedImages.length < 5)
+        //           Positioned(
+        //             bottom: 8,
+        //             right: 8,
+        //             child: FloatingActionButton.small(
+        //               onPressed: _pickImages,
+        //               child: Icon(Icons.add),
+        //             ),
+        //           ),
+        //       ],
+        //     ),
+        //   ),
+        // ),
         if (_selectedImages.isNotEmpty)
           Padding(
             padding: EdgeInsets.only(top: 8),

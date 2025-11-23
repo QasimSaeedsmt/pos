@@ -106,18 +106,39 @@ class DiscountCalculator {
     final discounts = calculateAllDiscounts(invoice);
     final totalSavings = calculateTotalSavings(invoice);
     final netAmount = calculateNetAmount(invoice);
+    final taxRate = (invoice.invoiceSettings['taxRate'] as num?)?.toDouble() ?? 0.0;
 
     return {
       'gross_amount': invoice.subtotal,
       'total_savings': totalSavings,
       'net_amount': netAmount,
       'tax_amount': invoice.taxAmount,
+      'tax_rate': taxRate,
       'shipping_amount': invoice.shippingAmount,
       'tip_amount': invoice.tipAmount,
       'final_total': invoice.totalAmount,
       'discount_breakdown': discounts,
       'has_enhanced_pricing': invoice.hasEnhancedPricing,
     };
+  }
+
+  static double calculateTaxAmount(Invoice invoice) {
+    if (invoice.hasEnhancedPricing) {
+      final netAmount = calculateNetAmount(invoice);
+      final taxRate = (invoice.invoiceSettings['taxRate'] as num?)?.toDouble() ?? 0.0;
+      return netAmount * taxRate / 100;
+    } else {
+      return invoice.taxAmount;
+    }
+  }
+
+  static double calculateFinalTotal(Invoice invoice) {
+    final netAmount = calculateNetAmount(invoice);
+    final taxAmount = calculateTaxAmount(invoice);
+    final shipping = invoice.shippingAmount;
+    final tip = invoice.tipAmount;
+
+    return netAmount + taxAmount + shipping + tip;
   }
 }
 

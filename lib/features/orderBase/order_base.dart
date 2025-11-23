@@ -78,13 +78,13 @@ class AppOrder {
       // Add additional fields that might be stored in your Firestore orders
       'subtotal': _calculateSubtotal(),
       'totalDiscount': _calculateTotalDiscount(),
-      'itemDiscounts': _calculateItemDiscounts(),
-      'cartDiscount': _calculateCartDiscount(),
-      'additionalDiscount': _calculateAdditionalDiscount(),
-      'taxAmount': _calculateTaxAmount(),
-      'shippingAmount': _calculateShippingAmount(),
-      'tipAmount': _calculateTipAmount(),
-      'taxableAmount': _calculateTaxableAmount(),
+      'itemDiscounts': calculateItemDiscounts(),
+      'cartDiscount': calculateCartDiscount(),
+      'additionalDiscount': calculateAdditionalDiscount(),
+      'taxAmount': calculateTaxAmount(),
+      'shippingAmount': calculateShippingAmount(),
+      'tipAmount': calculateTipAmount(),
+      'taxableAmount': calculateTaxableAmount(),
       'paymentMethod': _getPaymentMethod(),
     };
   }
@@ -122,7 +122,7 @@ class AppOrder {
     return totalDiscount;
   }
 
-  double _calculateItemDiscounts() {
+  double calculateItemDiscounts() {
     double itemDiscounts = 0.0;
     for (var item in lineItems) {
       if (item is Map<String, dynamic>) {
@@ -133,19 +133,19 @@ class AppOrder {
     return itemDiscounts;
   }
 
-  double _calculateCartDiscount() {
+  double calculateCartDiscount() {
     // This would return cart-level discounts
     // You might need to store this separately in your order data
     return 0.0; // Replace with actual cart discount calculation
   }
 
-  double _calculateAdditionalDiscount() {
+  double calculateAdditionalDiscount() {
     // This would return additional discounts applied at checkout
     // You might need to store this separately in your order data
     return 0.0; // Replace with actual additional discount calculation
   }
 
-  double _calculateTaxAmount() {
+  double calculateTaxAmount() {
     // Calculate tax amount based on your business logic
     // This might be stored separately or calculated from taxable amount and tax rate
     final subtotal = _calculateSubtotal();
@@ -157,17 +157,17 @@ class AppOrder {
     return taxableAmount * taxRate;
   }
 
-  double _calculateShippingAmount() {
+  double calculateShippingAmount() {
     // Return shipping amount if stored in order data
     return 0.0; // Replace with actual shipping amount
   }
 
-  double _calculateTipAmount() {
+  double calculateTipAmount() {
     // Return tip amount if stored in order data
     return 0.0; // Replace with actual tip amount
   }
 
-  double _calculateTaxableAmount() {
+  double calculateTaxableAmount() {
     final subtotal = _calculateSubtotal();
     final discounts = _calculateTotalDiscount();
     return subtotal - discounts;

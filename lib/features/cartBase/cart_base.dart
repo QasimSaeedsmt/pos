@@ -662,10 +662,21 @@ class EnhancedCartManager {
     await _localDb.saveCartItems(_items);
     _notifyListeners();
   }
+  void clearAllDiscounts() {
+    // Clear item-level discounts
+    for (final item in _items) {
+      item.manualDiscount = null;
+      item.manualDiscountPercent = null;
+    }
 
+    // Clear cart-level discounts
+    _cartDiscount = 0.0;
+    _cartDiscountPercent = 0.0;
+  }
   Future<void> clearCart() async {
     _items.clear();
     await _localDb.clearCart();
+    clearAllDiscounts();
     _notifyListeners();
   }
 

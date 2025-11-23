@@ -44,9 +44,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   // Payment methods
   final List<String> _paymentMethods = [
     'cash',
-    'card',
-    'mobile_money',
-    'credit',
+    'easypaisa/bank transfer',
+
   ];
   String _selectedPaymentMethod = 'cash';
 
@@ -791,12 +790,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     switch (method) {
       case 'cash':
         return 'Cash';
-      case 'card':
-        return 'Credit Card';
-      case 'mobile_money':
-        return 'Mobile Money';
-      case 'credit':
-        return 'Store Credit';
+      case 'easypaisa/bank transfer':
+        return         'easypaisa/bank transfer'
+    ;
+
       default:
         return method;
     }

@@ -202,33 +202,35 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Business Information Section
-            _buildSectionHeader('Business Information', Icons.business),
-            _buildBusinessInfoSection(),
-            SizedBox(height: 24),
-
-            // Invoice Settings Section
-            _buildSectionHeader('Invoice Settings', Icons.receipt),
-            _buildInvoiceSettingsSection(),
-            SizedBox(height: 24),
-
-            // Printer Settings Section
-            _buildSectionHeader('Printing Settings', Icons.print),
-            _buildPrinterSettingsSection(),
-            SizedBox(height: 24),
-
-            // Preview and Test Section
-            _buildSectionHeader('Preview & Test', Icons.visibility),
-            _buildPreviewSection(),
-            SizedBox(height: 32),
-
-            // Save Button
-            _buildSaveButton(),
-          ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Business Information Section
+              _buildSectionHeader('Business Information', Icons.business),
+              _buildBusinessInfoSection(),
+              SizedBox(height: 24),
+        
+              // Invoice Settings Section
+              _buildSectionHeader('Invoice Settings', Icons.receipt),
+              _buildInvoiceSettingsSection(),
+              SizedBox(height: 24),
+        
+              // Printer Settings Section
+              _buildSectionHeader('Printing Settings', Icons.print),
+              _buildPrinterSettingsSection(),
+              SizedBox(height: 24),
+        
+              // Preview and Test Section
+              _buildSectionHeader('Preview & Test', Icons.visibility),
+              _buildPreviewSection(),
+              SizedBox(height: 32),
+        
+              // Save Button
+              _buildSaveButton(),
+            ],
+          ),
         ),
       ),
     );
