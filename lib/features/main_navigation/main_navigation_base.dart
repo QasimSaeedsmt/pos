@@ -22,6 +22,12 @@ import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../connectivityBase/local_db_base.dart';
+import '../credit/credit collection_screen.dart';
+import '../credit/credit_analytics_screen.dart';
+import '../credit/credit_management_screen.dart';
+import '../credit/credit_recovery_screen.dart';
+import '../credit/credit_sale_model.dart';
+import '../credit/credit_service.dart';
 import '../customerBase/customer_base.dart';
 import '../expense_management.dart';
 import '../orderBase/order_base.dart';
@@ -128,6 +134,8 @@ class NavigationService {
 class EnhancedPOSService {
   final FirestoreServices _firestore = FirestoreServices();
 
+  // Enhanced category methods with complete integration
+  // Enhanced category methods with complete integration
   // Enhanced category methods with complete integration
   Future<List<Category>> getCategories() async {
     try {
@@ -427,11 +435,14 @@ class EnhancedPOSService {
 
 // In EnhancedPOSService class - ADD this method
 // In EnhancedPOSService class - UPDATE the createOrderWithEnhancedData method
+
+// In your EnhancedPOSService, update the order creation method
   Future<OrderCreationResult> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
         Map<String, dynamic>? additionalData,
-        EnhancedCartManager? cartManager, // Optional cart manager for discount data
+        EnhancedCartManager? cartManager,
+        CreditSaleData? creditSaleData, // Add this parameter
       }) async {
     try {
       if (_isOnline) {
@@ -462,6 +473,19 @@ class EnhancedPOSService {
         enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
         enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
 
+        // Add credit sale data if provided
+        if (creditSaleData != null) {
+          enhancedData['creditSaleData'] = creditSaleData.toMap();
+
+          // Update customer credit balance if this is a credit sale
+          if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+            await _updateCustomerCreditBalance(
+              customerSelection.customer!,
+              creditSaleData,
+            );
+          }
+        }
+
         final order = await _firestore.createOrderWithEnhancedData(
           cartItems,
           customerSelection,
@@ -470,34 +494,42 @@ class EnhancedPOSService {
 
         return OrderCreationResult.success(order);
       } else {
-        // Use existing offline method which already handles enhanced data
+        // Enhanced offline order creation with credit support
         return await _createOfflineOrderWithCustomer(
           cartItems,
           customerSelection,
           additionalData: additionalData,
+          creditSaleData: creditSaleData, // Pass credit data
         );
       }
     } catch (e) {
       print('Enhanced order creation failed: $e');
-
-      // Fallback to basic order creation
-      try {
-        if (_isOnline) {
-          final order = await _firestore.createOrderWithCustomer(cartItems, customerSelection);
-          return OrderCreationResult.success(order);
-        } else {
-          return await _createOfflineOrderWithCustomer(
-            cartItems,
-            customerSelection,
-            additionalData: additionalData,
-          );
-        }
-      } catch (fallbackError) {
-        print('Fallback order creation also failed: $fallbackError');
-        return OrderCreationResult.error('Failed to create order: $fallbackError');
-      }
+      return OrderCreationResult.error('Failed to create order: $e');
     }
   }
+
+// Add this method to update customer credit
+  Future<void> _updateCustomerCreditBalance(
+      Customer customer,
+      CreditSaleData creditSaleData,
+      ) async {
+    try {
+      final newBalance = customer.currentBalance + creditSaleData.creditAmount;
+      final updatedCustomer = customer.copyWithCredit(
+        currentBalance: newBalance,
+        totalCreditGiven: customer.totalCreditGiven + creditSaleData.creditAmount,
+        lastCreditDate: DateTime.now(),
+      );
+
+      await updateCustomer(updatedCustomer);
+    } catch (e) {
+      print('Error updating customer credit balance: $e');
+      throw Exception('Failed to update customer credit: $e');
+    }
+  }
+
+
+
 // Update the existing createOrderWithCustomer to use enhanced data
   Future<OrderCreationResult> createOrderWithCustomer(
       List<CartItem> cartItems,
@@ -511,10 +543,12 @@ class EnhancedPOSService {
       additionalData: additionalData,
     );
   }
+// In EnhancedPOSService - update the _createOfflineOrderWithCustomer method
   Future<OrderCreationResult> _createOfflineOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
         Map<String, dynamic>? additionalData,
+        CreditSaleData? creditSaleData, // ADD THIS PARAMETER
       }) async {
     try {
       // Update local stock quantities
@@ -527,13 +561,22 @@ class EnhancedPOSService {
         customerSelection,
         additionalData: additionalData,
       );
+
+      // Handle credit sale data if provided
+      if (creditSaleData != null && creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+        // Update local customer credit balance
+        await _updateCustomerCreditBalance(
+          customerSelection.customer!,
+          creditSaleData,
+        );
+      }
+
       await _localDb.clearCart();
       return OrderCreationResult.offline(pendingOrderId);
     } catch (e) {
       return OrderCreationResult.error('Failed to save order locally: $e');
     }
   }
-
   // Get invoice settings
   Future<Map<String, dynamic>> getInvoiceSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -1196,6 +1239,7 @@ class MainNavScreen extends StatefulWidget {
 }
 
 class _MainNavScreenState extends State<MainNavScreen> {
+  final CreditService _creditService = CreditService();
   int _currentIndex = 0;
   final EnhancedCartManager _cartManager = EnhancedCartManager();
   final EnhancedPOSService _posService = EnhancedPOSService();
@@ -1208,6 +1252,44 @@ class _MainNavScreenState extends State<MainNavScreen> {
   final List<Widget> _clientSalesManagerScreens = [];
   final List<Widget> _clientCashierScreens = [];
   AnalyticsService _analyticsService = AnalyticsService();
+  final GlobalKey<LiquidPullToRefreshState> _refreshIndicatorKey = GlobalKey<LiquidPullToRefreshState>();
+  bool _isRefreshing = false;
+
+  // FIXED: Proper callback methods
+  void _handleMenuNavigation(int index) {
+    if (mounted) {
+      Navigator.pop(context); // Close the menu
+      setState(() => _currentIndex = index);
+    }
+  }
+
+  void _showSnackBar(String message) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _handleQuickAction(String action) {
+    switch (action) {
+      case 'scan':
+        _showSnackBar('Scan feature coming soon');
+        break;
+      case 'invoices':
+        _showSnackBar('Invoice management coming soon');
+        break;
+      case 'credit':
+        _handleMenuNavigation(13); // Navigate to Credit Management
+        break;
+      case 'reports':
+        _showSnackBar('Reports feature coming soon');
+        break;
+    }
+  }
 
   @override
   void initState() {
@@ -1222,10 +1304,15 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     if (tenantId != null && tenantId != 'super_admin') {
       _posService.setTenantContext(tenantId);
-      print('Tenant context set: $tenantId'); // Add this for debugging
+      _creditService.setTenantId(tenantId);
+      print('Tenant context set: $tenantId');
     }
-    _analyticsService.setTenantId(tenantId!); // Make sure AnalyticsService has this method
 
+    if (tenantId != null) {
+      _analyticsService.setTenantId(tenantId);
+    }
+
+    _initializeScreens(authProvider);
     _posService.initialize();
     await _cartManager.initialize();
 
@@ -1250,185 +1337,80 @@ class _MainNavScreenState extends State<MainNavScreen> {
     });
 
     await _testConnection();
+  }
 
+  void _initializeScreens(MyAuthProvider authProvider) {
+    final user = authProvider.currentUser;
+
+    // Clear existing screens first
+    _clientAdminScreens.clear();
+    _clientSalesManagerScreens.clear();
+    _clientCashierScreens.clear();
+
+    // Admin Screens - Full credit access
     _clientAdminScreens.addAll([
       ModernDashboardScreen(),
-
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
       AnalyticsDashboardScreen(),
       ProductManagementScreen(),
       CategoryManagementScreen(),
-
       ReturnsManagementScreen(),
-
       SettingsScreen(),
       EnhancedUsersScreen(),
       ClientTicketsScreen(),
-
       ProfileScreen(),
       ModernCustomerManagementScreen(posService: _posService),
-      ExpenseManagementScreen(analyticsService: _analyticsService), // Add this line
-
+      ExpenseManagementScreen(analyticsService: _analyticsService),
+      // Credit Management Screens
+      CreditCollectionScreen(creditService: _creditService,),
+      CreditCollectionScreen(
+        creditService: _creditService,
+        // posService: _posService,
+      ),
+      CreditAnalyticsScreen(creditService: _creditService),
     ]);
-    setState(() {});
 
+    // Sales Manager Screens - Limited credit access
     _clientSalesManagerScreens.addAll([
       ModernDashboardScreen(),
-
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
-      // AnalyticsDashboardScreen(),
       ProductManagementScreen(),
       CategoryManagementScreen(),
-
-      ReturnsManagementScreen(), // Add this line
-      // SettingsScreen(),
-      // UsersScreen(),
+      ReturnsManagementScreen(),
       ClientTicketsScreen(),
-
       ProfileScreen(),
       ModernCustomerManagementScreen(posService: _posService),
-      ExpenseManagementScreen(analyticsService: _analyticsService), // Add this line
-
-
-
+      ExpenseManagementScreen(analyticsService: _analyticsService),
+      // Credit Management Screens for Sales Manager
+      CreditCollectionScreen(creditService: _creditService),
+      CreditCollectionScreen(
+        creditService: _creditService,
+        // posService: _posService,
+      ),
     ]);
-    setState(() {});
+
+    // Cashier Screens - Basic credit access
     _clientCashierScreens.addAll([
       ModernDashboardScreen(),
-
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
-
-      // AnalyticsDashboardScreen(),
-      // ProductManagementScreen(),
-      ReturnsManagementScreen(), // Add this line
-      // SettingsScreen(),
-      // UsersScreen(),
+      ReturnsManagementScreen(),
       ClientTicketsScreen(),
-
       ProfileScreen(),
+      // Credit Management for Cashier (view only)
+      CreditCollectionScreen(creditService: _creditService),
     ]);
-    setState(() {});
+
+    if (mounted) {
+      setState(() {});
+    }
   }
-
-  // Customer management methods
-  Future<List<Customer>> searchCustomers(String query) async {
-    return await _firestore.searchCustomers(query);
-  }
-
-  Future<Customer?> getCustomerById(String id) async {
-    return await _firestore.getCustomerById(id);
-  }
-
-  Future<Customer?> getCustomerByEmail(String email) async {
-    return await _firestore.getCustomerByEmail(email);
-  }
-
-  Future<String> addCustomer(Customer customer) async {
-    return await _firestore.addCustomer(customer);
-  }
-
-  Future<void> updateCustomer(Customer customer) async {
-    await _firestore.updateCustomer(customer);
-  }
-
-  // Enhanced order creation
-  // Future<OrderCreationResult> createOrderWithCustomer(
-  //     List<CartItem> cartItems,
-  //     CustomerSelection customerSelection,
-  //     ) async {
-  //   if (_isOnline) {
-  //     try {
-  //       final order = await _firestore.createOrderWithCustomer(
-  //         cartItems,
-  //         customerSelection,
-  //       );
-  //       return OrderCreationResult.success(order);
-  //     } catch (e) {
-  //       print('Online order creation failed, saving locally: $e');
-  //       return await _createOfflineOrderWithCustomer(
-  //         cartItems,
-  //         customerSelection,
-  //       );
-  //     }
-  //   } else {
-  //     return await _createOfflineOrderWithCustomer(
-  //       cartItems,
-  //       customerSelection,
-  //     );
-  //   }
-  // }
-
-  // Future<OrderCreationResult> _createOfflineOrderWithCustomer(
-  //     List<CartItem> cartItems,
-  //     CustomerSelection customerSelection,
-  //     ) async {
-  //   try {
-  //     // Update local stock quantities
-  //     for (final item in cartItems) {
-  //       await _updateLocalProductStock(item.product.id, -item.quantity);
-  //     }
-  //
-  //     final pendingOrderId = await _localDb.savePendingOrderWithCustomer(
-  //       cartItems,
-  //       customerSelection,
-  //     );
-  //     await _localDb.clearCart();
-  //     return OrderCreationResult.offline(pendingOrderId);
-  //   } catch (e) {
-  //     return OrderCreationResult.error('Failed to save order locally: $e');
-  //   }
-  // }
-
-  // In EnhancedPOSService class - ENHANCE the _updateLocalProductStock method
-  // Future<void> _updateLocalProductStock(String productId, int quantity) async {
-  //   final products = await _localDb.getProducts(limit: 0); // Get all products
-  //   final productIndex = products.indexWhere((p) => p.id == productId);
-  //
-  //   if (productIndex != -1) {
-  //     final product = products[productIndex];
-  //     final updatedProduct = Product(
-  //       id: product.id,
-  //       name: product.name,
-  //       sku: product.sku,
-  //       price: product.price,
-  //       regularPrice: product.regularPrice,
-  //       salePrice: product.salePrice,
-  //       imageUrl: product.imageUrl,
-  //       imageUrls: product.imageUrls,
-  //       stockQuantity: product.stockQuantity + quantity,
-  //       inStock: (product.stockQuantity + quantity) > 0,
-  //       stockStatus: (product.stockQuantity + quantity) > 0
-  //           ? 'instock'
-  //           : 'outofstock',
-  //       description: product.description,
-  //       shortDescription: product.shortDescription,
-  //       categories: product.categories,
-  //       attributes: product.attributes,
-  //       metaData: product.metaData,
-  //       dateCreated: product.dateCreated,
-  //       dateModified: DateTime.now(),
-  //       purchasable: product.purchasable,
-  //       type: product.type,
-  //       status: product.status,
-  //       featured: product.featured,
-  //       permalink: product.permalink,
-  //       averageRating: product.averageRating,
-  //       ratingCount: product.ratingCount,
-  //       parentId: product.parentId,
-  //       variations: product.variations,
-  //       weight: product.weight,
-  //       dimensions: product.dimensions,
-  //     );
-  //
-  //     // Save only the updated product - the saveProducts method will now merge it
-  //     await _localDb.saveProducts([updatedProduct]);
-  //   }
-  // }
 
   Future<void> _testConnection() async {
+    if (!mounted) return;
+
     setState(() {
       _isTestingConnection = true;
       _connectionStatus = 'Testing connection...';
@@ -1436,37 +1418,55 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     try {
       final success = await _posService.testConnection();
-      setState(() {
-        _connectionStatus = success
-            ? 'Online - Connected'
-            : 'Offline - Working Locally';
-        _isOnline = success;
-      });
+      if (mounted) {
+        setState(() {
+          _connectionStatus = success
+              ? 'Online - Connected'
+              : 'Offline - Working Locally';
+          _isOnline = success;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _connectionStatus = 'Offline - ${e.toString()}';
-        _isOnline = false;
-      });
+      if (mounted) {
+        setState(() {
+          _connectionStatus = 'Offline - ${e.toString()}';
+          _isOnline = false;
+        });
+      }
     } finally {
-      setState(() {
-        _isTestingConnection = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isTestingConnection = false;
+        });
+      }
     }
   }
 
   Future<void> _manualSync() async {
-    if (_isOnline) {
+    if (_isOnline && mounted) {
       setState(() {
         _isTestingConnection = true;
-        _connectionStatus = 'Syncing...';
+        _connectionStatus = 'Syncing data...';
       });
 
-      await _posService.manualSync();
+      try {
+        await _posService.manualSync();
+        await _refreshCreditData();
 
-      setState(() {
-        _isTestingConnection = false;
-        _connectionStatus = 'Sync completed';
-      });
+        if (mounted) {
+          setState(() {
+            _isTestingConnection = false;
+            _connectionStatus = 'Sync completed ✅';
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isTestingConnection = false;
+            _connectionStatus = 'Sync failed ❌';
+          });
+        }
+      }
 
       Future.delayed(Duration(seconds: 3), () {
         if (mounted) {
@@ -1480,17 +1480,24 @@ class _MainNavScreenState extends State<MainNavScreen> {
     }
   }
 
-  final GlobalKey<LiquidPullToRefreshState> _refreshIndicatorKey =
-  GlobalKey<LiquidPullToRefreshState>();
-  bool _isRefreshing = false;
-
-  Future<void> _handleRefresh() async {
-    setState(() => _isRefreshing = true);
-    await _manualSync(); // Your existing sync method
-    setState(() => _isRefreshing = false);
+  Future<void> _refreshCreditData() async {
+    try {
+      await _creditService.getAllCreditCustomers();
+    } catch (e) {
+      print('Error refreshing credit data: $e');
+    }
   }
 
-  // Helper method to wrap screens with scrollability
+  Future<void> _handleRefresh() async {
+    if (mounted) {
+      setState(() => _isRefreshing = true);
+    }
+    await _manualSync();
+    if (mounted) {
+      setState(() => _isRefreshing = false);
+    }
+  }
+
   Widget _buildRefreshableScreen(Widget screen) {
     return LiquidPullToRefresh(
       key: _refreshIndicatorKey,
@@ -1501,255 +1508,72 @@ class _MainNavScreenState extends State<MainNavScreen> {
       animSpeedFactor: 2,
       showChildOpacityTransition: false,
       child: CustomScrollView(
-        physics: AlwaysScrollableScrollPhysics(), // Important!
+        physics: AlwaysScrollableScrollPhysics(),
         slivers: [SliverFillRemaining(hasScrollBody: false, child: screen)],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<MyAuthProvider>(context);
+  // FIXED: Navigation handlers
+  void _handleBottomNavigationTap(int index, MyAuthProvider authProvider) {
+    if (index == 4) {
+      _showMoreMenu(context, authProvider);
+    } else {
+      // Handle credit screen access
+      if (index >= 13 && index <= 15) {
+        final feature = index == 13 ? 'credit_overview' :
+        index == 14 ? 'credit_recovery' : 'credit_analytics';
+        _handleCreditFeatureAccess(feature, authProvider);
+      }
+      if (mounted) {
+        setState(() => _currentIndex = index);
+      }
+    }
+  }
 
+  void _handleCreditFeatureAccess(String feature, MyAuthProvider authProvider) {
     final user = authProvider.currentUser;
-    final tenantId = user?.tenantId ?? 'No Tenant ID';
-    return Scaffold(
-      appBar: AppBar(
-        actions: [
 
-          // if (_isTestingConnection)
-          //   Padding(
-          //     padding: EdgeInsets.only(right: 16),
-          //     child: Center(
-          //       child: CircularProgressIndicator(color: Colors.white),
-          //     ),
-          //   )
-          // else if (_isOnline)
-          //   IconButton(
-          //     icon: AnimatedContainer(
-          //       duration: Duration(milliseconds: 300),
-          //       padding: EdgeInsets.all(8),
-          //       decoration: BoxDecoration(
-          //         gradient: _isRefreshing
-          //             ? LinearGradient(colors: [Colors.purple, Colors.blue])
-          //             : LinearGradient(
-          //           colors: [Colors.blue.shade400, Colors.cyan.shade400],
-          //         ),
-          //         shape: BoxShape.circle,
-          //         boxShadow: [
-          //           BoxShadow(
-          //             color: Colors.blue.withOpacity(_isRefreshing ? 0.8 : 0.4),
-          //             blurRadius: _isRefreshing ? 12 : 8,
-          //             spreadRadius: _isRefreshing ? 2 : 1,
-          //           ),
-          //         ],
-          //       ),
-          //       child: AnimatedRotation(
-          //         duration: Duration(milliseconds: 500),
-          //         turns: _isRefreshing ? 1 : 0,
-          //         child: Icon(
-          //           _isRefreshing ? Icons.downloading : Icons.sync,
-          //           color: Colors.white,
-          //           size: 20,
-          //         ),
-          //       ),
-          //     ),
-          //     onPressed: _isRefreshing ? null : _handleRefresh,
-          //     tooltip: 'Smart Sync',
-          //   )
-          // else
-          //   IconButton(
-          //     icon: Container(
-          //       padding: EdgeInsets.all(8),
-          //       decoration: BoxDecoration(
-          //         color: Colors.orange[400],
-          //         shape: BoxShape.circle,
-          //       ),
-          //       child: Icon(Icons.cloud_off, color: Colors.white, size: 20),
-          //     ),
-          //     onPressed: _testConnection,
-          //     tooltip: 'Check Connection',
-          //   ),
+    if (feature == 'credit_analytics' && !user!.canManageUsers) {
+      _showAccessDeniedDialog(
+        title: 'Advanced Analytics Access',
+        message: 'Credit analytics are available to administrators only.',
+      );
+      return;
+    }
 
+    if (feature == 'credit_recovery' && !(user!.canManageUsers || user.canManageProducts)) {
+      _showAccessDeniedDialog(
+        title: 'Credit Recovery Access',
+        message: 'Credit recovery features are available to managers and administrators.',
+      );
+      return;
+    }
+  }
 
-          // IconButton(
-          //   icon: Icon(Icons.person),
-          //   onPressed: () {
-          //     Navigator.push(
-          //       context,
-          //       MaterialPageRoute(
-          //         builder: (context) => EnhancedProfileScreen(),
-          //       ),
-          //     );
-          //   },
-          // ),
-        ],
-        flexibleSpace: Container(),
-
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+  void _showAccessDeniedDialog({required String title, required String message}) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
           children: [
-            Text(
-              authProvider.currentTenant?.businessName ??
-                  'Your Business (Tenant: ${tenantId.substring(0, min(8, tenantId.length))}...)',
-              style: TextStyle(
-                color: ThemeUtils.textOnPrimary(context),
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            if (_connectionStatus.isNotEmpty)
-              Text(
-                _connectionStatus,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: _isOnline ? ThemeUtils.textOnPrimary(context) : ThemeUtils.textOnPrimary(context),
-                ),
-              ),
+            Icon(Icons.security, color: Colors.orange),
+            SizedBox(width: 8),
+            Text(title),
           ],
         ),
-        backgroundColor: _isOnline ? ThemeUtils.primary(context) : ThemeUtils.secondary(context),
-        elevation: 0,
-      ),
-      body: _clientAdminScreens.isEmpty
-          ? Center(child: CircularProgressIndicator())
-          : _isOnline
-          ? _buildRefreshableScreen(_clientAdminScreens[_currentIndex])
-          : _clientAdminScreens[_currentIndex],
-      bottomNavigationBar: authProvider.currentUser!.canManageProducts
-          ? BottomNavigationBar(
-        selectedItemColor: ThemeUtils.primary(context),
-        unselectedItemColor: ThemeUtils.accentColor(context),
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex < 5
-            ? _currentIndex
-            : 4, // Ensure index is within bounds
-        onTap: (index) {
-          if (index == 4) {
-            // More option
-            _showMoreMenu(context, authProvider);
-          } else {
-            setState(() => _currentIndex = index);
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag_outlined),
-            activeIcon: Icon(Icons.shopping_bag),
-            label: 'Products',
-          ),
-          BottomNavigationBarItem(
-            icon: _buildCartIcon(),
-            activeIcon: _buildCartIcon(isActive: true),
-            label: 'Cart',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined),
-            activeIcon: Icon(Icons.analytics),
-            label: 'Analytics',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.more_horiz),
-            activeIcon: Icon(Icons.more_horiz),
-            label: 'More',
-          ),
-        ],
-      )
-          : authProvider.currentUser!.canManageUsers
-          ? BottomNavigationBar(
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex < 5
-            ? _currentIndex
-            : 4, // Ensure index is within bounds
-        onTap: (index) {
-          if (index == 4) {
-            // More option
-            _showMoreMenu(context, authProvider);
-          } else {
-            setState(() => _currentIndex = index);
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag_outlined),
-            activeIcon: Icon(Icons.shopping_bag),
-            label: 'Products',
-          ),
-          BottomNavigationBarItem(
-            icon: _buildCartIcon(),
-            activeIcon: _buildCartIcon(isActive: true),
-            label: 'Cart',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.analytics_outlined),
-            activeIcon: Icon(Icons.analytics),
-            label: 'Analytics',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.more_horiz),
-            activeIcon: Icon(Icons.more_horiz),
-            label: 'More',
-          ),
-        ],
-      )
-          : BottomNavigationBar(
-        selectedItemColor: Colors.black,
-        unselectedItemColor: Colors.grey,
-        showUnselectedLabels: true,
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex < 5
-            ? _currentIndex
-            : 3, // Ensure index is within bounds
-        onTap: (index) {
-          if (index == 3) {
-            // More option
-            _showMoreMenu(context, authProvider);
-          } else {
-            setState(() => _currentIndex = index);
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            activeIcon: Icon(Icons.dashboard),
-            label: 'Dashboard',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_bag_outlined),
-            activeIcon: Icon(Icons.shopping_bag),
-            label: 'Products',
-          ),
-          BottomNavigationBarItem(
-            icon: _buildCartIcon(),
-            activeIcon: _buildCartIcon(isActive: true),
-            label: 'Cart',
-          ),
-
-          BottomNavigationBarItem(
-            icon: Icon(Icons.more_horiz),
-            activeIcon: Icon(Icons.more_horiz),
-            label: 'More',
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK'),
           ),
         ],
       ),
     );
   }
 
-  // Helper method for cart icon with badge
+  // FIXED: Cart icon with badge
   Widget _buildCartIcon({bool isActive = false}) {
     return Stack(
       clipBehavior: Clip.none,
@@ -1781,8 +1605,47 @@ class _MainNavScreenState extends State<MainNavScreen> {
     );
   }
 
-  // More menu dialog
-// More menu dialog
+  // FIXED: More icon with credit alerts
+  Widget _buildMoreIcon() {
+    return FutureBuilder<CreditStats>(
+      future: _getCreditStats(),
+      builder: (context, snapshot) {
+        final creditStats = snapshot.data ?? CreditStats.zero();
+        final hasOverdue = creditStats.overdueAmount > 0;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Icon(Icons.more_horiz),
+            if (hasOverdue)
+              Positioned(
+                right: -4,
+                top: -4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent,
+                    shape: BoxShape.circle,
+                  ),
+                  constraints: const BoxConstraints(minWidth: 12, minHeight: 12),
+                  child: Text(
+                    '!',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 8,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  // FIXED: Add the missing _showMoreMenu method
   void _showMoreMenu(BuildContext context, MyAuthProvider authProvider) {
     final user = authProvider.currentUser;
 
@@ -1823,35 +1686,62 @@ class _MainNavScreenState extends State<MainNavScreen> {
         ],
       ),
 
+      // Credit Management Section - Role-based access
+      MenuSection(
+        title: 'Credit Management',
+        items: [
+          MenuItem(
+            icon: Icons.credit_card_outlined,
+            title: 'Credit Overview',
+            description: 'Manage customer credit accounts',
+            color: Colors.purple,
+            index: 13, // Credit Management Screen
+          ),
+          if (user!.canManageUsers || user.canManageProducts)
+            MenuItem(
+              icon: Icons.payment_outlined,
+              title: 'Credit Recovery',
+              description: 'Track and collect overdue payments',
+              color: Colors.deepOrange,
+              index: 14, // Credit Recovery Screen
+            ),
+          if (user.canManageUsers)
+            MenuItem(
+              icon: Icons.analytics_outlined,
+              title: 'Credit Analytics',
+              description: 'Advanced credit insights and reports',
+              color: Colors.indigo,
+              index: 15, // Credit Analytics Screen
+            ),
+        ],
+      ),
+
       // Business Management - Admin & Sales Manager
-      if (user!.canManageUsers || user.canManageProducts)
+      if (user.canManageUsers || user.canManageProducts)
         MenuSection(
           title: 'Business Management',
           items: [
-            if (user.canManageUsers || user.canManageProducts)
-              MenuItem(
-                icon: Icons.receipt_long_outlined,
-                title: 'Expense Management',
-                description: 'Track business expenses',
-                color: Colors.purple,
-                index: 12,
-              ),
-            if (user.canManageProducts || user.canManageUsers)
-              MenuItem(
-                icon: Icons.inventory_2_outlined,
-                title: 'Inventory',
-                description: 'Manage product stock',
-                color: Colors.green,
-                index: 4,
-              ),
-            if (user.canManageProducts || user.canManageUsers)
-              MenuItem(
-                icon: Icons.category_outlined,
-                title: 'Categories',
-                description: 'Organize product categories',
-                color: Colors.indigo,
-                index: 5,
-              ),
+            MenuItem(
+              icon: Icons.receipt_long_outlined,
+              title: 'Expense Management',
+              description: 'Track business expenses',
+              color: Colors.purple,
+              index: 12,
+            ),
+            MenuItem(
+              icon: Icons.inventory_2_outlined,
+              title: 'Inventory',
+              description: 'Manage product stock',
+              color: Colors.green,
+              index: 4,
+            ),
+            MenuItem(
+              icon: Icons.category_outlined,
+              title: 'Categories',
+              description: 'Organize product categories',
+              color: Colors.indigo,
+              index: 5,
+            ),
           ],
         ),
 
@@ -1861,7 +1751,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
           title: 'Administration',
           items: [
             MenuItem(
-              icon: Icons.people_outline,
+              icon: Icons.people_outlined,
               title: 'Users',
               description: 'Manage team members',
               color: Colors.deepOrange,
@@ -1902,7 +1792,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
           child: SafeArea(
             child: Column(
               children: [
-                // Header with blur effect
+                // Header
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.1),
@@ -1941,8 +1831,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                             color: ThemeUtils.primary(context)!.withOpacity(0.1),
                           ),
                           child: IconButton(
-                            icon: Icon(Icons.close_rounded,
-                                color: ThemeUtils.primary(context)),
+                            icon: Icon(Icons.close_rounded, color: ThemeUtils.primary(context)),
                             onPressed: () => Navigator.pop(context),
                           ),
                         ),
@@ -1952,147 +1841,185 @@ class _MainNavScreenState extends State<MainNavScreen> {
                 ),
 
                 // User info card
-                Container(
-                  margin: EdgeInsets.all(16),
-                  padding: EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        ThemeUtils.primary(context)!.withOpacity(0.1),
-                        ThemeUtils.primary(context)!.withOpacity(0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: ThemeUtils.primary(context)!.withOpacity(0.2),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: LinearGradient(
-                            colors: ThemeUtils.accent(context),
-                          ),
-                        ),
-                        child: Icon(Icons.person, color: Colors.white),
-                      ),
-                      SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              user.displayName ?? 'User',
-                              style: ThemeUtils.bodyLarge(context)?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            SizedBox(height: 4),
-                            Text(
-                              _getUserRole(user),
-                              style: ThemeUtils.bodySmall(context)?.copyWith(
-                                color: ThemeUtils.primary(context),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
+                FutureBuilder<CreditStats>(
+                  future: _getCreditStats(),
+                  builder: (context, snapshot) {
+                    final creditStats = snapshot.data ?? CreditStats.zero();
+
+                    return Container(
+                      margin: EdgeInsets.all(16),
+                      padding: EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            ThemeUtils.primary(context)!.withOpacity(0.1),
+                            ThemeUtils.primary(context)!.withOpacity(0.05),
                           ],
                         ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: ThemeUtils.primary(context)!.withOpacity(0.2),
+                        ),
                       ),
-                      Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _isOnline ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _isOnline ? Colors.green.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: LinearGradient(
+                                colors: ThemeUtils.accent(context),
+                              ),
+                            ),
+                            child: Icon(Icons.person, color: Colors.white),
                           ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _isOnline ? Colors.green : Colors.orange,
-                              ),
+                          SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  user.displayName ?? 'User',
+                                  style: ThemeUtils.bodyLarge(context)?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  _getUserRole(user),
+                                  style: ThemeUtils.bodySmall(context)?.copyWith(
+                                    color: ThemeUtils.primary(context),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (creditStats.totalOutstanding > 0) ...[
+                                  SizedBox(height: 4),
+                                  Text(
+                                    '${Constants.CURRENCY_NAME}${creditStats.totalOutstanding.toStringAsFixed(0)} Credit Outstanding',
+                                    style: ThemeUtils.bodySmall(context)?.copyWith(
+                                      color: Colors.orange,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
-                            SizedBox(width: 6),
-                            Text(
-                              _isOnline ? 'Online' : 'Offline',
-                              style: ThemeUtils.bodySmall(context)?.copyWith(
-                                color: _isOnline ? Colors.green : Colors.orange,
-                                fontWeight: FontWeight.w500,
+                          ),
+                          Column(
+                            children: [
+                              Container(
+                                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _isOnline ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: _isOnline ? Colors.green.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: _isOnline ? Colors.green : Colors.orange,
+                                      ),
+                                    ),
+                                    SizedBox(width: 6),
+                                    Text(
+                                      _isOnline ? 'Online' : 'Offline',
+                                      style: ThemeUtils.bodySmall(context)?.copyWith(
+                                        color: _isOnline ? Colors.green : Colors.orange,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
+                              if (creditStats.overdueAmount > 0) ...[
+                                SizedBox(height: 4),
+                                Container(
+                                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                                  ),
+                                  child: Text(
+                                    '${Constants.CURRENCY_NAME}${creditStats.overdueAmount.toStringAsFixed(0)} Overdue',
+                                    style: ThemeUtils.bodySmall(context)?.copyWith(
+                                      color: Colors.red,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
 
-                // Menu sections
+                // Quick Actions
+                Column(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        'Quick Actions',
+                        style: ThemeUtils.bodyLarge(context)?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: ThemeUtils.textSecondary(context),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      height: 80,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          _buildQuickActionChip(
+                            icon: Icons.qr_code_scanner,
+                            label: 'Scan',
+                            onTap: () => _handleQuickAction('scan'),
+                          ),
+                          _buildQuickActionChip(
+                            icon: Icons.receipt,
+                            label: 'Invoices',
+                            onTap: () => _handleQuickAction('invoices'),
+                          ),
+                          _buildQuickActionChip(
+                            icon: Icons.credit_card,
+                            label: 'Credit',
+                            onTap: () => _handleQuickAction('credit'),
+                          ),
+                          _buildQuickActionChip(
+                            icon: Icons.analytics,
+                            label: 'Reports',
+                            onTap: () => _handleQuickAction('reports'),
+                          ),
+                          _buildQuickActionChip(
+                            icon: Icons.sync,
+                            label: 'Sync',
+                            onTap: _manualSync,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Menu Sections
                 Expanded(
                   child: CustomScrollView(
                     slivers: [
-                      // Quick Actions
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Text(
-                            'Quick Actions',
-                            style: ThemeUtils.bodyLarge(context)?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: ThemeUtils.textSecondary(context),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Quick action chips
-                      SliverToBoxAdapter(
-                        child: Container(
-                          height: 80,
-                          child: ListView(
-                            scrollDirection: Axis.horizontal,
-                            padding: EdgeInsets.symmetric(horizontal: 16),
-                            children: [
-                              _buildQuickActionChip(
-                                context,
-                                icon: Icons.qr_code_scanner,
-                                label: 'Scan',
-                                onTap: () => _handleQuickAction('scan'),
-                              ),
-                              _buildQuickActionChip(
-                                context,
-                                icon: Icons.receipt,
-                                label: 'Invoices',
-                                onTap: () => _handleQuickAction('invoices'),
-                              ),
-                              _buildQuickActionChip(
-                                context,
-                                icon: Icons.analytics,
-                                label: 'Reports',
-                                onTap: () => _handleQuickAction('reports'),
-                              ),
-                              _buildQuickActionChip(
-                                context,
-                                icon: Icons.sync,
-                                label: 'Sync',
-                                onTap: _manualSync,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Main menu sections
                       ...menuSections.map((section) => SliverList(
                         delegate: SliverChildListDelegate([
                           SizedBox(height: 16),
@@ -2108,20 +2035,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
                           ),
                           SizedBox(height: 8),
                           ...section.items.map((item) => _buildModernMenuItem(
-                            context,
                             item: item,
-                            onTap: () {
-                              Navigator.pop(context);
-                              setState(() => _currentIndex = item.index);
-                            },
+                            onTap: () => _handleMenuItemTap(item, authProvider),
                           )),
                         ]),
                       )),
-
-                      // Bottom spacing
-                      SliverToBoxAdapter(
-                        child: SizedBox(height: 30),
-                      ),
+                      SliverToBoxAdapter(child: SizedBox(height: 30)),
                     ],
                   ),
                 ),
@@ -2132,52 +2051,336 @@ class _MainNavScreenState extends State<MainNavScreen> {
       },
     );
   }
-// Helper method to build consistent menu items
-  Widget _buildMoreMenuItem(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        String? subtitle,
-        required VoidCallback onTap,
-      }) {
+
+  void _handleMenuItemTap(MenuItem item, MyAuthProvider authProvider) {
+    // Handle role-based access for credit features
+    final user = authProvider.currentUser;
+
+    if (item.index == 14 && !(user!.canManageUsers || user.canManageProducts)) {
+      _showAccessDeniedDialog(
+        title: 'Credit Recovery Access',
+        message: 'Credit recovery features are available to managers and administrators.',
+      );
+      return;
+    }
+
+    if (item.index == 15 && !user!.canManageUsers) {
+      _showAccessDeniedDialog(
+        title: 'Advanced Analytics Access',
+        message: 'Credit analytics are available to administrators only.',
+      );
+      return;
+    }
+
+    _handleMenuNavigation(item.index);
+  }
+
+  Widget _buildQuickActionChip({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
     return Container(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: ThemeUtils.card(context)[0],
-        borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
-      ),
-      child: ListTile(
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: ThemeUtils.primary(context)!.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(ThemeUtils.radius(context)),
+      margin: EdgeInsets.only(right: 12),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: ThemeUtils.primary(context)!.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: ThemeUtils.primary(context)!.withOpacity(0.2),
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 20,
+                  color: ThemeUtils.primary(context),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  label,
+                  style: ThemeUtils.bodySmall(context)?.copyWith(
+                    color: ThemeUtils.primary(context),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
-          child: Icon(icon, color: ThemeUtils.primary(context), size: 20),
         ),
-        title: Text(
-          title,
-          style: ThemeUtils.bodyLarge(context)?.copyWith(
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        subtitle: subtitle != null ? Text(
-          subtitle,
-          style: ThemeUtils.bodySmall(context)?.copyWith(
-            color: ThemeUtils.textSecondary(context),
-          ),
-        ) : null,
-        trailing: Icon(
-          Icons.arrow_forward_ios_rounded,
-          size: 16,
-          color: ThemeUtils.textSecondary(context),
-        ),
-        onTap: onTap,
-        contentPadding: EdgeInsets.symmetric(horizontal: 16),
       ),
     );
   }
+
+  Widget _buildModernMenuItem({
+    required MenuItem item,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ThemeUtils.card(context)[0].withOpacity(0.5),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: ThemeUtils.card(context)[1].withOpacity(0.1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        item.color.withOpacity(0.2),
+                        item.color.withOpacity(0.1),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(
+                    item.icon,
+                    color: item.color,
+                    size: 24,
+                  ),
+                ),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.title,
+                        style: ThemeUtils.bodyLarge(context)?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        item.description,
+                        style: ThemeUtils.bodySmall(context)?.copyWith(
+                          color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 16,
+                  color: ThemeUtils.textSecondary(context).withOpacity(0.5),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _getUserRole(AppUser user) {
+    if (user.canManageUsers) return 'Administrator';
+    if (user.canManageProducts) return 'Sales Manager';
+    return 'Cashier';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final authProvider = Provider.of<MyAuthProvider>(context);
+    final user = authProvider.currentUser;
+    final tenantId = user?.tenantId ?? 'No Tenant ID';
+
+    // Get the appropriate screen list based on user role
+    List<Widget> currentScreens = _clientAdminScreens;
+    if (user!.canManageProducts && !user.canManageUsers) {
+      currentScreens = _clientSalesManagerScreens;
+    } else if (!user.canManageProducts && !user.canManageUsers) {
+      currentScreens = _clientCashierScreens;
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              authProvider.currentTenant?.businessName ??
+                  'Your Business (Tenant: ${tenantId.substring(0, min(8, tenantId.length))}...)',
+              style: TextStyle(
+                color: ThemeUtils.textOnPrimary(context),
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (_connectionStatus.isNotEmpty)
+              Text(
+                _connectionStatus,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: ThemeUtils.textOnPrimary(context),
+                ),
+              ),
+          ],
+        ),
+        backgroundColor: _isOnline ? ThemeUtils.primary(context) : ThemeUtils.secondary(context),
+        elevation: 0,
+      ),
+      body: currentScreens.isEmpty
+          ? Center(child: CircularProgressIndicator())
+          : _isOnline
+          ? _buildRefreshableScreen(currentScreens[_currentIndex])
+          : currentScreens[_currentIndex],
+      bottomNavigationBar: _buildBottomNavigationBar(authProvider, currentScreens.length),
+    );
+  }
+
+  Widget _buildBottomNavigationBar(MyAuthProvider authProvider, int screenCount) {
+    final user = authProvider.currentUser!;
+
+    // Determine which navigation bar to show based on user role
+    if (user.canManageUsers) {
+      return _buildAdminNavigationBar(authProvider);
+    } else if (user.canManageProducts) {
+      return _buildManagerNavigationBar(authProvider);
+    } else {
+      return _buildCashierNavigationBar(authProvider);
+    }
+  }
+
+  Widget _buildAdminNavigationBar(MyAuthProvider authProvider) {
+    return BottomNavigationBar(
+      selectedItemColor: ThemeUtils.primary(context),
+      unselectedItemColor: ThemeUtils.accentColor(context),
+      showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _currentIndex < 5 ? _currentIndex : 4,
+      onTap: (index) => _handleBottomNavigationTap(index, authProvider),
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard),
+          activeIcon: Icon(Icons.dashboard),
+          label: 'Dashboard',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_bag_outlined),
+          activeIcon: Icon(Icons.shopping_bag),
+          label: 'Products',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildCartIcon(),
+          activeIcon: _buildCartIcon(isActive: true),
+          label: 'Cart',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.analytics_outlined),
+          activeIcon: Icon(Icons.analytics),
+          label: 'Analytics',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildMoreIcon(),
+          activeIcon: _buildMoreIcon(),
+          label: 'More',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildManagerNavigationBar(MyAuthProvider authProvider) {
+    return BottomNavigationBar(
+      selectedItemColor: Colors.black,
+      unselectedItemColor: Colors.grey,
+      showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _currentIndex < 5 ? _currentIndex : 4,
+      onTap: (index) => _handleBottomNavigationTap(index, authProvider),
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard),
+          activeIcon: Icon(Icons.dashboard),
+          label: 'Dashboard',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_bag_outlined),
+          activeIcon: Icon(Icons.shopping_bag),
+          label: 'Products',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildCartIcon(),
+          activeIcon: _buildCartIcon(isActive: true),
+          label: 'Cart',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.analytics_outlined),
+          activeIcon: Icon(Icons.analytics),
+          label: 'Analytics',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildMoreIcon(),
+          activeIcon: _buildMoreIcon(),
+          label: 'More',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCashierNavigationBar(MyAuthProvider authProvider) {
+    return BottomNavigationBar(
+      selectedItemColor: Colors.black,
+      unselectedItemColor: Colors.grey,
+      showUnselectedLabels: true,
+      type: BottomNavigationBarType.fixed,
+      currentIndex: _currentIndex < 4 ? _currentIndex : 3,
+      onTap: (index) {
+        if (index == 3) {
+          _showMoreMenu(context, authProvider);
+        } else {
+          if (mounted) {
+            setState(() => _currentIndex = index);
+          }
+        }
+      },
+      items: [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.dashboard),
+          activeIcon: Icon(Icons.dashboard),
+          label: 'Dashboard',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_bag_outlined),
+          activeIcon: Icon(Icons.shopping_bag),
+          label: 'Products',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildCartIcon(),
+          activeIcon: _buildCartIcon(isActive: true),
+          label: 'Cart',
+        ),
+        BottomNavigationBarItem(
+          icon: _buildMoreIcon(),
+          activeIcon: _buildMoreIcon(),
+          label: 'More',
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _posService.dispose();
@@ -2185,13 +2388,54 @@ class _MainNavScreenState extends State<MainNavScreen> {
     super.dispose();
   }
 }
-// Supporting classes and methods
+
+// FIXED: Add the missing CreditStats class and method
+class CreditStats {
+  final double totalOutstanding;
+  final double overdueAmount;
+  final int overdueCustomers;
+
+  const CreditStats({
+    required this.totalOutstanding,
+    required this.overdueAmount,
+    required this.overdueCustomers,
+  });
+
+  factory CreditStats.zero() {
+    return CreditStats(
+      totalOutstanding: 0.0,
+      overdueAmount: 0.0,
+      overdueCustomers: 0,
+    );
+  }
+}
+
+Future<CreditStats> _getCreditStats() async {
+  CreditService _creditService = CreditService();
+  try {
+    final creditCustomers = await _creditService.getAllCreditCustomers();
+    final totalOutstanding = creditCustomers.fold(0.0, (sum, customer) => sum + customer.currentBalance);
+    final overdueAmount = creditCustomers.fold(0.0, (sum, customer) => sum + customer.overdueAmount);
+    final overdueCustomers = creditCustomers.where((customer) => customer.overdueCount > 0).length;
+
+    return CreditStats(
+      totalOutstanding: totalOutstanding,
+      overdueAmount: overdueAmount,
+      overdueCustomers: overdueCustomers,
+    );
+  } catch (e) {
+    print('Error fetching credit stats: $e');
+    return CreditStats.zero();
+  }
+}
+
 class MenuSection {
   final String title;
   final List<MenuItem> items;
 
   MenuSection({required this.title, required this.items});
 }
+// Add this helper class and method
 
 class MenuItem {
   final IconData icon;
@@ -2311,7 +2555,7 @@ Widget _buildQuickActionChip(
         child: Container(
           padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
-            color: ThemeUtils.primary(context)!.withOpacity(0.1),
+            color: ThemeUtils.primary(context).withOpacity(0.1),
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: ThemeUtils.primary(context)!.withOpacity(0.2),
@@ -2341,16 +2585,12 @@ Widget _buildQuickActionChip(
   );
 }
 
-void _handleQuickAction(String action) {
-  switch (action) {
-    case 'scan':
-    // Implement scan functionality
-      break;
-    case 'invoices':
-    // Implement invoices functionality
-      break;
-    case 'reports':
-    // Implement reports functionality
-      break;
-  }
+
+void _showSnackBar(String message,BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message),
+      duration: Duration(seconds: 2),
+    ),
+  );
 }

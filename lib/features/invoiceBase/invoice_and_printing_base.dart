@@ -1,5 +1,6 @@
 // Scanner Overlay
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -129,7 +130,90 @@ class ScanningPreferencesService {
     return isEnabled && defaultOption != null;
   }
 }
+// Add to your Invoice class in invoice_model.dart
+class InvoiceQRData {
+  final String invoiceId;
+  final String orderId;
+  final String invoiceNumber;
+  final DateTime issueDate;
+  final double totalAmount;
+  final String? customerId;
+  final String? customerName;
+  final String status;
+  final Map<String, dynamic>? enhancedData;
 
+  InvoiceQRData({
+    required this.invoiceId,
+    required this.orderId,
+    required this.invoiceNumber,
+    required this.issueDate,
+    required this.totalAmount,
+    this.customerId,
+    this.customerName,
+    required this.status,
+    this.enhancedData,
+  });
+
+  factory InvoiceQRData.fromInvoice(Invoice invoice) {
+    return InvoiceQRData(
+      invoiceId: invoice.id,
+      orderId: invoice.orderId,
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      totalAmount: invoice.totalAmount,
+      customerId: invoice.customer?.id,
+      customerName: invoice.customer?.displayName,
+      status: invoice.status,
+      enhancedData: invoice.enhancedData,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'invoiceId': invoiceId,
+      'orderId': orderId,
+      'invoiceNumber': invoiceNumber,
+      'issueDate': issueDate.toIso8601String(),
+      'totalAmount': totalAmount,
+      'customerId': customerId,
+      'customerName': customerName,
+      'status': status,
+      'enhancedData': enhancedData,
+      'type': 'pos_invoice', // Identifier for our app
+      'version': '1.0',
+    };
+  }
+
+  factory InvoiceQRData.fromJson(Map<String, dynamic> json) {
+    return InvoiceQRData(
+      invoiceId: json['invoiceId'] ?? '',
+      orderId: json['orderId'] ?? '',
+      invoiceNumber: json['invoiceNumber'] ?? '',
+      issueDate: DateTime.parse(json['issueDate']),
+      totalAmount: (json['totalAmount'] as num).toDouble(),
+      customerId: json['customerId'],
+      customerName: json['customerName'],
+      status: json['status'] ?? 'paid',
+      enhancedData: json['enhancedData'],
+    );
+  }
+
+  String toQRString() {
+    return jsonEncode(toJson());
+  }
+
+  static InvoiceQRData? fromQRString(String qrString) {
+    try {
+      final data = jsonDecode(qrString);
+      if (data['type'] == 'pos_invoice') {
+        return InvoiceQRData.fromJson(data);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+}
 // Universal Scanning Service
 class UniversalScanningService {
   static Future<String?> scanBarcode(

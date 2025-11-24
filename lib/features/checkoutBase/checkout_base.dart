@@ -1,5 +1,6 @@
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../app.dart';
 import '../../constants.dart';
@@ -7,6 +8,8 @@ import '../../printing/bottom_sheet.dart';
 import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
+import '../credit/credit_sale_modal.dart';
+import '../credit/credit_sale_model.dart';
 import '../customerBase/customer_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
@@ -40,11 +43,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic> _invoiceSettings = {};
   Map<String, dynamic> _businessInfo = {};
   bool _isLoadingSettings = true;
-
+  bool _isCreditSale = false;
+  CreditSaleData? _creditSaleData;
   // Payment methods
   final List<String> _paymentMethods = [
     'cash',
     'easypaisa/bank transfer',
+    'credit', // Add credit option
+
 
   ];
   String _selectedPaymentMethod = 'cash';
@@ -112,7 +118,187 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
   }
+  // Add this method to show credit sale modal
+  void _showCreditSaleModal() {
+    if (!_customerSelection.hasCustomer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Please select a customer for credit sale'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // This is crucial
+      backgroundColor: Colors.transparent,
+      builder: (context) => CreditSaleModal(
+        selectedCustomer: _customerSelection.customer!,
+        orderTotal: _finalTotal,
+        onConfirm: (creditData) {
+          setState(() {
+            _creditSaleData = creditData;
+            _selectedPaymentMethod = 'credit';
+            _isCreditSale = true;
+          });
+          Navigator.pop(context);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Credit sale configured successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        },
+        onCancel: () {
+          setState(() {
+            _isCreditSale = false;
+            _creditSaleData = null;
+            _selectedPaymentMethod = 'cash';
+          });
+          Navigator.pop(context);
+        },
+      ),
+    );
+  }
+  // Update the payment section to handle credit selection
+  Widget _buildPaymentSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Payment Method',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _paymentMethods.map((method) {
+                final isSelected = _selectedPaymentMethod == method;
+                return ChoiceChip(
+                  label: Text(_getPaymentMethodName(method)),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    if (selected) {
+                      if (method == 'credit') {
+                        _showCreditSaleModal();
+                      } else {
+                        setState(() {
+                          _selectedPaymentMethod = method;
+                          _isCreditSale = false;
+                          _creditSaleData = null;
+                        });
+                      }
+                    }
+                  },
+                  selectedColor: method == 'credit' ? Colors.orange[100] : Colors.blue[100],
+                  labelStyle: TextStyle(
+                    color: isSelected ?
+                    (method == 'credit' ? Colors.orange[800] : Colors.blue[800]) :
+                    Colors.grey[800],
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  ),
+                );
+              }).toList(),
+            ),
+
+            // Show credit sale details if selected
+            if (_isCreditSale && _creditSaleData != null)
+              _buildCreditSaleDetails(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCreditSaleDetails() {
+    final creditData = _creditSaleData!;
+    return Container(
+      margin: EdgeInsets.only(top: 16),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange[50],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.credit_card, size: 16, color: Colors.orange),
+              SizedBox(width: 8),
+              Text(
+                'Credit Sale Details',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange[800]),
+              ),
+            ],
+          ),
+          SizedBox(height: 8),
+          _buildCreditDetailRow('Amount Paid', creditData.paidAmount),
+          _buildCreditDetailRow('Credit Amount', creditData.creditAmount),
+          if (creditData.dueDate != null)
+            _buildCreditDetailRow(
+              'Due Date',
+              0, // We'll handle this specially
+              textValue: DateFormat('MMM dd, yyyy').format(creditData.dueDate!),
+            ),
+          if (creditData.notes.isNotEmpty)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: 4),
+                Text(
+                  'Notes: ${creditData.notes}',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                ),
+              ],
+            ),
+          SizedBox(height: 8),
+          TextButton(
+            onPressed: _showCreditSaleModal,
+            style: TextButton.styleFrom(
+              padding: EdgeInsets.zero,
+              minimumSize: Size(50, 30),
+            ),
+            child: Text(
+              'Edit Credit Terms',
+              style: TextStyle(fontSize: 12, color: Colors.blue),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreditDetailRow(String label, double amount, {String? textValue}) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+          ),
+          Text(
+            textValue ?? '${Constants.CURRENCY_NAME}${amount.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.orange[800],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   void _showInvoiceOptions(AppOrder order) {
     showModalBottomSheet(
       context: context,
@@ -322,6 +508,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double get _finalTotal =>
       _taxableAmount + _taxAmount + _shippingAmount + _tipAmount;
 
+  // Update reset method to clear credit data
   void _resetCheckoutScreen() {
     if (mounted) {
       setState(() {
@@ -333,6 +520,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _completedOrder = null;
         _pendingOrderId = null;
         _errorMessage = null;
+        _isCreditSale = false;
+        _creditSaleData = null;
 
         // Clear controllers
         _additionalDiscountController.clear();
@@ -343,9 +532,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
 // In checkout_base.dart - UPDATE the _processOrder method
+  // Update the process order method to include credit data
   Future<void> _processOrder() async {
     if (widget.cartItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Cart is empty')));
+      return;
+    }
+
+    // Validate credit sale requirements
+    if (_isCreditSale && !_customerSelection.hasCustomer) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Customer selection is required for credit sales')),
+      );
       return;
     }
 
@@ -367,13 +565,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'businessInfo': _businessInfo,
       };
 
-      // Use the enhanced order creation method
+      // Use the enhanced order creation method with credit data
       final result = await _posService.createOrderWithEnhancedData(
         widget.cartItems,
         _customerSelection,
         additionalData: orderData,
-        cartManager: widget.cartManager, // Add this line
-
+        cartManager: widget.cartManager,
+        creditSaleData: _isCreditSale ? _creditSaleData : null,
       );
 
       if (result.success) {
@@ -385,7 +583,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Order saved offline. Will sync when online.'),
+              content: Text(_isCreditSale ?
+              'Credit sale saved offline. Will sync when online.' :
+              'Order saved offline. Will sync when online.'),
               backgroundColor: Colors.orange,
             ),
           );
@@ -402,7 +602,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           setState(() => _completedOrder = result.order);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Order processed successfully!'),
+              content: Text(_isCreditSale ?
+              'Credit sale processed successfully!' :
+              'Order processed successfully!'),
               backgroundColor: Colors.green,
             ),
           );
@@ -437,7 +639,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
   }
-
 // Add this method to show enhanced invoice options
   void _showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
     showModalBottomSheet(
@@ -745,46 +946,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildPaymentSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Payment Method',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _paymentMethods.map((method) {
-                final isSelected = _selectedPaymentMethod == method;
-                return ChoiceChip(
-                  label: Text(_getPaymentMethodName(method)),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() => _selectedPaymentMethod = method);
-                    }
-                  },
-                  selectedColor: Colors.blue[100],
-                  labelStyle: TextStyle(
-                    color: isSelected ? Colors.blue[800] : Colors.grey[800],
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
-                  ),
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+
 
   String _getPaymentMethodName(String method) {
     switch (method) {
@@ -793,7 +955,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       case 'easypaisa/bank transfer':
         return         'easypaisa/bank transfer'
     ;
-
+      case 'credit':
+        return 'Credit Sale';
       default:
         return method;
     }
