@@ -1,4 +1,3 @@
-
 import 'dart:async';
 import 'dart:math';
 
@@ -38,6 +37,7 @@ import '../profile.dart';
 import '../returnBase/return_base.dart';
 import '../ticketing/ticketing.dart';
 import '../users/users_base.dart';
+
 class NavigationService {
   String? _currentTenantId;
 
@@ -54,7 +54,6 @@ class NavigationService {
       .collection('tenants')
       .doc(_currentTenantId)
       .collection('customers');
-
 
   static final NavigationService _instance = NavigationService._internal();
 
@@ -121,22 +120,262 @@ class NavigationService {
       throw Exception('Failed to update customer: $e');
     }
   }
-
-
-  // Future<bool> testConnection() async {
-  //   try {
-  //     await productsRef.limit(1).get();
-  //     return true;
-  //   } catch (e) {
-  //     return false;
-  //   }
-  // }
 }
+
 class EnhancedPOSService {
   final FirestoreServices _firestore = FirestoreServices();
+  String? _currentTenantId;
+  final LocalDatabase _localDb = LocalDatabase();
+  final Connectivity _connectivity = Connectivity();
+  final Lock _syncLock = Lock();
 
-  // Enhanced category methods with complete integration
-  // Enhanced category methods with complete integration
+  bool _isOnline = false;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+
+  // WAC CALCULATION: Update product cost and stock when restocking
+  Future<void> restockProductWithWAC(
+      String productId,
+      int quantity,
+      double purchasePrice, {
+        String? supplier,
+        String? batchNumber,
+        String? notes,
+      }) async {
+    try {
+      // 1. Get current product
+      final productDoc = await _firestore.productsRef
+          .doc(productId)
+          .get();
+
+      if (!productDoc.exists) {
+        throw Exception('Product not found');
+      }
+
+      final currentProduct = Product.fromFirestore(
+        productDoc.data() as Map<String, dynamic>,
+        productDoc.id,
+      );
+
+      // 2. Calculate new weighted average cost
+      final double newWeightedAverageCost = _calculateWeightedAverage(
+        oldQuantity: currentProduct.stockQuantity,
+        oldCost: currentProduct.purchasePrice ?? 0.0,
+        newQuantity: quantity,
+        newCost: purchasePrice,
+      );
+
+      // 3. Calculate new total cost value
+      final double newTotalCostValue =
+          (currentProduct.totalCostValue) + (quantity * purchasePrice);
+
+      // 4. Update product with new WAC values
+      final updatedProduct = currentProduct.copyWith(
+        stockQuantity: currentProduct.stockQuantity + quantity,
+        inStock: true,
+        stockStatus: 'instock',
+        purchasePrice: newWeightedAverageCost,
+        totalCostValue: newTotalCostValue,
+        totalUnitsPurchased: currentProduct.totalUnitsPurchased + quantity,
+        lastRestockDate: DateTime.now(),
+        dateModified: DateTime.now(),
+      );
+
+      // 5. Save updated product
+      await _firestore
+          .productsRef
+          .doc(productId)
+          .update(updatedProduct.toFirestore());
+
+      // 6. Create purchase record
+      final purchaseRecord = PurchaseRecord(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        productId: productId,
+        productName: currentProduct.name,
+        productSku: currentProduct.sku,
+        quantity: quantity,
+        purchasePrice: purchasePrice,
+        totalCost: quantity * purchasePrice,
+        purchaseDate: DateTime.now(),
+        supplier: supplier,
+        batchNumber: batchNumber,
+        notes: notes,
+      );
+
+      await _firestore
+          .purchaseRecordRef
+          .doc(purchaseRecord.id)
+          .set(purchaseRecord.toFirestore());
+
+      print('✅ WAC Updated: ${currentProduct.name}');
+      print('📦 Old Stock: ${currentProduct.stockQuantity}');
+      print('📦 New Stock: ${updatedProduct.stockQuantity}');
+      print('💰 Old Cost: ${currentProduct.purchasePrice?.toStringAsFixed(2)}');
+      print('💰 New WAC: ${newWeightedAverageCost.toStringAsFixed(2)}');
+      print('💵 Total Cost Value: ${newTotalCostValue.toStringAsFixed(2)}');
+
+    } catch (e) {
+      print('❌ Error in restockProductWithWAC: $e');
+      throw Exception('Failed to restock product: $e');
+    }
+  }
+
+  // WAC FORMULA: Calculate weighted average cost
+  double _calculateWeightedAverage({
+    required int oldQuantity,
+    required double oldCost,
+    required int newQuantity,
+    required double newCost,
+  }) {
+    if (oldQuantity + newQuantity == 0) return newCost;
+
+    final totalOldValue = oldQuantity * oldCost;
+    final totalNewValue = newQuantity * newCost;
+    final totalQuantity = oldQuantity + newQuantity;
+
+    return (totalOldValue + totalNewValue) / totalQuantity;
+  }
+
+  // Calculate profit for a sale
+  Map<String, dynamic> calculateSaleProfit(Product product, int quantity, double salePrice) {
+    final cost = product.purchasePrice ?? 0.0;
+    final totalCost = cost * quantity;
+    final totalRevenue = salePrice * quantity;
+    final profit = totalRevenue - totalCost;
+    final profitMargin = cost > 0 ? (profit / totalCost) * 100 : 0.0;
+
+    return {
+      'product': product,
+      'quantity': quantity,
+      'salePrice': salePrice,
+      'costPrice': cost,
+      'totalRevenue': totalRevenue,
+      'totalCost': totalCost,
+      'profit': profit,
+      'profitMargin': profitMargin,
+      'profitPerUnit': profit / quantity,
+    };
+  }
+
+  // Update stock after sale (cost remains the same until next restock)
+  Future<void> updateStockAfterSale(String productId, int quantitySold) async {
+    try {
+      final productDoc = await _firestore
+          .productsRef
+          .doc(productId)
+          .get();
+
+      if (!productDoc.exists) {
+        throw Exception('Product not found');
+      }
+
+      final currentProduct = Product.fromFirestore(
+        productDoc.data() as Map<String, dynamic>,
+        productDoc.id,
+      );
+
+      final newStock = currentProduct.stockQuantity - quantitySold;
+
+      await _firestore
+          .productsRef
+          .doc(productId)
+          .update({
+        'stockQuantity': newStock,
+        'inStock': newStock > 0,
+        'stockStatus': newStock > 0 ? 'instock' : 'outofstock',
+        'dateModified': DateTime.now(),
+      });
+
+      print('📦 Stock updated: ${currentProduct.name}');
+      print('🛒 Sold: $quantitySold');
+      print('📊 New Stock: $newStock');
+      print('💰 Cost Price remains: ${currentProduct.purchasePrice}');
+
+    } catch (e) {
+      print('❌ Error updating stock after sale: $e');
+      throw Exception('Failed to update stock: $e');
+    }
+  }
+
+  // GET PRODUCT PROFITABILITY
+  double calculateProductProfit(Product product, double salePrice) {
+    final cost = product.purchasePrice ?? 0.0;
+    return salePrice - cost;
+  }
+
+  double calculateProductProfitMargin(Product product, double salePrice) {
+    final cost = product.purchasePrice ?? 0.0;
+    if (cost == 0) return 0.0;
+    return ((salePrice - cost) / cost) * 100;
+  }
+
+  // GET PURCHASE HISTORY
+  Future<List<PurchaseRecord>> getPurchaseHistory(String productId) async {
+
+
+    try {
+      final snapshot = await _firestore
+          .purchaseRecordRef
+          .where('productId', isEqualTo: productId)
+          .orderBy('purchaseDate', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        return PurchaseRecord.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+      }).toList();
+    } catch (e) {
+      print('Error getting purchase history: $e');
+      return [];
+    }
+  }
+
+  // INVENTORY VALUATION REPORT
+  Future<Map<String, dynamic>> getInventoryValuation() async {
+    try {
+      final productsSnapshot = await _firestore
+          .productsRef
+          .get();
+
+      double totalInventoryValue = 0.0;
+      double totalCostValue = 0.0;
+      int totalItems = 0;
+      final List<Map<String, dynamic>> productValuations = [];
+
+      for (final doc in productsSnapshot.docs) {
+        final product = Product.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+
+        final productValue = product.inventoryValue;
+        totalInventoryValue += productValue;
+        totalCostValue += product.totalCostValue;
+        totalItems += product.stockQuantity;
+
+        productValuations.add({
+          'product': product,
+          'valuation': productValue,
+          'costValue': product.totalCostValue,
+          'profitPotential': (product.price * product.stockQuantity) - productValue,
+        });
+      }
+
+      return {
+        'totalInventoryValue': totalInventoryValue,
+        'totalCostValue': totalCostValue,
+        'totalItems': totalItems,
+        'averageCostPerItem': totalItems > 0 ? totalCostValue / totalItems : 0,
+        'productValuations': productValuations,
+        'generatedAt': DateTime.now(),
+      };
+    } catch (e) {
+      print('Error getting inventory valuation: $e');
+      throw Exception('Failed to generate inventory valuation: $e');
+    }
+  }
+
   // Enhanced category methods with complete integration
   Future<List<Category>> getCategories() async {
     try {
@@ -166,7 +405,6 @@ class EnhancedPOSService {
         return localCategories;
       } catch (fallbackError) {
         print('❌ Fallback also failed: $fallbackError');
-        _showErrorSnackBar('Failed to load categories: $e');
         return [];
       }
     }
@@ -211,7 +449,6 @@ class EnhancedPOSService {
         return localId;
       } catch (localError) {
         print('❌ Local save also failed: $localError');
-        _showErrorSnackBar('Failed to add category: $e');
         rethrow;
       }
     }
@@ -235,14 +472,8 @@ class EnhancedPOSService {
       try {
         await _localDb.saveCategory(category);
         print('✅ Category updated locally as fallback: ${category.name}');
-
-        if (_isOnline) {
-          // If online failed but we're online, show error but don't throw
-          _showErrorSnackBar('Failed to sync category update online: $e');
-        }
       } catch (localError) {
         print('❌ Local update also failed: $localError');
-        _showErrorSnackBar('Failed to update category: $e');
         rethrow;
       }
     }
@@ -266,13 +497,8 @@ class EnhancedPOSService {
       try {
         await _localDb.deleteCategory(categoryId);
         print('✅ Category deleted locally as fallback: $categoryId');
-
-        if (_isOnline) {
-          _showErrorSnackBar('Failed to sync category deletion online: $e');
-        }
       } catch (localError) {
         print('❌ Local delete also failed: $localError');
-        _showErrorSnackBar('Failed to delete category: $e');
         rethrow;
       }
     }
@@ -332,45 +558,17 @@ class EnhancedPOSService {
     }
   }
 
-  // Update the main sync method to include categories
-  Future<void> _triggerSync() async {
-    await _syncLock.synchronized(() async {
-      try {
-        print('🔄 Starting full sync...');
-        await _syncPendingOrders();
-        await _syncPendingRestocks();
-        await _syncPendingReturns();
-        await _syncPendingCategories(); // Add this line
-        await _syncProducts();
-        print('✅ Full sync completed successfully');
-      } catch (e) {
-        print('❌ Sync error: $e');
-      }
-    });
-  }
-
-  // Helper method to show error messages
-  void _showErrorSnackBar(String message) {
-    // This would typically use a ScaffoldMessenger, but we can't access context here
-    print('💬 Error Snackbar: $message');
-  }
   void setTenantContext(String tenantId) {
     _firestore.setTenantId(tenantId);
   }
-// Add these to your FirestoreServices class
 
-  // ... existing properties and methods ...
-
-  // Categories collection reference
-  CollectionReference get categoriesRef => FirebaseFirestore.instance.collection('categories');
-// In EnhancedPOSService class - ADD this corrected method
   Map<String, dynamic> _createEnhancedCartData(
       List<CartItem> cartItems,
-      Map<String, dynamic>? additionalData,
-      {double? cartDiscount,
+      Map<String, dynamic>? additionalData, {
+        double? cartDiscount,
         double? cartDiscountPercent,
-        double? taxRate}
-      ) {
+        double? taxRate,
+      }) {
     // Calculate basic totals
     final subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
     final itemDiscounts = cartItems.fold(0.0, (sum, item) => sum + item.discountAmount);
@@ -432,18 +630,13 @@ class EnhancedPOSService {
       },
     };
   }
-// In EnhancedPOSService class - ADD this method
 
-// In EnhancedPOSService class - ADD this method
-// In EnhancedPOSService class - UPDATE the createOrderWithEnhancedData method
-
-// In your EnhancedPOSService, update the order creation method
   Future<OrderCreationResult> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
         Map<String, dynamic>? additionalData,
         EnhancedCartManager? cartManager,
-        CreditSaleData? creditSaleData, // Add this parameter
+        CreditSaleData? creditSaleData,
       }) async {
     try {
       if (_isOnline) {
@@ -500,7 +693,7 @@ class EnhancedPOSService {
           cartItems,
           customerSelection,
           additionalData: additionalData,
-          creditSaleData: creditSaleData, // Pass credit data
+          creditSaleData: creditSaleData,
         );
       }
     } catch (e) {
@@ -509,7 +702,6 @@ class EnhancedPOSService {
     }
   }
 
-// Add this method to update customer credit
   Future<void> _updateCustomerCreditBalance(
       Customer customer,
       CreditSaleData creditSaleData,
@@ -529,9 +721,6 @@ class EnhancedPOSService {
     }
   }
 
-
-
-// Update the existing createOrderWithCustomer to use enhanced data
   Future<OrderCreationResult> createOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
@@ -544,12 +733,12 @@ class EnhancedPOSService {
       additionalData: additionalData,
     );
   }
-// In EnhancedPOSService - update the _createOfflineOrderWithCustomer method
+
   Future<OrderCreationResult> _createOfflineOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
         Map<String, dynamic>? additionalData,
-        CreditSaleData? creditSaleData, // ADD THIS PARAMETER
+        CreditSaleData? creditSaleData,
       }) async {
     try {
       // Update local stock quantities
@@ -578,6 +767,7 @@ class EnhancedPOSService {
       return OrderCreationResult.error('Failed to save order locally: $e');
     }
   }
+
   // Get invoice settings
   Future<Map<String, dynamic>> getInvoiceSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -609,9 +799,10 @@ class EnhancedPOSService {
   }
 
   static final EnhancedPOSService _instance = EnhancedPOSService._internal();
+
   factory EnhancedPOSService() => _instance;
   EnhancedPOSService._internal();
-  // In EnhancedPOSService class - REPLACE the existing return methods with these:
+
   // Enhanced Return operations with offline support
   Future<ReturnCreationResult> createReturn(ReturnRequest returnRequest) async {
     if (_isOnline) {
@@ -763,8 +954,21 @@ class EnhancedPOSService {
   }
 
   // Update the main sync method to include returns
-
-  // Enhanced Return operations
+  Future<void> _triggerSync() async {
+    await _syncLock.synchronized(() async {
+      try {
+        print('🔄 Starting full sync...');
+        await _syncPendingOrders();
+        await _syncPendingRestocks();
+        await _syncPendingReturns();
+        await _syncPendingCategories();
+        await _syncProducts();
+        print('✅ Full sync completed successfully');
+      } catch (e) {
+        print('❌ Sync error: $e');
+      }
+    });
+  }
 
   // Add to EnhancedPOSService class
   Future<List<AppOrder>> searchOrders(String query) async {
@@ -831,15 +1035,6 @@ class EnhancedPOSService {
     await _firestore.updateCustomer(customer);
   }
 
-  // Enhanced order creation
-
-  final LocalDatabase _localDb = LocalDatabase();
-  final Connectivity _connectivity = Connectivity();
-  final Lock _syncLock = Lock();
-
-  bool _isOnline = false;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
-
   void initialize() {
     _startConnectivityListener();
     _checkInitialConnection();
@@ -849,7 +1044,6 @@ class EnhancedPOSService {
     _connectivitySubscription?.cancel();
   }
 
-  // In EnhancedPOSService class - ADD this method
   Future<void> refreshLocalCache() async {
     if (_isOnline) {
       try {
@@ -874,7 +1068,7 @@ class EnhancedPOSService {
 
       if (!wasOnline && _isOnline) {
         _triggerSync();
-        refreshLocalCache(); // Add this line
+        refreshLocalCache();
       }
     });
   }
@@ -1163,7 +1357,6 @@ class EnhancedPOSService {
     await _updateLocalProductStock(productId, quantity);
   }
 
-  // In EnhancedPOSService class - ENHANCE the _updateLocalProductStock method
   Future<void> _updateLocalProductStock(String productId, int quantity) async {
     final products = await _localDb.getProducts(limit: 0); // Get all products
     final productIndex = products.indexWhere((p) => p.id == productId);
@@ -1216,8 +1409,6 @@ class EnhancedPOSService {
     await _updateLocalProductStock(productId, quantity);
   }
 
-
-
   bool get isOnline => _isOnline;
 
   Stream<bool> get onlineStatusStream =>
@@ -1232,7 +1423,6 @@ class EnhancedPOSService {
 }
 
 class MainNavScreen extends StatefulWidget {
-
   const MainNavScreen({super.key});
 
   @override
@@ -1364,11 +1554,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ModernCustomerManagementScreen(posService: _posService),
       ExpenseManagementScreen(analyticsService: _analyticsService),
       // Credit Management Screens
-      CreditCollectionScreen(creditService: _creditService,),
-      CreditCollectionScreen(
-        creditService: _creditService,
-        // posService: _posService,
-      ),
+      RestockProductScreen(),
+      CreditCollectionScreen(creditService: _creditService),
       CreditAnalyticsScreen(creditService: _creditService),
     ]);
 
@@ -1385,11 +1572,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ModernCustomerManagementScreen(posService: _posService),
       ExpenseManagementScreen(analyticsService: _analyticsService),
       // Credit Management Screens for Sales Manager
+      RestockProductScreen(),
       CreditCollectionScreen(creditService: _creditService),
-      CreditCollectionScreen(
-        creditService: _creditService,
-        // posService: _posService,
-      ),
     ]);
 
     // Cashier Screens - Basic credit access
@@ -1401,7 +1585,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ClientTicketsScreen(),
       ProfileScreen(),
       // Credit Management for Cashier (view only)
-      CreditCollectionScreen(creditService: _creditService),
+      RestockProductScreen()
     ]);
 
     if (mounted) {
@@ -2217,14 +2401,19 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        actions: [TextButton(onPressed: (){
-          // Navigator.push(
-          //   context,
-          //   MaterialPageRoute(
-          //     builder: (context) => InvoiceArchiveScreen(),
-          //   ),
-          // );
-        }, child: Text("Invoices"))],
+        actions: [
+          TextButton(
+              onPressed: () {
+                // Navigator.push(
+                //   context,
+                //   MaterialPageRoute(
+                //     builder: (context) => InvoiceArchiveScreen(),
+                //   ),
+                // );
+              },
+              child: Text("Invoices")
+          )
+        ],
         flexibleSpace: Container(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2444,7 +2633,6 @@ class MenuSection {
 
   MenuSection({required this.title, required this.items});
 }
-// Add this helper class and method
 
 class MenuItem {
   final IconData icon;
@@ -2460,146 +2648,4 @@ class MenuItem {
     required this.color,
     required this.index,
   });
-}
-
-String _getUserRole(AppUser user) {
-  if (user.canManageUsers) return 'Administrator';
-  if (user.canManageProducts) return 'Sales Manager';
-  return 'Cashier';
-}
-
-Widget _buildModernMenuItem(
-    BuildContext context, {
-      required MenuItem item,
-      required VoidCallback onTap,
-    }) {
-  return Container(
-    margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: ThemeUtils.card(context)[0].withOpacity(0.5),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: ThemeUtils.card(context)[1].withOpacity(0.1),
-            ),
-          ),
-          child: Row(
-            children: [
-              // Icon with gradient background
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      item.color.withOpacity(0.2),
-                      item.color.withOpacity(0.1),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(
-                  item.icon,
-                  color: item.color,
-                  size: 24,
-                ),
-              ),
-              SizedBox(width: 16),
-
-              // Text content
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      style: ThemeUtils.bodyLarge(context)?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      item.description,
-                      style: ThemeUtils.bodySmall(context)?.copyWith(
-                        color: ThemeUtils.textSecondary(context).withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Chevron icon
-              Icon(
-                Icons.arrow_forward_ios_rounded,
-                size: 16,
-                color: ThemeUtils.textSecondary(context).withOpacity(0.5),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-Widget _buildQuickActionChip(
-    BuildContext context, {
-      required IconData icon,
-      required String label,
-      required VoidCallback onTap,
-    }) {
-  return Container(
-    margin: EdgeInsets.only(right: 12),
-    child: Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: ThemeUtils.primary(context).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: ThemeUtils.primary(context)!.withOpacity(0.2),
-            ),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 20,
-                color: ThemeUtils.primary(context),
-              ),
-              SizedBox(height: 6),
-              Text(
-                label,
-                style: ThemeUtils.bodySmall(context)?.copyWith(
-                  color: ThemeUtils.primary(context),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-
-void _showSnackBar(String message,BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(message),
-      duration: Duration(seconds: 2),
-    ),
-  );
 }

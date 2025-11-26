@@ -8,6 +8,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../constants.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
@@ -1366,6 +1367,829 @@ class CategoryEditDialog extends StatefulWidget {
   State<CategoryEditDialog> createState() => _CategoryEditDialogState();
 }
 
+class CostHistoryScreen extends StatefulWidget {
+  final Product product;
+
+  const CostHistoryScreen({super.key, required this.product});
+
+  @override
+  _CostHistoryScreenState createState() => _CostHistoryScreenState();
+}
+
+class _CostHistoryScreenState extends State<CostHistoryScreen> {
+  final EnhancedPOSService _posService = EnhancedPOSService();
+  List<PurchaseRecord> _purchaseHistory = [];
+  bool _isLoading = true;
+  String _errorMessage = '';
+  DateTimeRange? _selectedDateRange;
+  List<PurchaseRecord> _filteredHistory = [];
+  ChartType _selectedChartType = ChartType.timeline;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPurchaseHistory();
+  }
+
+  Future<void> _loadPurchaseHistory() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = '';
+    });
+
+    try {
+      final history = await _posService.getPurchaseHistory(widget.product.id);
+      setState(() {
+        _purchaseHistory = history;
+        _filteredHistory = history;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Failed to load purchase history: $e';
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _applyFilters() {
+    List<PurchaseRecord> filtered = List.from(_purchaseHistory);
+
+    if (_selectedDateRange != null) {
+      filtered = filtered.where((record) {
+        return record.purchaseDate.isAfter(_selectedDateRange!.start) &&
+            record.purchaseDate.isBefore(_selectedDateRange!.end);
+      }).toList();
+    }
+
+    setState(() {
+      _filteredHistory = filtered;
+    });
+  }
+
+  void _showDateRangePicker() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      currentDate: DateTime.now(),
+      saveText: 'Apply',
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDateRange = picked;
+        _applyFilters();
+      });
+    }
+  }
+
+  void _clearFilters() {
+    setState(() {
+      _selectedDateRange = null;
+      _filteredHistory = _purchaseHistory;
+    });
+  }
+
+  double get _totalUnitsPurchased {
+    return _filteredHistory.fold(0, (sum, record) => sum + record.quantity);
+  }
+
+  double get _totalCost {
+    return _filteredHistory.fold(0.0, (sum, record) => sum + record.totalCost);
+  }
+
+  double get _averageCostPerUnit {
+    return _totalUnitsPurchased > 0 ? _totalCost / _totalUnitsPurchased : 0;
+  }
+
+  List<CostDataPoint> get _costTrendData {
+    final sortedHistory = List<PurchaseRecord>.from(_filteredHistory)
+      ..sort((a, b) => a.purchaseDate.compareTo(b.purchaseDate));
+
+    final List<CostDataPoint> data = [];
+    double cumulativeUnits = 0;
+    double cumulativeCost = 0;
+
+    for (final record in sortedHistory) {
+      cumulativeUnits += record.quantity;
+      cumulativeCost += record.totalCost;
+      final weightedAverage = cumulativeUnits > 0 ? cumulativeCost / cumulativeUnits : 0;
+
+      data.add(CostDataPoint(
+        date: record.purchaseDate,
+        cost: record.purchasePrice,
+        weightedAverage: weightedAverage.toDouble(),
+        quantity: record.quantity,
+        totalCost: record.totalCost,
+      ));
+    }
+
+    return data;
+  }
+
+  Widget _buildHeaderStats() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _buildStatItem(
+              'Total Purchases',
+              _filteredHistory.length.toString(),
+              Icons.receipt_long,
+              Colors.blue,
+            ),
+            _buildStatItem(
+              'Total Units',
+              _totalUnitsPurchased.toStringAsFixed(0),
+              Icons.inventory_2,
+              Colors.green,
+            ),
+            _buildStatItem(
+              'Total Cost',
+              '${Constants.CURRENCY_NAME}${_totalCost.toStringAsFixed(2)}',
+              Icons.attach_money,
+              Colors.orange,
+            ),
+            _buildStatItem(
+              'Avg Cost/Unit',
+              '${Constants.CURRENCY_NAME}${_averageCostPerUnit.toStringAsFixed(2)}',
+              Icons.trending_up,
+              Colors.purple,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilters() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Filters',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.calendar_today, size: 18),
+                    label: Text(
+                      _selectedDateRange == null
+                          ? 'Select Date Range'
+                          : '${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.start)} - ${DateFormat('MMM dd, yyyy').format(_selectedDateRange!.end)}',
+                    ),
+                    onPressed: _showDateRangePicker,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                if (_selectedDateRange != null)
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.clear, size: 18),
+                    label: const Text('Clear'),
+                    onPressed: _clearFilters,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Chart Type',
+              style: TextStyle(fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: ChartType.values.map((type) {
+                return FilterChip(
+                  label: Text(_getChartTypeLabel(type)),
+                  selected: _selectedChartType == type,
+                  onSelected: (selected) {
+                    setState(() {
+                      _selectedChartType = type;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getChartTypeLabel(ChartType type) {
+    switch (type) {
+      case ChartType.timeline:
+        return 'Cost Timeline';
+      case ChartType.quantity:
+        return 'Purchase Quantity';
+      case ChartType.cumulative:
+        return 'Cumulative Cost';
+    }
+  }
+
+  Widget _buildCharts() {
+    if (_costTrendData.isEmpty) return const SizedBox();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Cost Analysis',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: _buildChart(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChart() {
+    switch (_selectedChartType) {
+      case ChartType.timeline:
+        return _buildTimelineChart();
+      case ChartType.quantity:
+        return _buildQuantityChart();
+      case ChartType.cumulative:
+        return _buildCumulativeChart();
+    }
+  }
+
+  Widget _buildTimelineChart() {
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(
+        title: AxisTitle(text: 'Date'),
+        dateFormat: DateFormat('MMM dd'),
+      ),
+      primaryYAxis: NumericAxis(
+        title: AxisTitle(text: 'Cost per Unit (${Constants.CURRENCY_NAME})'),
+        numberFormat: NumberFormat.simpleCurrency(name: Constants.CURRENCY_NAME),
+      ),
+      series: <CartesianSeries>[
+        LineSeries<CostDataPoint, DateTime>(
+          dataSource: _costTrendData,
+          xValueMapper: (CostDataPoint data, _) => data.date,
+          yValueMapper: (CostDataPoint data, _) => data.cost,
+          name: 'Purchase Cost',
+          markerSettings: const MarkerSettings(isVisible: true),
+          color: Colors.blue,
+        ),
+        LineSeries<CostDataPoint, DateTime>(
+          dataSource: _costTrendData,
+          xValueMapper: (CostDataPoint data, _) => data.date,
+          yValueMapper: (CostDataPoint data, _) => data.weightedAverage,
+          name: 'Weighted Average',
+          markerSettings: const MarkerSettings(isVisible: true),
+          color: Colors.orange,
+          dashArray: [5, 5],
+        ),
+      ],
+      tooltipBehavior: TooltipBehavior(enable: true),
+      legend: Legend(isVisible: true, position: LegendPosition.bottom),
+    );
+  }
+
+  Widget _buildQuantityChart() {
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(
+        title: AxisTitle(text: 'Date'),
+        dateFormat: DateFormat('MMM dd'),
+      ),
+      primaryYAxis: NumericAxis(title: AxisTitle(text: 'Quantity')),
+      series: <CartesianSeries>[
+        ColumnSeries<CostDataPoint, DateTime>(
+          dataSource: _costTrendData,
+          xValueMapper: (CostDataPoint data, _) => data.date,
+          yValueMapper: (CostDataPoint data, _) => data.quantity,
+          name: 'Purchase Quantity',
+          color: Colors.green,
+        ),
+      ],
+      tooltipBehavior: TooltipBehavior(enable: true),
+    );
+  }
+
+  Widget _buildCumulativeChart() {
+    double cumulativeCost = 0;
+    final cumulativeData = _costTrendData.map((point) {
+      cumulativeCost += point.totalCost;
+      return CumulativeDataPoint(point.date, cumulativeCost);
+    }).toList();
+
+    return SfCartesianChart(
+      primaryXAxis: DateTimeAxis(
+        title: AxisTitle(text: 'Date'),
+        dateFormat: DateFormat('MMM dd'),
+      ),
+      primaryYAxis: NumericAxis(
+        title: AxisTitle(text: 'Cumulative Cost (${Constants.CURRENCY_NAME})'),
+        numberFormat: NumberFormat.simpleCurrency(name: Constants.CURRENCY_NAME),
+      ),
+      series: <CartesianSeries>[
+        AreaSeries<CumulativeDataPoint, DateTime>(
+          dataSource: cumulativeData,
+          xValueMapper: (CumulativeDataPoint data, _) => data.date,
+          yValueMapper: (CumulativeDataPoint data, _) => data.cumulativeCost,
+          name: 'Cumulative Cost',
+          color: Colors.purple.withOpacity(0.3),
+          borderColor: Colors.purple,
+          borderWidth: 2,
+        ),
+      ],
+      tooltipBehavior: TooltipBehavior(enable: true),
+    );
+  }
+
+  Widget _buildPurchaseList() {
+    if (_filteredHistory.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: Column(
+            children: [
+              Icon(Icons.history, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                'No Purchase History',
+                style: TextStyle(fontSize: 18, color: Colors.grey),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Purchase records will appear here after restocking',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Purchase History',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            ..._filteredHistory.map((record) => _buildPurchaseItem(record)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPurchaseItem(PurchaseRecord record) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[200]!),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                DateFormat('MMM dd, yyyy').format(record.purchaseDate),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${record.quantity} units',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cost per Unit: ${Constants.CURRENCY_NAME}${record.purchasePrice.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  if (record.supplier != null && record.supplier!.isNotEmpty)
+                    Text(
+                      'Supplier: ${record.supplier}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  if (record.batchNumber != null && record.batchNumber!.isNotEmpty)
+                    Text(
+                      'Batch: ${record.batchNumber}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    'Total: ${Constants.CURRENCY_NAME}${record.totalCost.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                  if (record.notes != null && record.notes!.isNotEmpty)
+                    SizedBox(
+                      width: 150,
+                      child: Text(
+                        'Notes: ${record.notes}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentCostSummary() {
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Current Cost Summary',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Weighted Average Cost:'),
+                Text(
+                  '${Constants.CURRENCY_NAME}${widget.product.purchasePrice?.toStringAsFixed(2) ?? 'N/A'}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.orange,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Current Stock:'),
+                Text(
+                  '${widget.product.stockQuantity} units',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Inventory Value:'),
+                Text(
+                  '${Constants.CURRENCY_NAME}${widget.product.inventoryValue.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Total Units Purchased:'),
+                Text(
+                  '${widget.product.totalUnitsPurchased}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Cost History - ${widget.product.name}'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadPurchaseHistory,
+            tooltip: 'Refresh',
+          ),
+          if (_filteredHistory.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.insights),
+              onPressed: () {
+                // Show detailed analytics
+                _showAnalyticsDialog();
+              },
+              tooltip: 'View Analytics',
+            ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage.isNotEmpty
+          ? Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'Unable to Load History',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text('Try Again'),
+              onPressed: _loadPurchaseHistory,
+            ),
+          ],
+        ),
+      )
+          : SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildHeaderStats(),
+            const SizedBox(height: 16),
+            _buildCurrentCostSummary(),
+            const SizedBox(height: 16),
+            _buildFilters(),
+            if (_costTrendData.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              _buildCharts(),
+            ],
+            const SizedBox(height: 16),
+            _buildPurchaseList(),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showAnalyticsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cost Analytics'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _buildAnalyticsContent(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsContent() {
+    if (_filteredHistory.isEmpty) return const Text('No data available');
+
+    final sortedByCost = List<PurchaseRecord>.from(_filteredHistory)
+      ..sort((a, b) => a.purchasePrice.compareTo(b.purchasePrice));
+
+    final lowestCost = sortedByCost.first.purchasePrice;
+    final highestCost = sortedByCost.last.purchasePrice;
+    final costRange = highestCost - lowestCost;
+
+    final totalUnits = _totalUnitsPurchased;
+    final avgCost = _averageCostPerUnit;
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildAnalyticsItem('Lowest Purchase Cost', '${Constants.CURRENCY_NAME}${lowestCost.toStringAsFixed(2)}'),
+          _buildAnalyticsItem('Highest Purchase Cost', '${Constants.CURRENCY_NAME}${highestCost.toStringAsFixed(2)}'),
+          _buildAnalyticsItem('Cost Range', '${Constants.CURRENCY_NAME}${costRange.toStringAsFixed(2)}'),
+          _buildAnalyticsItem('Average Cost per Unit', '${Constants.CURRENCY_NAME}${avgCost.toStringAsFixed(2)}'),
+          _buildAnalyticsItem('Total Investment', '${Constants.CURRENCY_NAME}${_totalCost.toStringAsFixed(2)}'),
+          _buildAnalyticsItem('Average Purchase Size', '${(totalUnits / _filteredHistory.length).toStringAsFixed(1)} units'),
+
+          const SizedBox(height: 16),
+          const Text(
+            'Cost Distribution',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          ..._buildCostDistribution(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnalyticsItem(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildCostDistribution() {
+    final costRanges = {
+      'Low (< ${Constants.CURRENCY_NAME}${(_averageCostPerUnit * 0.8).toStringAsFixed(2)})': 0,
+      'Average': 0,
+      'High (> ${Constants.CURRENCY_NAME}${(_averageCostPerUnit * 1.2).toStringAsFixed(2)})': 0,
+    };
+
+    for (final record in _filteredHistory) {
+      final lowKey =
+          'Low (< ${Constants.CURRENCY_NAME}${(_averageCostPerUnit * 0.8).toStringAsFixed(2)})';
+      final highKey =
+          'High (> ${Constants.CURRENCY_NAME}${(_averageCostPerUnit * 1.2).toStringAsFixed(2)})';
+
+      if (record.purchasePrice < _averageCostPerUnit * 0.8) {
+        costRanges[lowKey] = costRanges[lowKey]! + 1;
+      } else if (record.purchasePrice > _averageCostPerUnit * 1.2) {
+        costRanges[highKey] = costRanges[highKey]! + 1;
+      } else {
+        costRanges['Average'] = costRanges['Average']! + 1;
+      }
+    }
+
+
+    return costRanges.entries.map((entry) {
+      final percentage = (entry.value / _filteredHistory.length * 100);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(flex: 2, child: Text(entry.key)),
+            Expanded(
+              flex: 3,
+              child: LinearProgressIndicator(
+                value: entry.value / _filteredHistory.length,
+                backgroundColor: Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  entry.key.startsWith('Low') ? Colors.green :
+                  entry.key.startsWith('High') ? Colors.orange : Colors.blue,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Text(
+                '${percentage.toStringAsFixed(1)}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+}
+
+// Supporting data classes
+class CostDataPoint {
+  final DateTime date;
+  final double cost;
+  final double weightedAverage;
+  final int quantity;
+  final double totalCost;
+
+  CostDataPoint({
+    required this.date,
+    required this.cost,
+    required this.weightedAverage,
+    required this.quantity,
+    required this.totalCost,
+  });
+}
+
+class CumulativeDataPoint {
+  final DateTime date;
+  final double cumulativeCost;
+
+  CumulativeDataPoint(this.date, this.cumulativeCost);
+}
+
+enum ChartType {
+  timeline,
+  quantity,
+  cumulative,
+}
+
+
+
 class _CategoryEditDialogState extends State<CategoryEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -1799,6 +2623,14 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
   //     ),
   //   );
   // }
+  void _navigateToWacRestocking() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RestockProductScreen(),
+      ),
+    );
+  }
 
 // Update the _showAdvancedOptions method to use the new navigation
   void _showAdvancedOptions(BuildContext context) {
@@ -1817,6 +2649,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Drag handle
               Container(
                 width: 40,
                 height: 4,
@@ -1826,6 +2659,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
+
               _buildBottomSheetItem(
                 icon: Icons.summarize_rounded,
                 title: 'Inventory Summary',
@@ -1835,6 +2669,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                   _navigateToInventorySummary();
                 },
               ),
+
               _buildBottomSheetItem(
                 icon: Icons.category_rounded,
                 title: 'Manage Categories',
@@ -1844,24 +2679,28 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                   _navigateToCategoryManagement();
                 },
               ),
+
               _buildBottomSheetItem(
                 icon: Icons.qr_code_scanner_rounded,
                 title: 'Bulk Barcode Scan',
                 subtitle: 'Scan multiple products quickly',
                 onTap: () {
                   Navigator.pop(context);
-                  _navigateToBulkScan();
+                  _navigateToBulkScan(); // already exists
                 },
               ),
-              // _buildBottomSheetItem(
-              //   icon: Icons.file_download_rounded,
-              //   title: 'Export Products',
-              //   subtitle: 'Export to CSV, JSON, or PDF',
-              //   onTap: () {
-              //     Navigator.pop(context);
-              //     _navigateToExport();
-              //   },
-              // ),
+
+              /// ⭐ NEW OPTION ADDED HERE
+              _buildBottomSheetItem(
+                icon: Icons.inventory_2_rounded,
+                title: 'Restock Using WAC',
+                subtitle: 'Update stock using Weighted Average Cost',
+                onTap: () {
+                  Navigator.pop(context);
+                  _navigateToWacRestocking();  // <-- YOU MUST CREATE THIS METHOD
+                },
+              ),
+
               const SizedBox(height: 16),
             ],
           ),
@@ -2038,6 +2877,9 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
       itemBuilder: (context, index) {
         final product = _filteredProducts[index];
         return ProductManagementCard(
+          onViewCostHistory: () {
+            Navigator.push(context,MaterialPageRoute(builder: (context) => CostHistoryScreen(product: _filteredProducts[index])));
+          },
           product: product,
           onEdit: () => _navigateToEditProduct(product),
           onDelete: () => _deleteProduct(product.id),
@@ -2197,11 +3039,13 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
 }
 
 // Product Management Card
+// Add WAC information to your product cards
 class ProductManagementCard extends StatelessWidget {
   final Product product;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final VoidCallback onRestock;
+  final VoidCallback onViewCostHistory;
 
   const ProductManagementCard({
     super.key,
@@ -2209,438 +3053,235 @@ class ProductManagementCard extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onRestock,
+    required this.onViewCostHistory,
   });
 
-  void _showQuickActions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Product image
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    image: product.imageUrl != null
+                        ? DecorationImage(
+                      image: NetworkImage(product.imageUrl!),
+                      fit: BoxFit.cover,
+                    )
+                        : null,
+                  ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 50,
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(8),
-                        image: product.imageUrl != null
-                            ? DecorationImage(
-                          image: NetworkImage(product.imageUrl!),
-                          fit: BoxFit.cover,
-                        )
-                            : null,
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      SizedBox(height: 4),
+                      Text(
+                        'SKU: ${product.sku}',
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+
+                      // WAC INFORMATION
+                      if (product.purchasePrice != null) ...[
+                        SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Text(
+                              'Cost: ${Constants.CURRENCY_NAME}${product.purchasePrice!.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'Margin: ${product.profitMargin.toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: product.profitMargin >= 20
+                                    ? Colors.green[700]
+                                    : product.profitMargin >= 10
+                                    ? Colors.orange[700]
+                                    : Colors.red[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+
+                      SizedBox(height: 4),
+                      Row(
                         children: [
                           Text(
-                            product.name,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 16,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            'SKU: ${product.sku}',
+                            '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}',
                             style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green[700],
                             ),
+                          ),
+                          SizedBox(width: 16),
+                          Container(
+                            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: product.stockQuantity > 10
+                                  ? Colors.green[50]
+                                  : product.stockQuantity > 0
+                                  ? Colors.orange[50]
+                                  : Colors.red[50],
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: product.stockQuantity > 10
+                                    ? Colors.green[100]!
+                                    : product.stockQuantity > 0
+                                    ? Colors.orange[100]!
+                                    : Colors.red[100]!,
+                              ),
+                            ),
+                            child: Text(
+                              'Stock: ${product.stockQuantity}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: product.stockQuantity > 10
+                                    ? Colors.green[700]
+                                    : product.stockQuantity > 0
+                                    ? Colors.orange[700]
+                                    : Colors.red[700],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuButton(
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'cost_history',
+                      child: Row(
+                        children: [
+                          Icon(Icons.history, size: 20),
+                          SizedBox(width: 8),
+                          Text('Cost History'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'restock',
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_circle, size: 20),
+                          SizedBox(width: 8),
+                          Text('Restock'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, size: 20),
+                          SizedBox(width: 8),
+                          Text('Edit'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, size: 20, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text(
+                            'Delete',
+                            style: TextStyle(color: Colors.red),
                           ),
                         ],
                       ),
                     ),
                   ],
-                ),
-              ),
-              const Divider(height: 1),
-              _buildActionItem(
-                context,
-                icon: Icons.edit_rounded,
-                title: 'Edit Product',
-                color: Colors.blue,
-                onTap: () {
-                  Navigator.pop(context);
-                  onEdit();
-                },
-              ),
-              _buildActionItem(
-                context,
-                icon: Icons.add_circle_rounded,
-                title: 'Restock',
-                color: Colors.green,
-                onTap: () {
-                  Navigator.pop(context);
-                  onRestock();
-                },
-              ),
-              _buildActionItem(
-                context,
-                icon: Icons.qr_code_rounded,
-                title: 'View Barcode',
-                color: Colors.purple,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showBarcodeDialog(context);
-                },
-              ),
-              _buildActionItem(
-                context,
-                icon: Icons.visibility_rounded,
-                title: 'View Details',
-                color: Colors.orange,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showProductDetails(context);
-                },
-              ),
-              const Divider(height: 1),
-              _buildActionItem(
-                context,
-                icon: Icons.delete_rounded,
-                title: 'Delete Product',
-                color: Colors.red,
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation(context);
-                },
-              ),
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionItem(
-      BuildContext context, {
-        required IconData icon,
-        required String title,
-        required Color color,
-        required VoidCallback onTap,
-      }) {
-    return ListTile(
-      leading: Icon(icon, color: color),
-      title: Text(title),
-      onTap: onTap,
-    );
-  }
-
-  void _showBarcodeDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Product Barcode'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              product.sku,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                fontFamily: 'Monospace',
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Barcode: ${product.sku}',
-                style: const TextStyle(fontFamily: 'Monospace'),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showProductDetails(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                      image: product.imageUrl != null
-                          ? DecorationImage(
-                        image: NetworkImage(product.imageUrl!),
-                        fit: BoxFit.cover,
-                      )
-                          : null,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          product.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'SKU: ${product.sku}',
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              _buildDetailRow('Price', '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}'),
-              _buildDetailRow('Stock', product.stockQuantity.toString()),
-              _buildDetailRow('Status', product.inStock ? 'In Stock' : 'Out of Stock'),
-              if (product.purchasePrice != null)
-                _buildDetailRow('Cost', '${Constants.CURRENCY_NAME}${product.purchasePrice!.toStringAsFixed(0)}'),
-              if (product.description != null && product.description!.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Text(
-                  'Description:',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  product.description!,
-                  style: TextStyle(color: Colors.grey.shade700),
+                  onSelected: (value) {
+                    switch (value) {
+                      case 'cost_history':
+                        onViewCostHistory();
+                        break;
+                      case 'restock':
+                        onRestock();
+                        break;
+                      case 'edit':
+                        onEdit();
+                        break;
+                      case 'delete':
+                        onDelete();
+                        break;
+                    }
+                  },
                 ),
               ],
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    onEdit();
-                  },
-                  child: const Text('Edit Product'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontWeight: FontWeight.w500,
-              color: Colors.grey.shade600,
             ),
-          ),
-          Text(
-            value,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
 
-  void _showDeleteConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Product'),
-        content: Text('Are you sure you want to delete "${product.name}"? This action cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onDelete();
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => _showQuickActions(context),
-        onLongPress: () => _showProductDetails(context),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
+            // INVENTORY VALUE
+            if (product.purchasePrice != null && product.stockQuantity > 0)
               Container(
-                width: 60,
-                height: 60,
+                margin: EdgeInsets.only(top: 8),
+                padding: EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                  image: product.imageUrl != null
-                      ? DecorationImage(
-                    image: NetworkImage(product.imageUrl!),
-                    fit: BoxFit.cover,
-                  )
-                      : null,
+                  color: Colors.blue[50],
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                child: product.imageUrl == null
-                    ? Icon(
-                  Icons.inventory_2_rounded,
-                  color: Colors.grey.shade400,
-                )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      product.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'SKU: ${product.sku}',
+                      'Inventory Value:',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: Colors.blue[800],
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.green,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: product.stockQuantity > 10
-                                ? Colors.green.shade50
-                                : product.stockQuantity > 0
-                                ? Colors.orange.shade50
-                                : Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: product.stockQuantity > 10
-                                  ? Colors.green.shade100
-                                  : product.stockQuantity > 0
-                                  ? Colors.orange.shade100
-                                  : Colors.red.shade100,
-                            ),
-                          ),
-                          child: Text(
-                            'Stock: ${product.stockQuantity}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: product.stockQuantity > 10
-                                  ? Colors.green.shade700
-                                  : product.stockQuantity > 0
-                                  ? Colors.orange.shade700
-                                  : Colors.red.shade700,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      '${Constants.CURRENCY_NAME}${product.inventoryValue.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue[800],
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
               ),
-              Icon(
-                Icons.more_vert_rounded,
-                color: Colors.grey.shade400,
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
 }
+
+
+
 // Add Product Screen
 class AddProductScreen extends StatefulWidget {
   const AddProductScreen({super.key});
@@ -3809,7 +4450,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
   }
 }
 
-// Restock Product Screen
+
 class RestockProductScreen extends StatefulWidget {
   const RestockProductScreen({super.key});
 
@@ -3821,27 +4462,41 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
   final EnhancedPOSService _posService = EnhancedPOSService();
   final TextEditingController _barcodeController = TextEditingController();
   final TextEditingController _quantityController = TextEditingController();
+  final TextEditingController _purchasePriceController = TextEditingController();
+  final TextEditingController _supplierController = TextEditingController();
+  final TextEditingController _notesController = TextEditingController();
+
   final List<Product> _allProducts = [];
   Product? _selectedProduct;
-  final bool _isScanning = false;
+  bool _isScanning = false;
   bool _isLoading = false;
   bool _isLoadingProducts = false;
   final FocusNode _quantityFocusNode = FocusNode();
+  final FocusNode _purchasePriceFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _quantityController.text = '1';
+    _purchasePriceController.text = '';
+    _supplierController.text = '';
+    _notesController.text = '';
+
     _loadAllProducts();
   }
 
   @override
   void dispose() {
     _quantityFocusNode.dispose();
+    _purchasePriceFocusNode.dispose();
+    _barcodeController.dispose();
+    _quantityController.dispose();
+    _purchasePriceController.dispose();
+    _supplierController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
-  // In RestockProductScreen - UPDATE the _loadAllProducts method
   Future<void> _loadAllProducts() async {
     setState(() => _isLoadingProducts = true);
     final LocalDatabase localDb = LocalDatabase();
@@ -3851,7 +4506,6 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       if (_posService.isOnline) {
         products = await _posService.fetchProducts(limit: 1000);
       } else {
-        // Load ALL products when offline
         products = await localDb.getAllProducts();
       }
 
@@ -3873,13 +4527,25 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
   }
 
   Future<void> _scanBarcode() async {
-    final barcode = await UniversalScanningService.scanBarcode(
-      context,
-      purpose: 'restock',
-    );
-    if (barcode != null && barcode.isNotEmpty) {
-      _barcodeController.text = barcode;
-      await _searchProductByBarcode(barcode);
+    setState(() => _isScanning = true);
+    try {
+      final barcode = await UniversalScanningService.scanBarcode(
+        context,
+        purpose: 'restock',
+      );
+      if (barcode != null && barcode.isNotEmpty) {
+        _barcodeController.text = barcode;
+        await _searchProductByBarcode(barcode);
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Scan failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isScanning = false);
     }
   }
 
@@ -3902,6 +4568,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
         });
 
         _quantityController.text = '1';
+        _purchasePriceController.text = product.purchasePrice?.toStringAsFixed(2) ?? '';
         FocusScope.of(context).requestFocus(_quantityFocusNode);
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3934,34 +4601,51 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
 
   Future<void> _restockProduct() async {
     if (_selectedProduct == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Please select a product first')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please select a product first')),
+      );
       return;
     }
 
     final quantity = int.tryParse(_quantityController.text) ?? 0;
+    final purchasePrice = double.tryParse(_purchasePriceController.text) ?? 0.0;
+
     if (quantity <= 0) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Please enter valid quantity')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please enter valid quantity')),
+      );
+      return;
+    }
+
+    if (purchasePrice <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Please enter valid purchase price')),
+      );
       return;
     }
 
     setState(() => _isLoading = true);
     try {
-      await _posService.restockProduct(_selectedProduct!.id, quantity);
+      await _posService.restockProductWithWAC(
+        _selectedProduct!.id,
+        quantity,
+        purchasePrice,
+        supplier: _supplierController.text.isEmpty ? null : _supplierController.text,
+        notes: _notesController.text.isEmpty ? null : _notesController.text,
+      );
 
-      // Show appropriate message based on online status
       if (_posService.isOnline) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${_selectedProduct!.name} restocked with $quantity items!',
+              '${_selectedProduct!.name} restocked with $quantity items!\n'
+                  'Weighted average cost updated.',
             ),
             backgroundColor: Colors.green,
           ),
         );
+        await _loadAllProducts();
+        _clearSelection();
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -3972,12 +4656,10 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       }
 
       await _loadAllProducts();
-      Navigator.of(context).pop();
+      // Navigator.of(context).pop();
     } catch (e) {
-      // Even if there's an error, it might be because we're saving offline
       final errorMessage = e.toString();
-      if (errorMessage.contains('offline') ||
-          errorMessage.contains('Saved offline')) {
+      if (errorMessage.contains('offline') || errorMessage.contains('Saved offline')) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Restock saved offline. Will sync when online.'),
@@ -4004,6 +4686,9 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       _selectedProduct = null;
       _barcodeController.clear();
       _quantityController.text = '1';
+      _purchasePriceController.text = '';
+      _supplierController.clear();
+      _notesController.clear();
     });
   }
 
@@ -4013,17 +4698,582 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
     return currentStock + addedQuantity;
   }
 
+  double get _totalPurchaseCost {
+    final quantity = int.tryParse(_quantityController.text) ?? 0;
+    final purchasePrice = double.tryParse(_purchasePriceController.text) ?? 0.0;
+    return quantity * purchasePrice;
+  }
+
   bool get _canRestock {
     return _selectedProduct != null &&
         _quantityController.text.isNotEmpty &&
-        (int.tryParse(_quantityController.text) ?? 0) > 0;
+        (int.tryParse(_quantityController.text) ?? 0) > 0 &&
+        _purchasePriceController.text.isNotEmpty &&
+        (double.tryParse(_purchasePriceController.text) ?? 0) > 0;
+  }
+
+  Widget _buildWACInformation() {
+    if (_selectedProduct == null) return SizedBox();
+
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.calculate, color: Colors.purple),
+                SizedBox(width: 8),
+                Text(
+                  'Weighted Average Cost',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            if (_selectedProduct!.purchasePrice != null) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Current WAC:'),
+                  Text(
+                    '${Constants.CURRENCY_NAME}${_selectedProduct!.purchasePrice!.toStringAsFixed(2)}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Profit Margin:'),
+                  Text(
+                    '${_selectedProduct!.profitMargin.toStringAsFixed(1)}%',
+                    style: TextStyle(
+                      color: _selectedProduct!.profitMargin >= 20
+                          ? Colors.green
+                          : _selectedProduct!.profitMargin >= 10
+                          ? Colors.orange
+                          : Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Inventory Value:'),
+                  Text(
+                    '${Constants.CURRENCY_NAME}${_selectedProduct!.inventoryValue.toStringAsFixed(2)}',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              SizedBox(height: 8),
+              Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('This Purchase:'),
+                  Text(
+                    '${Constants.CURRENCY_NAME}${_totalPurchaseCost.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Text(
+                'No purchase history yet. This will set the initial cost.',
+                style: TextStyle(color: Colors.grey),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPurchasePriceSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.monetization_on, color: Colors.orange),
+                SizedBox(width: 8),
+                Text(
+                  'Purchase Price (Cost)',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: _purchasePriceController,
+              focusNode: _purchasePriceFocusNode,
+              decoration: InputDecoration(
+                labelText: 'Cost per Unit',
+                border: OutlineInputBorder(),
+                prefixText: Constants.CURRENCY_NAME,
+                hintText: 'Enter purchase price',
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.clear),
+                  onPressed: () {
+                    _purchasePriceController.clear();
+                    setState(() {});
+                  },
+                ),
+              ),
+              keyboardType: TextInputType.numberWithOptions(decimal: true),
+              onChanged: (value) {
+                setState(() {});
+              },
+            ),
+            SizedBox(height: 8),
+            if (_selectedProduct != null && _selectedProduct!.purchasePrice != null)
+              Text(
+                'Current Weighted Average Cost: ${Constants.CURRENCY_NAME}${_selectedProduct!.purchasePrice!.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.green[700],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupplierAndNotesSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.business, color: Colors.blue),
+                SizedBox(width: 8),
+                Text(
+                  'Additional Information',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: _supplierController,
+              decoration: InputDecoration(
+                labelText: 'Supplier (Optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.business_center),
+                hintText: 'Enter supplier name',
+              ),
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: _notesController,
+              decoration: InputDecoration(
+                labelText: 'Notes (Optional)',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.note),
+                hintText: 'Add any notes about this purchase',
+              ),
+              maxLines: 2,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManualProductSelection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.list, color: Colors.blue),
+                SizedBox(width: 8),
+                Text(
+                  'Select Product Manually',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+      DropdownButtonFormField<Product>(
+        value: _selectedProduct,
+        isExpanded: true,
+
+        decoration: InputDecoration(
+          labelText: "Choose Product",
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        ),
+
+        /// 🔥 FIX: compact view for selected item
+        selectedItemBuilder: (context) {
+          return _allProducts.map((product) {
+            return Text(
+              product.name,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            );
+          }).toList();
+        },
+
+        /// Full detailed view inside dropdown menu
+        items: _allProducts.map((product) {
+          return DropdownMenuItem<Product>(
+            value: product,
+            child: SizedBox(
+              width: double.infinity,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    product.name,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    "SKU: ${product.sku}   •   Stock: ${product.stockQuantity}",
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                  if (product.purchasePrice != null) ...[
+                    SizedBox(height: 2),
+                    Text(
+                      "WAC: ${Constants.CURRENCY_NAME}${product.purchasePrice!.toStringAsFixed(2)}",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green[700],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+
+        onChanged: (product) {
+          setState(() {
+            _selectedProduct = product;
+
+            if (product != null) {
+              _barcodeController.text = product.sku;
+              _quantityController.text = "1";
+              _purchasePriceController.text =
+                  product.purchasePrice?.toStringAsFixed(2) ?? "";
+              FocusScope.of(context).requestFocus(_quantityFocusNode);
+            }
+          });
+        },
+      )],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarcodeInputSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.qr_code, color: Colors.green),
+                SizedBox(width: 8),
+                Text(
+                  'Scan Barcode',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _barcodeController,
+                    decoration: InputDecoration(
+                      labelText: 'Barcode/SKU',
+                      border: OutlineInputBorder(),
+                      suffixIcon: _isLoading
+                          ? Padding(
+                        padding: EdgeInsets.all(12),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                        ),
+                      )
+                          : _barcodeController.text.isNotEmpty
+                          ? IconButton(
+                        icon: Icon(Icons.clear),
+                        onPressed: () {
+                          _barcodeController.clear();
+                          setState(() {});
+                        },
+                      )
+                          : null,
+                    ),
+                    onChanged: (value) {
+                      setState(() {});
+                      if (value.length >= 3) {
+                        _searchProductByBarcode(value);
+                      }
+                    },
+                  ),
+                ),
+                SizedBox(width: 12),
+                _isScanning
+                    ? CircularProgressIndicator()
+                    : IconButton(
+                  icon: Icon(
+                    Icons.qr_code_scanner,
+                    size: 32,
+                  ),
+                  onPressed: _scanBarcode,
+                  tooltip: 'Scan Barcode',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.blue[50],
+                    padding: EdgeInsets.all(16),
+                  ),
+                ),
+              ],
+            ),
+            if (_barcodeController.text.isNotEmpty)
+              Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Press scan button or enter to search',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProductInfoSection() {
+    if (_selectedProduct == null) return SizedBox();
+
+    return Card(
+      color: Colors.green[50],
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.green),
+                SizedBox(width: 8),
+                Text(
+                  'Selected Product',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                    image: _selectedProduct!.imageUrl != null
+                        ? DecorationImage(
+                      image: NetworkImage(
+                        _selectedProduct!.imageUrl!,
+                      ),
+                      fit: BoxFit.cover,
+                    )
+                        : null,
+                  ),
+                  child: _selectedProduct!.imageUrl == null
+                      ? Icon(
+                    Icons.inventory,
+                    color: Colors.grey[400],
+                  )
+                      : null,
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedProduct!.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'SKU: ${_selectedProduct!.sku}',
+                        style: TextStyle(
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Text(
+                            'Current Stock: ',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            _selectedProduct!.stockQuantity.toString(),
+                            style: TextStyle(
+                              color: _selectedProduct!.inStock
+                                  ? Colors.green
+                                  : Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        'Sale Price: ${Constants.CURRENCY_NAME}${_selectedProduct!.price.toStringAsFixed(0)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuantityInputSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.add_circle, color: Colors.orange),
+                SizedBox(width: 8),
+                Text(
+                  'Restock Quantity',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            TextField(
+              controller: _quantityController,
+              focusNode: _quantityFocusNode,
+              decoration: InputDecoration(
+                labelText: 'Quantity to Add',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.add),
+                hintText: 'Enter quantity',
+                suffixIcon: IconButton(
+                  icon: Icon(Icons.clear),
+                  onPressed: () {
+                    _quantityController.text = '1';
+                    setState(() {});
+                  },
+                ),
+              ),
+              keyboardType: TextInputType.number,
+              onChanged: (value) {
+                setState(() {});
+              },
+            ),
+            SizedBox(height: 12),
+            Container(
+              padding: EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'New Total Stock:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    '$_newStockQuantity',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Restock Product'),
+        title: Text('Restock Product (WAC)'),
         actions: [
           if (_selectedProduct != null)
             IconButton(
@@ -4043,81 +5293,8 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
           : Padding(
         padding: EdgeInsets.all(16),
         child: ListView(
-          shrinkWrap: true,
           children: [
-            // Manual Product Selection
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.list, color: Colors.blue),
-                        SizedBox(width: 8),
-                        Text(
-                          'Select Product Manually',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12),
-                    DropdownButtonFormField<Product>(
-                      initialValue: _selectedProduct,
-                      decoration: InputDecoration(
-                        labelText: 'Choose Product',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                        ),
-                      ),
-                      items: _allProducts.map((product) {
-                        return DropdownMenuItem(
-                          value: product,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                product.name,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              Text(
-                                'SKU: ${product.sku} | Stock: ${product.stockQuantity}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      }).toList(),
-                      onChanged: (product) {
-                        setState(() {
-                          _selectedProduct = product;
-                          if (product != null) {
-                            _barcodeController.text = product.sku;
-                            _quantityController.text = '1';
-                            FocusScope.of(
-                              context,
-                            ).requestFocus(_quantityFocusNode);
-                          }
-                        });
-                      },
-                      isExpanded: true,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            _buildManualProductSelection(),
             SizedBox(height: 16),
 
             // OR Divider
@@ -4139,322 +5316,45 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
             ),
             SizedBox(height: 16),
 
-            // Barcode Input Section
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.qr_code, color: Colors.green),
-                        SizedBox(width: 8),
-                        Text(
-                          'Scan Barcode',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _barcodeController,
-                            decoration: InputDecoration(
-                              labelText: 'Barcode/SKU',
-                              border: OutlineInputBorder(),
-                              suffixIcon: _isLoading
-                                  ? Padding(
-                                padding: EdgeInsets.all(12),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                                  : _barcodeController.text.isNotEmpty
-                                  ? IconButton(
-                                icon: Icon(Icons.clear),
-                                onPressed: () {
-                                  _barcodeController.clear();
-                                  setState(() {});
-                                },
-                              )
-                                  : null,
-                            ),
-                            onChanged: (value) {
-                              setState(() {});
-                              if (value.length >= 3) {
-                                _searchProductByBarcode(value);
-                              }
-                            },
-                          ),
-                        ),
-                        SizedBox(width: 12),
-                        _isScanning
-                            ? CircularProgressIndicator()
-                            : IconButton(
-                          icon: Icon(
-                            Icons.qr_code_scanner,
-                            size: 32,
-                          ),
-                          onPressed: _scanBarcode,
-                          tooltip: 'Scan Barcode',
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.blue[50],
-                            padding: EdgeInsets.all(16),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_barcodeController.text.isNotEmpty)
-                      Padding(
-                        padding: EdgeInsets.only(top: 8),
-                        child: Text(
-                          'Press scan button or enter to search',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
+            _buildBarcodeInputSection(),
             SizedBox(height: 16),
 
-            // Product Info Section
             if (_selectedProduct != null) ...[
-              Card(
-                color: Colors.green[50],
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green),
-                          SizedBox(width: 8),
-                          Text(
-                            'Selected Product',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Container(
-                            width: 60,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(8),
-                              image: _selectedProduct!.imageUrl != null
-                                  ? DecorationImage(
-                                image: NetworkImage(
-                                  _selectedProduct!.imageUrl!,
-                                ),
-                                fit: BoxFit.cover,
-                              )
-                                  : null,
-                            ),
-                            child: _selectedProduct!.imageUrl == null
-                                ? Icon(
-                              Icons.inventory,
-                              color: Colors.grey[400],
-                            )
-                                : null,
-                          ),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _selectedProduct!.name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'SKU: ${_selectedProduct!.sku}',
-                                  style: TextStyle(
-                                    color: Colors.grey[700],
-                                  ),
-                                ),
-                                SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Current Stock: ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                    Text(
-                                      _selectedProduct!.stockQuantity
-                                          .toString(),
-                                      style: TextStyle(
-                                        color: _selectedProduct!.inStock
-                                            ? Colors.green
-                                            : Colors.red,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(
-                                  'Price: ${Constants.CURRENCY_NAME}${_selectedProduct!.price.toStringAsFixed(0)}',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildProductInfoSection(),
               SizedBox(height: 16),
-
-              // Quantity Input Section
-              Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.add_circle, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Text(
-                            'Restock Quantity',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12),
-                      TextField(
-                        controller: _quantityController,
-                        focusNode: _quantityFocusNode,
-                        decoration: InputDecoration(
-                          labelText: 'Quantity to Add',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.add),
-                          hintText: 'Enter quantity',
-                          suffixIcon: IconButton(
-                            icon: Icon(Icons.clear),
-                            onPressed: () {
-                              _quantityController.text = '1';
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          setState(() {});
-                        },
-                      ),
-                      SizedBox(height: 12),
-                      Container(
-                        padding: EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisAlignment:
-                          MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'New Total Stock:',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Text(
-                              '$_newStockQuantity',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green[700],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              _buildWACInformation(),
+              SizedBox(height: 16),
+              _buildQuantityInputSection(),
+              SizedBox(height: 16),
+              _buildPurchasePriceSection(),
+              SizedBox(height: 16),
+              _buildSupplierAndNotesSection(),
               SizedBox(height: 24),
             ],
 
-            Spacer(),
-
             // Restock Button
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: _isLoading
-                        ? ElevatedButton(
-                      onPressed: null,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                      ),
-                    )
-                        : ElevatedButton(
-                      onPressed: _canRestock
-                          ? _restockProduct
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _canRestock
-                            ? Colors.green
-                            : Colors.grey,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.inventory_2, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            'RESTOCK PRODUCT',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: _isLoading
+                  ? ElevatedButton(
+                onPressed: null,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                ),
+              )
+                  : ElevatedButton(
+                onPressed: _canRestock ? _restockProduct : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _canRestock ? Colors.green : Colors.grey,
+                ),
+                child: Text(
+                  'RESTOCK WITH WAC',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
-                ],
+                ),
               ),
             ),
             SizedBox(height: 8),

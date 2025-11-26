@@ -12,7 +12,68 @@ import '../cartBase/cart_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart' hide EnhancedPOSService;
+// Add this new class for tracking individual restocks
+class PurchaseRecord {
+  final String id;
+  final String productId;
+  final String productName;
+  final String productSku;
+  final int quantity;
+  final double purchasePrice; // Cost per unit for THIS batch
+  final double totalCost; // quantity * purchasePrice
+  final DateTime purchaseDate;
+  final String? supplier;
+  final String? batchNumber;
+  final String? notes;
 
+  PurchaseRecord({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.productSku,
+    required this.quantity,
+    required this.purchasePrice,
+    required this.totalCost,
+    required this.purchaseDate,
+    this.supplier,
+    this.batchNumber,
+    this.notes,
+  });
+
+  factory PurchaseRecord.fromFirestore(Map<String, dynamic> data, String id) {
+    return PurchaseRecord(
+      id: id,
+      productId: data['productId']?.toString() ?? '',
+      productName: data['productName']?.toString() ?? '',
+      productSku: data['productSku']?.toString() ?? '',
+      quantity: (data['quantity'] as num?)?.toInt() ?? 0,
+      purchasePrice: (data['purchasePrice'] as num?)?.toDouble() ?? 0.0,
+      totalCost: (data['totalCost'] as num?)?.toDouble() ?? 0.0,
+      purchaseDate: data['purchaseDate'] is Timestamp
+          ? (data['purchaseDate'] as Timestamp).toDate()
+          : DateTime.now(),
+      supplier: data['supplier']?.toString(),
+      batchNumber: data['batchNumber']?.toString(),
+      notes: data['notes']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'id': id,
+      'productId': productId,
+      'productName': productName,
+      'productSku': productSku,
+      'quantity': quantity,
+      'purchasePrice': purchasePrice,
+      'totalCost': totalCost,
+      'purchaseDate': Timestamp.fromDate(purchaseDate),
+      'supplier': supplier,
+      'batchNumber': batchNumber,
+      'notes': notes,
+    };
+  }
+}
 class Product {
   final String id;
   final String name;
@@ -44,6 +105,10 @@ class Product {
   final List<String> variations;
   final String? weight;
   final String? dimensions;
+  // NEW FIELDS FOR WAC
+  final double totalCostValue;
+  final int totalUnitsPurchased;
+  final DateTime? lastRestockDate;
 
   Product({
     required this.id,
@@ -76,6 +141,10 @@ class Product {
     this.variations = const [],
     this.weight,
     this.dimensions,
+    // Initialize new fields
+    this.totalCostValue = 0.0,
+    this.totalUnitsPurchased = 0,
+    this.lastRestockDate,
   });
 
   List<String> get categoryNames => categories.map((cat) => cat.name).toList();
@@ -84,6 +153,7 @@ class Product {
     return categories.any((cat) => cat.id == categoryId);
   }
 
+  // Copy with method update
   Product copyWith({
     String? id,
     String? name,
@@ -115,6 +185,9 @@ class Product {
     List<String>? variations,
     String? weight,
     String? dimensions,
+    double? totalCostValue,
+    int? totalUnitsPurchased,
+    DateTime? lastRestockDate,
   }) {
     return Product(
       id: id ?? this.id,
@@ -147,87 +220,72 @@ class Product {
       variations: variations ?? this.variations,
       weight: weight ?? this.weight,
       dimensions: dimensions ?? this.dimensions,
+      totalCostValue: totalCostValue ?? this.totalCostValue,
+      totalUnitsPurchased: totalUnitsPurchased ?? this.totalUnitsPurchased,
+      lastRestockDate: lastRestockDate ?? this.lastRestockDate,
     );
   }
 
+  // Complete fromFirestore method with all fields
   factory Product.fromFirestore(Map<String, dynamic> data, String id) {
-    final List<Category> parsedCategories = [];
-    if (data['categories'] != null && data['categories'] is List) {
-      for (var categoryData in data['categories']) {
-        if (categoryData is Map<String, dynamic>) {
-          parsedCategories.add(
-            Category.fromFirestore(
-              categoryData,
-              categoryData['id']?.toString() ?? '',
-            ),
-          );
+    // Parse categories
+    final List<Category> categories = [];
+    if (data['categories'] is List) {
+      for (final catData in data['categories']) {
+        if (catData is Map<String, dynamic>) {
+          try {
+            categories.add(Category.fromFirestore(catData, catData['id']?.toString() ?? ''));
+          } catch (e) {
+            print('Error parsing category: $e');
+          }
         }
       }
     }
 
-    final List<Attribute> parsedAttributes = [];
-    if (data['attributes'] != null && data['attributes'] is List) {
-      for (var attributeData in data['attributes']) {
-        if (attributeData is Map<String, dynamic>) {
-          parsedAttributes.add(Attribute.fromFirestore(attributeData, 0));
-        }
-      }
-    }
-
-    DateTime? parseDate(dynamic dateValue) {
-      if (dateValue == null) return null;
-      if (dateValue is Timestamp) return dateValue.toDate();
-      if (dateValue is String) {
-        try {
-          return DateTime.parse(dateValue);
-        } catch (_) {
-          return null;
-        }
-      }
-      return null;
-    }
-
-    final List<String> parsedImageUrls = [];
-    String? primaryImageUrl;
-
-    if (data['imageUrls'] != null && data['imageUrls'] is List) {
-      for (var url in data['imageUrls']) {
+    // Parse image URLs
+    final List<String> imageUrls = [];
+    if (data['imageUrls'] is List) {
+      for (final url in data['imageUrls']) {
         if (url != null) {
-          parsedImageUrls.add(url.toString());
+          imageUrls.add(url.toString());
         }
       }
     }
 
-    if (parsedImageUrls.isNotEmpty) {
-      primaryImageUrl = parsedImageUrls.first;
-    } else {
-      primaryImageUrl = data['imageUrl']?.toString();
+    // Parse attributes
+    final List<Attribute> attributes = [];
+    if (data['attributes'] is List) {
+      for (final attrData in data['attributes']) {
+        if (attrData is Map<String, dynamic>) {
+          try {
+            attributes.add(Attribute.fromFirestore(attrData, attrData['id'] ?? 0));
+          } catch (e) {
+            print('Error parsing attribute: $e');
+          }
+        }
+      }
     }
-
-    final productId = id.isNotEmpty ? id : data['id']?.toString() ?? '';
 
     return Product(
-      id: productId,
+      id: id,
       name: data['name']?.toString() ?? 'Unnamed Product',
       sku: data['sku']?.toString() ?? '',
       price: _parseDouble(data['price']) ?? 0.0,
       purchasePrice: _parseDouble(data['purchasePrice']),
       regularPrice: _parseDouble(data['regularPrice']),
       salePrice: _parseDouble(data['salePrice']),
-      imageUrl: primaryImageUrl,
-      imageUrls: parsedImageUrls,
+      imageUrl: data['imageUrl']?.toString(),
+      imageUrls: imageUrls,
       stockQuantity: _parseInt(data['stockQuantity']) ?? 0,
-      inStock: data['inStock'] ?? (data['stockStatus'] == 'instock'),
+      inStock: data['inStock'] ?? true,
       stockStatus: data['stockStatus']?.toString() ?? 'instock',
       description: data['description']?.toString(),
       shortDescription: data['shortDescription']?.toString(),
-      categories: parsedCategories,
-      attributes: parsedAttributes,
-      metaData: data['metaData'] is Map
-          ? Map<String, dynamic>.from(data['metaData'])
-          : {},
-      dateCreated: parseDate(data['dateCreated']),
-      dateModified: parseDate(data['dateModified']),
+      categories: categories,
+      attributes: attributes,
+      metaData: data['metaData'] is Map ? Map<String, dynamic>.from(data['metaData']) : {},
+      dateCreated: _parseDate(data['dateCreated']),
+      dateModified: _parseDate(data['dateModified']),
       purchasable: data['purchasable'] ?? true,
       type: data['type']?.toString(),
       status: data['status']?.toString() ?? 'publish',
@@ -236,14 +294,17 @@ class Product {
       averageRating: _parseDouble(data['averageRating']),
       ratingCount: _parseInt(data['ratingCount']),
       parentId: data['parentId']?.toString(),
-      variations: data['variations'] is List
-          ? List<String>.from(data['variations'])
-          : [],
+      variations: data['variations'] is List ? List<String>.from(data['variations']) : [],
       weight: data['weight']?.toString(),
       dimensions: data['dimensions']?.toString(),
+      // New WAC fields
+      totalCostValue: _parseDouble(data['totalCostValue']) ?? 0.0,
+      totalUnitsPurchased: _parseInt(data['totalUnitsPurchased']) ?? 0,
+      lastRestockDate: _parseDate(data['lastRestockDate']),
     );
   }
 
+  // Complete toFirestore method
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
@@ -254,6 +315,7 @@ class Product {
       'regularPrice': regularPrice,
       'salePrice': salePrice,
       'imageUrl': imageUrl,
+      'imageUrls': imageUrls,
       'stockQuantity': stockQuantity,
       'inStock': inStock,
       'stockStatus': stockStatus,
@@ -266,7 +328,7 @@ class Product {
       'dateModified': dateModified?.toIso8601String(),
       'purchasable': purchasable,
       'type': type,
-      'status': status ?? 'publish',
+      'status': status,
       'featured': featured,
       'permalink': permalink,
       'averageRating': averageRating,
@@ -275,7 +337,50 @@ class Product {
       'variations': variations,
       'weight': weight,
       'dimensions': dimensions,
+      // New WAC fields
+      'totalCostValue': totalCostValue,
+      'totalUnitsPurchased': totalUnitsPurchased,
+      'lastRestockDate': lastRestockDate?.toIso8601String(),
+      // Add search keywords for better search functionality
+      'searchKeywords': _generateSearchKeywords(),
     };
+  }
+
+  // Generate search keywords for better search functionality
+  List<String> _generateSearchKeywords() {
+    final keywords = <String>[];
+
+    // Add product name words
+    keywords.addAll(name.toLowerCase().split(' '));
+
+    // Add SKU
+    if (sku.isNotEmpty) {
+      keywords.add(sku.toLowerCase());
+    }
+
+    // Add category names
+    for (final category in categories) {
+      keywords.addAll(category.name.toLowerCase().split(' '));
+    }
+
+    // Add description words if available
+    if (description != null && description!.isNotEmpty) {
+      keywords.addAll(description!.toLowerCase().split(' '));
+    }
+
+    // Remove duplicates and empty strings
+    return keywords.where((k) => k.length > 1).toSet().toList();
+  }
+
+  // Helper method to calculate current inventory value
+  double get inventoryValue {
+    return (purchasePrice ?? 0.0) * stockQuantity;
+  }
+
+  // Helper method to get profit margin
+  double get profitMargin {
+    if (purchasePrice == null || purchasePrice == 0) return 0.0;
+    return ((price - purchasePrice!) / purchasePrice!) * 100;
   }
 
   static int? _parseInt(dynamic value) {
@@ -294,6 +399,23 @@ class Product {
     return null;
   }
 
+  static DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    if (value is Timestamp) return value.toDate();
+    if (value is String) {
+      try {
+        return DateTime.parse(value);
+      } catch (e) {
+        return null;
+      }
+    }
+    if (value is int) {
+      return DateTime.fromMillisecondsSinceEpoch(value);
+    }
+    return null;
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -303,7 +425,6 @@ class Product {
   @override
   int get hashCode => id.hashCode;
 }
-
 class ProductImage extends StatelessWidget {
   final String? imageUrl;
   final List<String> imageUrls;

@@ -69,6 +69,8 @@ class FirestoreServices {
       .doc(_currentTenantId)
       .collection('products');
 
+
+
   CollectionReference get ordersRef => _firestore
       .collection('tenants')
       .doc(_currentTenantId)
@@ -321,7 +323,10 @@ class FirestoreServices {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
-
+  CollectionReference get purchaseRecordRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('purchaseRecords');
   // Customer operations
   Stream<List<Customer>> getCustomersStream() {
     return customersRef
@@ -666,20 +671,34 @@ class FirestoreServices {
       }
 
       final productData = product.toFirestore();
+
+      // Ensure image URLs are properly set
       productData['imageUrls'] = imageUrls;
       if (imageUrls.isNotEmpty) {
         productData['imageUrl'] = imageUrls.first;
       }
 
-      productData['searchKeywords'] = _generateSearchKeywords(product);
+      // Add timestamp if not present
+      if (productData['dateCreated'] == null) {
+        productData['dateCreated'] = FieldValue.serverTimestamp();
+      }
+      productData['dateModified'] = FieldValue.serverTimestamp();
 
       await productsRef.doc(product.id).set(productData);
+
+      // Also save to local database immediately
+      final LocalDatabase localDb = LocalDatabase();
+      await localDb.saveProducts([product.copyWith(
+        imageUrls: imageUrls,
+        imageUrl: imageUrls.isNotEmpty ? imageUrls.first : null,
+      )]);
+
       return product.id;
     } catch (e) {
+      print('Error adding product: $e');
       throw Exception('Failed to add product: $e');
     }
   }
-
   Future<void> updateProduct(Product product, List<XFile>? newImages) async {
     try {
       List<String> imageUrls = List.from(product.imageUrls);

@@ -17,6 +17,65 @@ import 'modules/auth/widgets/app_lifecycle_wrapper.dart';
 import 'theme_provider.dart';
 
 
+import 'package:flutter/material.dart';
+
+class DoubleBackExitWrapper extends StatefulWidget {
+  final Widget child;
+  const DoubleBackExitWrapper({super.key, required this.child});
+
+  @override
+  State<DoubleBackExitWrapper> createState() => _DoubleBackExitWrapperState();
+}
+
+class _DoubleBackExitWrapperState extends State<DoubleBackExitWrapper> {
+  DateTime? _lastPressed;
+
+  Future<bool> _onWillPop() async {
+    final now = DateTime.now();
+
+    if (_lastPressed == null ||
+        now.difference(_lastPressed!) > const Duration(seconds: 2)) {
+      _lastPressed = now;
+
+      // Modern Material 3 dialog
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            "Exit Application?",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text(
+            "Press the back button again to exit.",
+            style: TextStyle(fontSize: 15),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.grey[700],
+              ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+
+      return false;
+    }
+
+    return true; // allow system to exit
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: _onWillPop,
+      child: widget.child,
+    );
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -162,8 +221,10 @@ class MultiTenantSaaSApp extends StatelessWidget {
           bodyMedium: TextStyle(color: themeProvider.getSecondaryTextColor()),
         ),
       ),
-      home: const AppLifecycleWrapper(
-        child: AuthWrapper(),
+      home: AppLifecycleWrapper(
+        child: DoubleBackExitWrapper(
+          child: const AuthWrapper(),
+        ),
       ),
     );
   }

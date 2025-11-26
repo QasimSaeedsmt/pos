@@ -707,6 +707,7 @@ class LocalDatabase {
   // In LocalDatabase class - REPLACE the saveProducts method
   Future<void> saveProducts(List<Product> products) async {
     final prefs = await _prefs;
+    print('💾 Saving ${products.length} products to local storage');
 
     // Get existing products first
     final existingProductsJson = prefs.getString(productsKey);
@@ -714,30 +715,40 @@ class LocalDatabase {
 
     if (existingProductsJson != null) {
       try {
-        final List<dynamic> existingJsonList = json.decode(
-          existingProductsJson,
-        );
+        final List<dynamic> existingJsonList = json.decode(existingProductsJson);
         for (var json in existingJsonList) {
           final id = json['id']?.toString() ?? '';
           if (id.isNotEmpty) {
             existingProductsMap[id] = Product.fromFirestore(json, id);
           }
         }
+        print('📁 Found ${existingProductsMap.length} existing products in cache');
       } catch (e) {
-        print('Error loading existing products for merge: $e');
+        print('❌ Error loading existing products for merge: $e');
       }
     }
 
-    // Merge new products with existing ones
+    // Merge new products with existing ones - UPDATE EXISTING, ADD NEW
+    int updatedCount = 0;
+    int addedCount = 0;
+
     for (final product in products) {
-      existingProductsMap[product.id] = product;
+      if (existingProductsMap.containsKey(product.id)) {
+        existingProductsMap[product.id] = product;
+        updatedCount++;
+      } else {
+        existingProductsMap[product.id] = product;
+        addedCount++;
+      }
     }
+
+    print('🔄 Merge result: $addedCount added, $updatedCount updated');
 
     // Convert back to list and save
     final mergedProducts = existingProductsMap.values.toList();
     final productsJson = mergedProducts.map((p) {
       final data = p.toFirestore();
-      data['id'] = p.id;
+      data['id'] = p.id; // Ensure ID is included
       return data;
     }).toList();
 
@@ -746,8 +757,9 @@ class LocalDatabase {
       _cacheTimestampKey,
       DateTime.now().millisecondsSinceEpoch,
     );
-  }
 
+    print('✅ Successfully saved ${mergedProducts.length} products to local storage');
+  }
   // In LocalDatabase class - ADD this method
   Future<List<Product>> getAllProducts() async {
     final prefs = await _prefs;
