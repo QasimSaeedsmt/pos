@@ -30,6 +30,7 @@ import '../credit/credit_sale_model.dart';
 import '../credit/credit_service.dart';
 import '../customerBase/customer_base.dart';
 import '../expense_management.dart';
+import '../invoiceBase/invoice_archieve_screen.dart';
 import '../orderBase/order_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../product_selling/product_selling_base.dart';
@@ -2216,6 +2217,14 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        actions: [TextButton(onPressed: (){
+          // Navigator.push(
+          //   context,
+          //   MaterialPageRoute(
+          //     builder: (context) => InvoiceArchiveScreen(),
+          //   ),
+          // );
+        }, child: Text("Invoices"))],
         flexibleSpace: Container(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

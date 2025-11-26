@@ -1,5 +1,64 @@
 // New file: credit_models.dart
 import 'package:intl/intl.dart';
+class ProductDetail {
+  final String productId;
+  final String productName;
+  final String? productDescription;
+  final String? productCategory;
+  final String? sku;
+  final double unitPrice;
+  final int quantity;
+  final double totalPrice;
+  final String? unitType;
+  final double? discount;
+  final double? taxAmount;
+
+  ProductDetail({
+    required this.productId,
+    required this.productName,
+    required this.unitPrice,
+    required this.quantity,
+    required this.totalPrice,
+    this.productDescription,
+    this.productCategory,
+    this.sku,
+    this.unitType,
+    this.discount,
+    this.taxAmount,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'productId': productId,
+      'productName': productName,
+      'productDescription': productDescription,
+      'productCategory': productCategory,
+      'sku': sku,
+      'unitPrice': unitPrice,
+      'quantity': quantity,
+      'totalPrice': totalPrice,
+      'unitType': unitType,
+      'discount': discount,
+      'taxAmount': taxAmount,
+    };
+  }
+
+  factory ProductDetail.fromMap(Map<String, dynamic> map) {
+    return ProductDetail(
+      productId: map['productId'] ?? '',
+      productName: map['productName'] ?? '',
+      productDescription: map['productDescription'],
+      productCategory: map['productCategory'],
+      sku: map['sku'],
+      unitPrice: (map['unitPrice'] as num?)?.toDouble() ?? 0.0,
+      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+      totalPrice: (map['totalPrice'] as num?)?.toDouble() ?? 0.0,
+      unitType: map['unitType'],
+      discount: (map['discount'] as num?)?.toDouble(),
+      taxAmount: (map['taxAmount'] as num?)?.toDouble(),
+    );
+  }
+}
 
 class CreditTransaction {
   final String id;
@@ -18,6 +77,8 @@ class CreditTransaction {
   final DateTime? dueDate;
   final DateTime? createdDate;
   final String? createdBy;
+  final List<ProductDetail>? productDetails; // Add this line
+
 
   CreditTransaction({
     required this.id,
@@ -36,6 +97,8 @@ class CreditTransaction {
     this.dueDate,
     this.createdDate,
     this.createdBy,
+    this.productDetails, // Add this line
+
   });
 
   Map<String, dynamic> toMap() {
@@ -56,6 +119,9 @@ class CreditTransaction {
       'dueDate': dueDate?.toIso8601String(),
       'createdDate': createdDate?.toIso8601String() ?? DateTime.now().toIso8601String(),
       'createdBy': createdBy,
+      'productDetails': productDetails?.map((detail) => detail.toMap()).toList(), // Add this line
+
+
     };
   }
 
@@ -77,6 +143,8 @@ class CreditTransaction {
       dueDate: map['dueDate'] != null ? DateTime.parse(map['dueDate']) : null,
       createdDate: map['createdDate'] != null ? DateTime.parse(map['createdDate']) : null,
       createdBy: map['createdBy'],
+      productDetails: map['productDetails'] != null ?
+      (map['productDetails'] as List).map((detail) => ProductDetail.fromMap(detail)).toList() : null, // Add this line
     );
   }
 
@@ -86,6 +154,8 @@ class CreditTransaction {
   int get daysOverdue => dueDate != null && isOverdue
       ? DateTime.now().difference(dueDate!).inDays
       : 0;
+  bool get hasProductDetails => productDetails != null && productDetails!.isNotEmpty;
+
 }
 
 class CreditSummary {

@@ -21,7 +21,9 @@ class CreditAnalyticsScreen extends StatefulWidget {
 class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
   List<CreditSummary> _customers = [];
   List<CreditTransaction> _recentTransactions = [];
+  List<CreditTransaction> _allTransactions = [];
   bool _isLoading = true;
+  final Map<String, List<CreditTransaction>> _customerTransactions = {};
 
   @override
   void initState() {
@@ -35,9 +37,20 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
       final customers = await widget.creditService.getAllCreditCustomers();
       final transactions = await widget.creditService.getAllTransactions();
 
+      // Group transactions by customer
+      final Map<String, List<CreditTransaction>> customerTransactionsMap = {};
+      for (var transaction in transactions) {
+        if (!customerTransactionsMap.containsKey(transaction.customerId)) {
+          customerTransactionsMap[transaction.customerId] = [];
+        }
+        customerTransactionsMap[transaction.customerId]!.add(transaction);
+      }
+
       setState(() {
         _customers = customers;
         _recentTransactions = transactions.take(50).toList();
+        _allTransactions = transactions;
+        _customerTransactions.addAll(customerTransactionsMap);
       });
     } catch (e) {
       _showError('Failed to load data: $e');
@@ -60,6 +73,8 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
   double get _totalOverdue => _customers.fold(0.0, (sum, c) => sum + c.overdueAmount);
   int get _overdueCustomers => _customers.where((c) => c.overdueAmount > 0).length;
   double get _averageBalance => _customers.isEmpty ? 0 : _totalOutstanding / _customers.length;
+  double get _totalCreditGiven => _customers.fold(0.0, (sum, c) => sum + c.totalCreditGiven);
+  double get _totalCreditPaid => _customers.fold(0.0, (sum, c) => sum + c.totalCreditPaid);
 
   // Chart data
   List<ChartData> get _balanceDistributionData {
@@ -125,6 +140,32 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
   }
 
   Widget _buildContent() {
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          TabBar(
+            tabs: [
+              Tab(text: 'Dashboard'),
+              Tab(text: 'Customers'),
+              Tab(text: 'Transactions'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildDashboardTab(),
+                _buildCustomersTab(),
+                _buildTransactionsTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDashboardTab() {
     return SingleChildScrollView(
       padding: EdgeInsets.all(16),
       child: Column(
@@ -134,11 +175,73 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
           SizedBox(height: 20),
           _buildChartsSection(),
           SizedBox(height: 20),
-          _buildCustomerList(),
-          SizedBox(height: 20),
           _buildRecentActivity(),
         ],
       ),
+    );
+  }
+
+  Widget _buildCustomersTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Text(
+                'Credit Customers',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Spacer(),
+              Text(
+                '${_customers.length} customers',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _customers.length,
+            itemBuilder: (context, index) {
+              final customer = _customers[index];
+              return _buildCustomerItem(customer);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTransactionsTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Text(
+                'All Transactions',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              Spacer(),
+              Text(
+                '${_allTransactions.length} transactions',
+                style: TextStyle(color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _allTransactions.length,
+            itemBuilder: (context, index) {
+              final transaction = _allTransactions[index];
+              return _buildTransactionItem(transaction);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -150,7 +253,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
         child: Column(
           children: [
             Text(
-              'Summary',
+              'Credit Summary',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),
@@ -187,6 +290,18 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
                   '${Constants.CURRENCY_NAME}${_averageBalance.toStringAsFixed(0)}',
                   Icons.bar_chart,
                   Colors.purple,
+                ),
+                _buildMetricCard(
+                  'Total Credit Given',
+                  '${Constants.CURRENCY_NAME}${_totalCreditGiven.toStringAsFixed(0)}',
+                  Icons.trending_up,
+                  Colors.teal,
+                ),
+                _buildMetricCard(
+                  'Total Credit Paid',
+                  '${Constants.CURRENCY_NAME}${_totalCreditPaid.toStringAsFixed(0)}',
+                  Icons.payment,
+                  Colors.green,
                 ),
               ],
             ),
@@ -258,7 +373,115 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
     );
   }
 
-  Widget _buildCustomerList() {
+  Widget _buildCustomerItem(CreditSummary customer) {
+    final customerTransactions = _customerTransactions[customer.customerId] ?? [];
+
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Text(customer.customerName[0]),
+        ),
+        title: Text(
+          customer.customerName,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Balance: ${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'),
+            Text('Credit Limit: ${Constants.CURRENCY_NAME}${customer.creditLimit.toStringAsFixed(2)}'),
+            Text('Available: ${Constants.CURRENCY_NAME}${customer.availableCredit.toStringAsFixed(2)}'),
+            if (customer.overdueAmount > 0)
+              Text(
+                'Overdue: ${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}',
+                style: TextStyle(color: Colors.red),
+              ),
+            Text('Transactions: ${customer.totalTransactions}'),
+            Text('Utilization: ${customer.utilizationRate.toStringAsFixed(1)}%'),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: Icon(Icons.visibility, size: 20),
+              onPressed: () => _viewCustomerDetails(customer),
+              tooltip: 'View Details',
+            ),
+            IconButton(
+              icon: Icon(Icons.picture_as_pdf, size: 20),
+              onPressed: () => _generateCustomerStatement(customer),
+              tooltip: 'Generate Statement',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransactionItem(CreditTransaction transaction) {
+    return Card(
+      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: _getTransactionIcon(transaction.type),
+        title: Text(
+          transaction.customerName,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(DateFormat('MMM dd, yyyy - HH:mm').format(transaction.transactionDate)),
+            Text(
+              _getTransactionTypeLabel(transaction.type),
+              style: TextStyle(
+                color: _getTransactionColor(transaction.type),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            // ADD THIS: Show product info if available
+            if (transaction.hasProductDetails)
+              Text(
+                '${transaction.productDetails!.length} product(s)',
+                style: TextStyle(fontSize: 12, color: Colors.blue),
+              ),
+            if (transaction.notes != null && transaction.notes!.isNotEmpty)
+              Text(
+                transaction.notes!,
+                style: TextStyle(fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            if (transaction.isOverdue)
+              Text(
+                'Overdue: ${transaction.daysOverdue} days',
+                style: TextStyle(fontSize: 12, color: Colors.red),
+              ),
+          ],
+        ),
+        trailing: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              '${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: _getTransactionColor(transaction.type),
+              ),
+            ),
+            Text(
+              'Balance: ${Constants.CURRENCY_NAME}${transaction.newBalance.toStringAsFixed(2)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+        onTap: () => _viewTransactionDetails(transaction),
+      ),
+    );
+  }
+  Widget _buildRecentActivity() {
     return Card(
       elevation: 2,
       child: Padding(
@@ -269,63 +492,17 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
             Row(
               children: [
                 Text(
-                  'Credit Customers',
+                  'Recent Transactions',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 Spacer(),
-                Text(
-                  '${_customers.length} customers',
-                  style: TextStyle(color: Colors.grey[600]),
+                TextButton(
+                  onPressed: () {
+                    DefaultTabController.of(context)?.animateTo(2);
+                  },
+                  child: Text('View All'),
                 ),
               ],
-            ),
-            SizedBox(height: 12),
-            ..._customers.map((customer) => _buildCustomerItem(customer)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCustomerItem(CreditSummary customer) {
-    return Card(
-      margin: EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: CircleAvatar(
-          child: Text(customer.customerName[0]),
-        ),
-        title: Text(customer.customerName),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Balance: ${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'),
-            if (customer.overdueAmount > 0)
-              Text(
-                'Overdue: ${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}',
-                style: TextStyle(color: Colors.red),
-              ),
-          ],
-        ),
-        trailing: IconButton(
-          icon: Icon(Icons.picture_as_pdf, size: 20),
-          onPressed: () => _generateCustomerStatement(customer),
-          tooltip: 'Generate Statement',
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentActivity() {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recent Transactions',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12),
             ..._recentTransactions.take(10).map((transaction) =>
@@ -338,25 +515,259 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
 
   Widget _buildActivityItem(CreditTransaction transaction) {
     return ListTile(
-      leading: Icon(
-        transaction.isPayment ? Icons.payment : Icons.shopping_cart,
-        color: transaction.isPayment ? Colors.green : Colors.blue,
-      ),
+      leading: _getTransactionIcon(transaction.type),
       title: Text(transaction.customerName),
       subtitle: Text(
-        DateFormat('MMM dd, yyyy').format(transaction.transactionDate),
+        '${_getTransactionTypeLabel(transaction.type)} • ${DateFormat('MMM dd, yyyy').format(transaction.transactionDate)}',
       ),
       trailing: Text(
         '${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}',
         style: TextStyle(
           fontWeight: FontWeight.bold,
-          color: transaction.isPayment ? Colors.green : Colors.blue,
+          color: _getTransactionColor(transaction.type),
         ),
+      ),
+      onTap: () => _viewTransactionDetails(transaction),
+    );
+  }
+
+  // Helper methods for transaction display
+  Icon _getTransactionIcon(String type) {
+    switch (type) {
+      case 'payment':
+        return Icon(Icons.payment, color: Colors.green);
+      case 'credit_sale':
+        return Icon(Icons.shopping_cart, color: Colors.blue);
+      case 'adjustment':
+        return Icon(Icons.adjust, color: Colors.orange);
+      default:
+        return Icon(Icons.receipt, color: Colors.grey);
+    }
+  }
+
+  String _getTransactionTypeLabel(String type) {
+    switch (type) {
+      case 'payment':
+        return 'Payment';
+      case 'credit_sale':
+        return 'Credit Sale';
+      case 'adjustment':
+        return 'Adjustment';
+      default:
+        return type;
+    }
+  }
+
+  Color _getTransactionColor(String type) {
+    switch (type) {
+      case 'payment':
+        return Colors.green;
+      case 'credit_sale':
+        return Colors.blue;
+      case 'adjustment':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  // View Details Methods
+  void _viewCustomerDetails(CreditSummary customer) {
+    final customerTransactions = _customerTransactions[customer.customerId] ?? [];
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Customer Details - ${customer.customerName}'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('Customer ID', customer.customerId),
+              _buildDetailRow('Current Balance', '${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'),
+              _buildDetailRow('Credit Limit', '${Constants.CURRENCY_NAME}${customer.creditLimit.toStringAsFixed(2)}'),
+              _buildDetailRow('Available Credit', '${Constants.CURRENCY_NAME}${customer.availableCredit.toStringAsFixed(2)}'),
+              _buildDetailRow('Utilization Rate', '${customer.utilizationRate.toStringAsFixed(1)}%'),
+              _buildDetailRow('Total Credit Given', '${Constants.CURRENCY_NAME}${customer.totalCreditGiven.toStringAsFixed(2)}'),
+              _buildDetailRow('Total Credit Paid', '${Constants.CURRENCY_NAME}${customer.totalCreditPaid.toStringAsFixed(2)}'),
+              _buildDetailRow('Total Transactions', customer.totalTransactions.toString()),
+              if (customer.overdueAmount > 0)
+                _buildDetailRow('Overdue Amount', '${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}'),
+              if (customer.overdueCount > 0)
+                _buildDetailRow('Overdue Transactions', customer.overdueCount.toString()),
+              if (customer.lastTransactionDate != null)
+                _buildDetailRow('Last Transaction', DateFormat('MMM dd, yyyy').format(customer.lastTransactionDate!)),
+              if (customer.lastPaymentDate != null)
+                _buildDetailRow('Last Payment', DateFormat('MMM dd, yyyy').format(customer.lastPaymentDate!)),
+
+              SizedBox(height: 16),
+              Text(
+                'Recent Transactions (${customerTransactions.length})',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              ...customerTransactions.take(10).map((transaction) =>
+                  ListTile(
+                    dense: true,
+                    leading: _getTransactionIcon(transaction.type),
+                    title: Text(
+                      '${_getTransactionTypeLabel(transaction.type)} • ${DateFormat('MMM dd, yyyy').format(transaction.transactionDate)}',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    subtitle: transaction.notes != null ?
+                    Text(transaction.notes!, style: TextStyle(fontSize: 10)) :
+                    (transaction.hasProductDetails ?
+                    Text('${transaction.productDetails!.length} product(s)', style: TextStyle(fontSize: 10, color: Colors.blue)) : null),
+                    trailing: Text(
+                      '${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: _getTransactionColor(transaction.type),
+                      ),
+                    ),
+                  )
+              ).toList(),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Close'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _generateCustomerStatement(customer);
+            },
+            child: Text('Generate PDF'),
+          ),
+        ],
       ),
     );
   }
 
-  // PDF Generation Methods
+  void _viewTransactionDetails(CreditTransaction transaction) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Transaction Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildDetailRow('Transaction ID', transaction.id),
+              _buildDetailRow('Customer', transaction.customerName),
+              _buildDetailRow('Customer Email', transaction.customerEmail),
+              _buildDetailRow('Date', DateFormat('MMM dd, yyyy - HH:mm').format(transaction.transactionDate)),
+              _buildDetailRow('Type', _getTransactionTypeLabel(transaction.type)),
+              _buildDetailRow('Amount', '${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}'),
+              _buildDetailRow('Previous Balance', '${Constants.CURRENCY_NAME}${transaction.previousBalance.toStringAsFixed(2)}'),
+              _buildDetailRow('New Balance', '${Constants.CURRENCY_NAME}${transaction.newBalance.toStringAsFixed(2)}'),
+              if (transaction.orderId != null && transaction.orderId!.isNotEmpty)
+                _buildDetailRow('Order ID', transaction.orderId!),
+              if (transaction.invoiceNumber != null && transaction.invoiceNumber!.isNotEmpty)
+                _buildDetailRow('Invoice Number', transaction.invoiceNumber!),
+              if (transaction.paymentMethod != null && transaction.paymentMethod!.isNotEmpty)
+                _buildDetailRow('Payment Method', transaction.paymentMethod!),
+              if (transaction.notes != null && transaction.notes!.isNotEmpty)
+                _buildDetailRow('Notes', transaction.notes!),
+              if (transaction.dueDate != null)
+                _buildDetailRow('Due Date', DateFormat('MMM dd, yyyy').format(transaction.dueDate!)),
+              if (transaction.isOverdue)
+                _buildDetailRow('Days Overdue', '${transaction.daysOverdue} days'),
+              if (transaction.createdBy != null && transaction.createdBy!.isNotEmpty)
+                _buildDetailRow('Created By', transaction.createdBy!),
+              if (transaction.createdDate != null)
+                _buildDetailRow('Created Date', DateFormat('MMM dd, yyyy').format(transaction.createdDate!)),
+
+              // PRODUCT DETAILS SECTION - ADD THIS
+              if (transaction.hasProductDetails) ...[
+                SizedBox(height: 16),
+                Text(
+                  'Products Purchased (${transaction.productDetails!.length} items)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                SizedBox(height: 8),
+                ...transaction.productDetails!.map((product) =>
+                    Card(
+                      margin: EdgeInsets.symmetric(vertical: 4),
+                      child: Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product.productName,
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            if (product.productDescription != null)
+                              Text(
+                                product.productDescription!,
+                                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                              ),
+                            SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Quantity: ${product.quantity}'),
+                                Text('Unit Price: ${Constants.CURRENCY_NAME}${product.unitPrice.toStringAsFixed(2)}'),
+                              ],
+                            ),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                if (product.discount != null && product.discount! > 0)
+                                  Text('Discount: ${Constants.CURRENCY_NAME}${product.discount!.toStringAsFixed(2)}'),
+                                Text(
+                                  'Total: ${Constants.CURRENCY_NAME}${product.totalPrice.toStringAsFixed(2)}',
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            if (product.sku != null)
+                              Text('SKU: ${product.sku!}', style: TextStyle(fontSize: 10)),
+                            if (product.productCategory != null)
+                              Text('Category: ${product.productCategory!}', style: TextStyle(fontSize: 10)),
+                          ],
+                        ),
+                      ),
+                    )
+                ).toList(),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$label: ',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Expanded(
+            child: Text(value),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Enhanced PDF Generation Methods with Product Information
   Future<void> _generateFullPdfReport() async {
     try {
       final pdf = pw.Document();
@@ -369,6 +780,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
             _buildPdfSummary(),
             _buildPdfCustomerSummary(),
             _buildPdfRecentTransactions(),
+            _buildPdfBalanceDistribution(),
           ],
         ),
       );
@@ -393,10 +805,8 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
 
   Future<void> _generateCustomerStatement(CreditSummary customer) async {
     try {
-      // Get customer-specific transactions
-      final customerTransactions = _recentTransactions
-          .where((t) => t.customerName == customer.customerName)
-          .toList();
+      final customerTransactions = _customerTransactions[customer.customerId] ?? [];
+      customerTransactions.sort((a, b) => b.transactionDate.compareTo(a.transactionDate));
 
       final pdf = pw.Document();
 
@@ -404,9 +814,10 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
           build: (pw.Context context) => [
-            _buildPdfHeader('Statement for ${customer.customerName}'),
+            _buildPdfHeader('Customer Statement - ${customer.customerName}'),
             _buildPdfCustomerDetails(customer),
-            _buildPdfCustomerTransactions(customerTransactions),
+            _buildPdfCustomerTransactions(customerTransactions, customer),
+            _buildPdfAccountSummary(customer, customerTransactions),
           ],
         ),
       );
@@ -423,9 +834,18 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text(
-          title,
-          style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text(
+              title,
+              style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold),
+            ),
+            pw.Text(
+              DateFormat('yyyy-MM-dd').format(DateTime.now()),
+              style: pw.TextStyle(fontSize: 12, color: PdfColors.grey),
+            ),
+          ],
         ),
         pw.Text(
           'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}',
@@ -443,7 +863,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Summary',
+            'Credit Summary',
             style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 10),
@@ -451,27 +871,52 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
             border: pw.TableBorder.all(),
             children: [
               pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColors.grey300),
                 children: [
-                  pw.Padding(child: pw.Text('Total Outstanding'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalOutstanding.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Metric', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Value', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Total Overdue'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalOverdue.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Total Outstanding'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalOutstanding.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Credit Customers'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text(_customers.length.toString()), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Total Overdue'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalOverdue.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Average Balance'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_averageBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Credit Customers'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(_customers.length.toString()), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Overdue Customers'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(_overdueCustomers.toString()), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Average Balance'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_averageBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Total Credit Given'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalCreditGiven.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Total Credit Paid'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${_totalCreditPaid.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
             ],
@@ -498,21 +943,24 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
               0: pw.FlexColumnWidth(3),
               1: pw.FlexColumnWidth(2),
               2: pw.FlexColumnWidth(2),
+              3: pw.FlexColumnWidth(2),
             },
             children: [
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: PdfColors.grey300),
                 children: [
-                  pw.Padding(child: pw.Text('Customer'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Balance'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Overdue'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Customer', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Balance', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Overdue', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Credit Limit', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               ..._customers.map((customer) => pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text(customer.customerName), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(customer.customerName), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.creditLimit.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
               )),
             ],
@@ -529,29 +977,63 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Account Summary',
+            'Account Details',
             style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 10),
           pw.Table(
             border: pw.TableBorder.all(),
+            columnWidths: {
+              0: pw.FlexColumnWidth(2),
+              1: pw.FlexColumnWidth(3),
+            },
             children: [
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Current Balance'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Customer Name', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(customer.customerName), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Overdue Amount'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Customer ID', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(customer.customerId), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
               pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text('Credit Limit'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.creditLimit.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Current Balance', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Overdue Amount', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.overdueAmount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Credit Limit', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.creditLimit.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Available Credit', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.availableCredit.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Utilization Rate', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${customer.utilizationRate.toStringAsFixed(1)}%'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Total Transactions', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(customer.totalTransactions.toString()), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
             ],
@@ -561,14 +1043,140 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
     );
   }
 
-  pw.Widget _buildPdfCustomerTransactions(List<CreditTransaction> transactions) {
+  pw.Widget _buildPdfCustomerTransactions(List<CreditTransaction> transactions, CreditSummary customer) {
     return pw.Container(
       margin: pw.EdgeInsets.only(bottom: 20),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'Recent Transactions',
+            'Transaction History',
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Table(
+            border: pw.TableBorder.all(),
+            columnWidths: {
+              0: pw.FlexColumnWidth(1.5),
+              1: pw.FlexColumnWidth(1),
+              2: pw.FlexColumnWidth(1),
+              3: pw.FlexColumnWidth(1),
+              4: pw.FlexColumnWidth(1.5),
+              5: pw.FlexColumnWidth(2),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                children: [
+                  pw.Padding(child: pw.Text('Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Type', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Amount', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Balance', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Reference', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Details', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              ...transactions.take(50).map((transaction) => pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text(DateFormat('MM/dd/yyyy').format(transaction.transactionDate)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(_getTransactionTypeLabel(transaction.type)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${transaction.newBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(transaction.invoiceNumber ?? transaction.orderId ?? '-'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(transaction.notes ?? (transaction.hasProductDetails ? '${transaction.productDetails!.length} product(s)' : '-'), maxLines: 2), padding: pw.EdgeInsets.all(4)),
+                ],
+              )),
+            ],
+          ),
+          // Add product details for credit sales
+          ...transactions.where((t) => t.hasProductDetails).take(10).map((transaction) =>
+              _buildPdfProductDetails(transaction)
+          ),
+          if (transactions.length > 50)
+            pw.Padding(
+              padding: pw.EdgeInsets.all(8),
+              child: pw.Text(
+                '... and ${transactions.length - 50} more transactions',
+                style: pw.TextStyle(fontSize: 10, fontStyle: pw.FontStyle.italic),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildPdfProductDetails(CreditTransaction transaction) {
+    if (!transaction.hasProductDetails) return pw.SizedBox();
+
+    return pw.Container(
+      margin: pw.EdgeInsets.only(top: 10, bottom: 10),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Products for ${DateFormat('MM/dd/yyyy').format(transaction.transactionDate)} - ${_getTransactionTypeLabel(transaction.type)}',
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 5),
+          pw.Table(
+            border: pw.TableBorder.all(),
+            columnWidths: {
+              0: pw.FlexColumnWidth(3),
+              1: pw.FlexColumnWidth(1),
+              2: pw.FlexColumnWidth(1),
+              3: pw.FlexColumnWidth(1),
+              4: pw.FlexColumnWidth(1),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColors.grey200),
+                children: [
+                  pw.Padding(child: pw.Text('Product', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Qty', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Unit Price', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Discount', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Total', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10)), padding: pw.EdgeInsets.all(4)),
+                ],
+              ),
+              ...transaction.productDetails!.map((product) => pw.TableRow(
+                children: [
+                  pw.Padding(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(product.productName, style: pw.TextStyle(fontSize: 9)),
+                        if (product.sku != null) pw.Text('SKU: ${product.sku!}', style: pw.TextStyle(fontSize: 8)),
+                        if (product.productCategory != null) pw.Text('Category: ${product.productCategory!}', style: pw.TextStyle(fontSize: 8)),
+                      ],
+                    ),
+                    padding: pw.EdgeInsets.all(4),
+                  ),
+                  pw.Padding(child: pw.Text(product.quantity.toString(), style: pw.TextStyle(fontSize: 9)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${product.unitPrice.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 9)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(product.discount != null ? '${Constants.CURRENCY_NAME}${product.discount!.toStringAsFixed(2)}' : '-', style: pw.TextStyle(fontSize: 9)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${product.totalPrice.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 9)), padding: pw.EdgeInsets.all(4)),
+                ],
+              )),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+  pw.Widget _buildPdfAccountSummary(CreditSummary customer, List<CreditTransaction> transactions) {
+    final totalPayments = transactions.where((t) => t.isPayment).fold(0.0, (sum, t) => sum + t.amount);
+    final totalCreditSales = transactions.where((t) => t.isCredit).fold(0.0, (sum, t) => sum + t.amount);
+    final totalAdjustments = transactions.where((t) => t.type == 'adjustment').fold(0.0, (sum, t) => sum + t.amount);
+    final lastPayment = transactions.where((t) => t.isPayment).isNotEmpty ?
+    transactions.where((t) => t.isPayment).first.transactionDate : null;
+
+    return pw.Container(
+      margin: pw.EdgeInsets.only(bottom: 20),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Account Summary',
             style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 10),
@@ -576,28 +1184,46 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
             border: pw.TableBorder.all(),
             columnWidths: {
               0: pw.FlexColumnWidth(2),
-              1: pw.FlexColumnWidth(1),
-              2: pw.FlexColumnWidth(1),
-              3: pw.FlexColumnWidth(1),
+              1: pw.FlexColumnWidth(3),
             },
             children: [
               pw.TableRow(
-                decoration: pw.BoxDecoration(color: PdfColors.grey300),
                 children: [
-                  pw.Padding(child: pw.Text('Date'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Type'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Amount'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Balance'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Total Credit Sales', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${totalCreditSales.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
-              ...transactions.take(20).map((transaction) => pw.TableRow(
+              pw.TableRow(
                 children: [
-                  pw.Padding(child: pw.Text(DateFormat('MMM dd, yyyy').format(transaction.transactionDate)), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text(transaction.isPayment ? 'Payment' : 'Sale'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
-                  // pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${transaction.balanceAfter.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Total Payments', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${totalPayments.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
                 ],
-              )),
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Total Adjustments', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${totalAdjustments.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Current Balance', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${customer.currentBalance.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              if (lastPayment != null)
+                pw.TableRow(
+                  children: [
+                    pw.Padding(child: pw.Text('Last Payment Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                    pw.Padding(child: pw.Text(DateFormat('MMM dd, yyyy').format(lastPayment)), padding: pw.EdgeInsets.all(6)),
+                  ],
+                ),
+              pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text('Statement Period', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Up to ${DateFormat('MMM dd, yyyy').format(DateTime.now())}'), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
             ],
           ),
         ],
@@ -623,23 +1249,64 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
               1: pw.FlexColumnWidth(2),
               2: pw.FlexColumnWidth(1),
               3: pw.FlexColumnWidth(1),
+              4: pw.FlexColumnWidth(2),
             },
             children: [
               pw.TableRow(
                 decoration: pw.BoxDecoration(color: PdfColors.grey300),
                 children: [
-                  pw.Padding(child: pw.Text('Customer'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Date'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Type'), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text('Amount'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text('Customer', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Date', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Type', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Amount', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Reference', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
                 ],
               ),
-              ..._recentTransactions.take(15).map((transaction) => pw.TableRow(
+              ..._recentTransactions.take(20).map((transaction) => pw.TableRow(
                 children: [
                   pw.Padding(child: pw.Text(transaction.customerName), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text(DateFormat('MMM dd, yyyy').format(transaction.transactionDate)), padding: pw.EdgeInsets.all(4)),
-                  pw.Padding(child: pw.Text(transaction.isPayment ? 'Payment' : 'Sale'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(DateFormat('MM/dd/yyyy').format(transaction.transactionDate)), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(_getTransactionTypeLabel(transaction.type)), padding: pw.EdgeInsets.all(4)),
                   pw.Padding(child: pw.Text('${Constants.CURRENCY_NAME}${transaction.amount.toStringAsFixed(2)}'), padding: pw.EdgeInsets.all(4)),
+                  pw.Padding(child: pw.Text(transaction.invoiceNumber ?? transaction.orderId ?? '-'), padding: pw.EdgeInsets.all(4)),
+                ],
+              )),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildPdfBalanceDistribution() {
+    return pw.Container(
+      margin: pw.EdgeInsets.only(bottom: 20),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Balance Distribution',
+            style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 10),
+          pw.Table(
+            border: pw.TableBorder.all(),
+            columnWidths: {
+              0: pw.FlexColumnWidth(2),
+              1: pw.FlexColumnWidth(1),
+            },
+            children: [
+              pw.TableRow(
+                decoration: pw.BoxDecoration(color: PdfColors.grey300),
+                children: [
+                  pw.Padding(child: pw.Text('Balance Range', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text('Customers', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)), padding: pw.EdgeInsets.all(6)),
+                ],
+              ),
+              ..._balanceDistributionData.map((data) => pw.TableRow(
+                children: [
+                  pw.Padding(child: pw.Text(data.x), padding: pw.EdgeInsets.all(6)),
+                  pw.Padding(child: pw.Text(data.y.toInt().toString()), padding: pw.EdgeInsets.all(6)),
                 ],
               )),
             ],
