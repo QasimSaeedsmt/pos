@@ -23,6 +23,7 @@ import '../clientDashboard/client_dashboard.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../credit/credit collection_screen.dart';
 import '../credit/credit_analytics_screen.dart';
+import '../credit/customer_communication_screen.dart';
 import '../credit/credit_management_screen.dart';
 import '../credit/credit_recovery_screen.dart';
 import '../credit/credit_sale_model.dart';
@@ -1554,8 +1555,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
       ModernCustomerManagementScreen(posService: _posService),
       ExpenseManagementScreen(analyticsService: _analyticsService),
       // Credit Management Screens
-      RestockProductScreen(),
-      CreditCollectionScreen(creditService: _creditService),
+      CustomerCommunicationScreen(
+        creditService: _creditService,
+        posService: _posService,
+      ),      CreditCollectionScreen(creditService: _creditService),
       CreditAnalyticsScreen(creditService: _creditService),
     ]);
 
@@ -1877,8 +1880,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
         items: [
           MenuItem(
             icon: Icons.credit_card_outlined,
-            title: 'Credit Overview',
-            description: 'Manage customer credit accounts',
+            title: 'Customer Communication',
+            description: 'Communicate with Customers',
             color: Colors.purple,
             index: 13, // Credit Management Screen
           ),
