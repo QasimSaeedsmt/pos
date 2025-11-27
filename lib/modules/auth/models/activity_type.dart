@@ -1,5 +1,6 @@
 enum ActivityType {
   user_login,
+  subscription_expired,
   user_logout,
   user_created,
   user_updated,

@@ -15,6 +15,9 @@ class MyAuthProvider with ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   bool _isOfflineMode = false;
+  bool _isSubscriptionExpired = false;
+  SubscriptionState _subscriptionState = SubscriptionState.unknown;
+  bool _showSubscriptionWarning = false;
 
   // Forgot password state
   bool _isSendingResetEmail = false;
@@ -24,19 +27,21 @@ class MyAuthProvider with ChangeNotifier {
   String? _resetSuccess;
   String? _resetEmail;
 
-  // static final AuthService _authService = AuthService();
   final BiometricService _biometricService = BiometricService();
   final OfflineStorageService _storageService;
 
-  MyAuthProvider(OfflineStorageService storageService) : _storageService = storageService {
+  MyAuthProvider(OfflineStorageService storageService)
+      : _storageService = storageService {
     _initializeAuthState();
   }
 
+  // -------------------- Getters --------------------
   AppUser? get currentUser => _currentUser;
   Tenant? get currentTenant => _currentTenant;
   bool get isLoading => _isLoading;
   String? get error => _error;
   bool get isOfflineMode => _isOfflineMode;
+  bool get isSubscriptionExpired => _isSubscriptionExpired;
   bool get keepMeLoggedIn => _storageService.keepMeLoggedIn;
   bool get fingerprintEnabled => _storageService.fingerprintEnabled;
   bool get appLockEnabled => _storageService.appLockEnabled;
@@ -47,34 +52,138 @@ class MyAuthProvider with ChangeNotifier {
   String? get resetError => _resetError;
   String? get resetSuccess => _resetSuccess;
   String? get resetEmail => _resetEmail;
+  SubscriptionState get subscriptionState => _subscriptionState;
+  bool get showSubscriptionWarning => _showSubscriptionWarning;
 
+  // -------------------- Initialization --------------------
   Future<void> _initializeAuthState() async {
-    // Try online authentication first
     final firebaseUser = AuthService.currentUser;
     if (firebaseUser != null && _storageService.keepMeLoggedIn) {
       await _loadUserData(firebaseUser.uid);
-    } else if (_storageService.offlineUserId != null && _storageService.isOfflineSessionValid()) {
+    } else if (_storageService.offlineUserId != null &&
+        _storageService.isOfflineSessionValid()) {
       _isOfflineMode = true;
       await _loadOfflineUserData();
     }
     notifyListeners();
   }
 
-  Future<void> login(String email, String password, {bool fromBiometric = false}) async {
+  // -------------------- Subscription Management --------------------
+  Future<SubscriptionState> _checkSubscriptionState() async {
+    if (_currentUser == null || _currentTenant == null) {
+      return SubscriptionState.unknown;
+    }
+
+    if (_currentUser!.isSuperAdmin) {
+      return SubscriptionState.active;
+    }
+
+    if (!_currentTenant!.isActive) {
+      return SubscriptionState.tenantInactive;
+    }
+
+    if (_currentTenant!.isSubscriptionExpired) {
+      return SubscriptionState.expired;
+    }
+
+    if (_currentTenant!.daysUntilExpiry <= 7) {
+      return SubscriptionState.expiringSoon;
+    }
+
+    return SubscriptionState.active;
+  }
+
+  Future<void> _handleExpiredSubscription() async {
+    // CRITICAL: Clear all session data
+    await _storageService.clearOfflineSession();
+
+    if (_currentUser != null && !_currentUser!.isSuperAdmin) {
+      try {
+        await UserActivityRepository.logUserActivity(
+          tenantId: _currentUser!.tenantId,
+          userId: _currentUser!.uid,
+          userEmail: _currentUser!.email,
+          userDisplayName: _currentUser!.displayName,
+          action: ActivityType.subscription_expired,
+          description: 'Login blocked due to expired subscription',
+          metadata: {
+            'expiryDate': _currentTenant!.subscriptionExpiry.toIso8601String(),
+            'daysExpired': DateTime.now().difference(_currentTenant!.subscriptionExpiry).inDays.toString(),
+          },
+        );
+      } catch (e) {
+        print('Failed to log subscription expiry: $e');
+      }
+    }
+
+    // CRITICAL: Logout from Firebase but keep user info for display
+    await AuthService.logout();
+  }
+  // -------------------- Login --------------------
+  Future<void> login(String email, String password,
+      {bool fromBiometric = false}) async {
     try {
       _isLoading = true;
       _error = null;
       _isOfflineMode = false;
+      _isSubscriptionExpired = false;
+      _subscriptionState = SubscriptionState.unknown;
+      _showSubscriptionWarning = false;
+
+      // CRITICAL: Clear previous user data at the start of login
+      _currentUser = null;
+      _currentTenant = null;
+
       notifyListeners();
 
       if (email.isEmpty || password.isEmpty) {
         throw 'Please enter both email and password';
       }
 
-      final credential = await AuthService.loginWithEmailAndPassword(email, password);
+      final credential =
+      await AuthService.loginWithEmailAndPassword(email, password);
+
       await _loadUserData(credential.user!.uid);
 
-      if (_currentUser != null && _currentTenant != null) {
+      _subscriptionState = await _checkSubscriptionState();
+
+      switch (_subscriptionState) {
+        case SubscriptionState.expired:
+          _isSubscriptionExpired = true;
+          await _handleExpiredSubscription();
+
+          // CRITICAL: Clear user data when subscription is expired
+          _currentUser = null;
+          _currentTenant = null;
+          await _storageService.clearOfflineSession();
+
+          notifyListeners();
+          return;
+
+        case SubscriptionState.tenantInactive:
+        // CRITICAL: Clear user data when tenant is inactive
+          _currentUser = null;
+          _currentTenant = null;
+          await _storageService.clearOfflineSession();
+          await AuthService.logout();
+          throw 'This business account is no longer active. Please contact support.';
+
+        case SubscriptionState.expiringSoon:
+          _showSubscriptionWarning = true;
+          break;
+
+        case SubscriptionState.active:
+          break;
+
+        case SubscriptionState.unknown:
+          throw 'Unable to verify subscription status. Please try again.';
+      }
+
+      // Only save offline session if subscription is valid
+      if (_currentUser != null && _currentTenant != null &&
+          _subscriptionState != SubscriptionState.expired &&
+          _subscriptionState != SubscriptionState.tenantInactive) {
+
         final userData = {
           'uid': _currentUser!.uid,
           'email': _currentUser!.email,
@@ -113,38 +222,52 @@ class MyAuthProvider with ChangeNotifier {
           userId: _currentUser!.uid,
           userEmail: _currentUser!.email,
           userDisplayName: _currentUser!.displayName,
-          action: fromBiometric ? ActivityType.user_login : ActivityType.user_login,
+          action: ActivityType.user_login,
           description: fromBiometric
               ? 'User logged in using biometrics'
               : 'User logged in successfully',
-          metadata: {
-            'loginMethod': fromBiometric ? 'biometric' : 'email_password',
-          },
+          metadata: {'loginMethod': fromBiometric ? 'biometric' : 'email_password'},
         );
       }
     } catch (e) {
       _error = e.toString();
 
-      // Fallback to offline mode if network error and offline session exists
       if (_isNetworkError(e) &&
           _storageService.offlineUserId != null &&
           _storageService.isOfflineSessionValid()) {
         _isOfflineMode = true;
         await _loadOfflineUserData();
-        if (_currentUser != null) return;
+
+        _subscriptionState = await _checkSubscriptionState();
+
+        if (_subscriptionState == SubscriptionState.expired ||
+            _subscriptionState == SubscriptionState.tenantInactive) {
+          _isSubscriptionExpired = true;
+          _currentUser = null;
+          _currentTenant = null;
+          await _storageService.clearOfflineSession();
+          _error = 'Offline access blocked: ${_subscriptionState == SubscriptionState.expired ? 'subscription expired' : 'account inactive'}.';
+          return;
+        }
       }
     } finally {
       _isLoading = false;
       notifyListeners();
     }
   }
-
   bool _isNetworkError(dynamic e) {
     return e.toString().toLowerCase().contains('network') ||
         e.toString().toLowerCase().contains('socket') ||
         e.toString().toLowerCase().contains('connection');
   }
 
+  bool get isTenantSubscriptionActive {
+    if (_currentTenant == null) return false;
+    if (_currentUser != null && _currentUser!.isSuperAdmin) return true;
+    return _currentTenant!.isSubscriptionActive;
+  }
+
+  // -------------------- Load user data --------------------
   Future<void> _loadUserData(String uid) async {
     try {
       _isLoading = true;
@@ -160,14 +283,37 @@ class MyAuthProvider with ChangeNotifier {
       if (_currentUser == null) {
         throw Exception('User not found in any active tenant.');
       }
+
+      if (!_currentUser!.isSuperAdmin && _currentTenant != null) {
+        _subscriptionState = await _checkSubscriptionState();
+
+        // CRITICAL: Throw exception if subscription is expired or inactive
+        if (_subscriptionState == SubscriptionState.tenantInactive) {
+          _currentUser = null;
+          _currentTenant = null;
+          throw 'This business account is no longer active.';
+        }
+
+        if (_subscriptionState == SubscriptionState.expired) {
+          _currentUser = null;
+          _currentTenant = null;
+          throw 'Your subscription has expired. Please contact your admin or visit vetsall.co.uk.';
+        }
+      }
     } catch (e) {
       _error = 'Failed to load user data: $e';
 
-      // Fallback to offline data
-      if (_storageService.offlineUserId != null && _storageService.isOfflineSessionValid()) {
+      if (_storageService.offlineUserId != null &&
+          _storageService.isOfflineSessionValid()) {
         _isOfflineMode = true;
         await _loadOfflineUserData();
-        if (_currentUser != null) return;
+        if (_currentUser != null) {
+          _subscriptionState = await _checkSubscriptionState();
+          if (_subscriptionState != SubscriptionState.expired &&
+              _subscriptionState != SubscriptionState.tenantInactive) {
+            return;
+          }
+        }
       }
 
       await logout();
@@ -177,7 +323,6 @@ class MyAuthProvider with ChangeNotifier {
       notifyListeners();
     }
   }
-
   Future<void> _loadOfflineUserData() async {
     final userData = _storageService.offlineUserData;
     final tenantData = _storageService.offlineTenantData;
@@ -202,6 +347,12 @@ class MyAuthProvider with ChangeNotifier {
         lastLogin: userData['lastLogin'] != null
             ? DateTime.parse(userData['lastLogin'])
             : DateTime.now(),
+        profile: userData['profile'] is Map
+            ? Map<String, dynamic>.from(userData['profile'])
+            : {},
+        permissions: userData['permissions'] is List
+            ? List<String>.from(userData['permissions'])
+            : [],
       );
 
       _currentTenant = Tenant(
@@ -216,36 +367,139 @@ class MyAuthProvider with ChangeNotifier {
             ? Map<String, dynamic>.from(tenantData['branding'])
             : {},
       );
+
+      _subscriptionState = await _checkSubscriptionState();
+
+      if (_subscriptionState == SubscriptionState.expired ||
+          _subscriptionState == SubscriptionState.tenantInactive) {
+        _isSubscriptionExpired = true;
+        _error = 'Offline access blocked: '
+            '${_subscriptionState == SubscriptionState.expired ? "subscription expired" : "account inactive"}.';
+      }
     } catch (e) {
       print('Error loading offline user data: $e');
       await _storageService.clearOfflineSession();
+      _currentUser = null;
+      _currentTenant = null;
+      _subscriptionState = SubscriptionState.unknown;
+      _error = 'Failed to load offline session. Please login again.';
     }
+    notifyListeners();
   }
 
+  // -------------------- Logout --------------------
+// -------------------- Logout --------------------
   Future<void> logout() async {
-    if (_currentUser != null && !_currentUser!.isSuperAdmin && !_isOfflineMode) {
-      await UserActivityRepository.logUserActivity(
-        tenantId: _currentUser!.tenantId,
-        userId: _currentUser!.uid,
-        userEmail: _currentUser!.email,
-        userDisplayName: _currentUser!.displayName,
-        action: ActivityType.user_logout,
-        description: 'User logged out',
-      );
+    try {
+      // Store user data before clearing for logging
+      final user = _currentUser;
+      final tenantId = user?.tenantId;
+      final isSuperAdmin = user?.isSuperAdmin ?? false;
+      final isOffline = _isOfflineMode;
+
+      // Clear state first to avoid any null issues
+      await AuthService.logout();
+      await _storageService.clearOfflineSession();
+
+      // Log user activity if conditions are met
+      if (user != null && !isSuperAdmin && !isOffline) {
+        try {
+          await UserActivityRepository.logUserActivity(
+            tenantId: tenantId ?? 'unknown',
+            userId: user.uid,
+            userEmail: user.email,
+            userDisplayName: user.displayName,
+            action: ActivityType.user_logout,
+            description: 'User logged out',
+          );
+        } catch (e) {
+          print('Failed to log logout activity: $e');
+          // Don't rethrow - logging failure shouldn't prevent logout
+        }
+      }
+
+      // Clear all state variables
+      _currentUser = null;
+      _currentTenant = null;
+      _error = null;
+      _isOfflineMode = false;
+      _isSubscriptionExpired = false;
+      _subscriptionState = SubscriptionState.unknown;
+      _showSubscriptionWarning = false;
+
+      await _storageService.setLastUnlockTime(DateTime.now());
+
+    } catch (e) {
+      print('Error during logout: $e');
+      // Ensure state is cleared even if there's an error
+      _currentUser = null;
+      _currentTenant = null;
+      _error = 'Logout completed with minor issues';
+      _isOfflineMode = false;
+      _isSubscriptionExpired = false;
+      _subscriptionState = SubscriptionState.unknown;
+      _showSubscriptionWarning = false;
+
+      await _storageService.clearOfflineSession();
+      await _storageService.setLastUnlockTime(DateTime.now());
+    } finally {
+      notifyListeners();
     }
-
-    await AuthService.logout();
-    await _storageService.clearOfflineSession();
-
-    _currentUser = null;
-    _currentTenant = null;
-    _error = null;
-    _isOfflineMode = false;
-
+  }
+  // -------------------- App Lock / Biometric --------------------
+  Future<void> _updateLastUnlockTime() async {
     await _storageService.setLastUnlockTime(DateTime.now());
     notifyListeners();
   }
 
+  Future<bool> isAppLockRequired() async {
+    if (!appLockEnabled) return false;
+    final lastUnlock = _storageService.lastUnlockTime;
+    if (lastUnlock == null) return true;
+    final difference = DateTime.now().difference(lastUnlock);
+    return difference.inSeconds > _storageService.lockTimeout;
+  }
+
+  Future<bool> authenticateForAppUnlock() async {
+    final success =
+    await _biometricService.authenticate(reason: 'Authenticate to unlock the app');
+    if (success) await _updateLastUnlockTime();
+    return success;
+  }
+
+  Future<bool> testBiometricAuthentication() async {
+    return await _biometricService.testBiometricAuthentication();
+  }
+
+  Future<void> setLockTimeout(int seconds) async {
+    await _storageService.setLockTimeout(seconds);
+    notifyListeners();
+  }
+
+  // -------------------- Keep me logged in --------------------
+  Future<void> setKeepMeLoggedIn(bool value) async {
+    await _storageService.setKeepMeLoggedIn(value);
+    notifyListeners();
+  }
+
+  Future<void> setKeepMeLoggedInSilent(bool value) async {
+    await _storageService.setKeepMeLoggedIn(value);
+  }
+
+  Future<void> setFingerprintEnabled(bool value) async {
+    await _storageService.setFingerprintEnabled(value);
+    notifyListeners();
+  }
+
+  Future<void> setAppLockEnabled(bool value) async {
+    await _storageService.setAppLockEnabled(value);
+    if (!value) {
+      await _storageService.setLastUnlockTime(DateTime.now());
+    }
+    notifyListeners();
+  }
+
+  // -------------------- Forgot Password --------------------
   Future<void> sendPasswordResetEmail(String email) async {
     try {
       _isSendingResetEmail = true;
@@ -255,7 +509,7 @@ class MyAuthProvider with ChangeNotifier {
       notifyListeners();
 
       await AuthRepository.sendPasswordResetEmail(email);
-      _resetSuccess = 'Password reset email sent! Check your inbox for the reset link.';
+      _resetSuccess = 'Password reset email sent! Check your inbox.';
 
       if (_currentUser != null && !_currentUser!.isSuperAdmin) {
         await UserActivityRepository.logUserActivity(
@@ -308,7 +562,8 @@ class MyAuthProvider with ChangeNotifier {
         newPassword: newPassword,
       );
 
-      _resetSuccess = 'Password reset successfully! You can now login with your new password.';
+      _resetSuccess =
+      'Password reset successfully! You can now login with your new password.';
 
       Future.delayed(Duration(seconds: 3), () {
         clearResetState();
@@ -331,64 +586,8 @@ class MyAuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setKeepMeLoggedIn(bool value) async {
-    await _storageService.setKeepMeLoggedIn(value);
-    notifyListeners();
-  }
-
-  Future<void> setKeepMeLoggedInSilent(bool value) async {
-    await _storageService.setKeepMeLoggedIn(value);
-  }
-
-  Future<void> setFingerprintEnabled(bool value) async {
-    await _storageService.setFingerprintEnabled(value);
-    notifyListeners();
-  }
-
-  Future<void> setAppLockEnabled(bool value) async {
-    await _storageService.setAppLockEnabled(value);
-    if (!value) {
-      await _storageService.setLastUnlockTime(DateTime.now());
-    }
-    notifyListeners();
-  }
-
-  Future<void> _updateLastUnlockTime() async {
-    await _storageService.setLastUnlockTime(DateTime.now());
-    notifyListeners();
-  }
-
-  Future<bool> isAppLockRequired() async {
-    if (!appLockEnabled) return false;
-
-    final lastUnlock = _storageService.lastUnlockTime;
-    if (lastUnlock == null) return true;
-
-    final now = DateTime.now();
-    final difference = now.difference(lastUnlock);
-    final timeout = _storageService.lockTimeout;
-
-    return difference.inSeconds > timeout;
-  }
-
-  Future<bool> authenticateForAppUnlock() async {
-    final success = await _biometricService.authenticate(
-        reason: 'Authenticate to unlock the app'
-    );
-
-    if (success) {
-      await _updateLastUnlockTime();
-    }
-
-    return success;
-  }
-
-  Future<bool> testBiometricAuthentication() async {
-    return await _biometricService.testBiometricAuthentication();
-  }
-
-  Future<void> setLockTimeout(int seconds) async {
-    await _storageService.setLockTimeout(seconds);
+  void dismissSubscriptionWarning() {
+    _showSubscriptionWarning = false;
     notifyListeners();
   }
 }

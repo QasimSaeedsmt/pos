@@ -934,6 +934,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     _animationController.forward();
   }
 
+// In ModernDashboardScreen - REPLACE the _loadDashboardData method
   Future<void> _loadDashboardData() async {
     if (!mounted) return;
 
@@ -943,72 +944,50 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     });
 
     try {
-      // Get auth provider from context to ensure we have the current user
       final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
       final currentUser = authProvider.currentUser;
 
       if (currentUser == null) {
-        throw Exception('User not authenticated. Please log in again.');
+        throw Exception('User not authenticated');
       }
 
       final tenantId = currentUser.tenantId;
       if (tenantId.isEmpty || tenantId == 'super_admin') {
-        throw Exception('Invalid tenant ID: $tenantId. User may be a super admin or not assigned to a tenant.');
+        throw Exception('Invalid tenant ID');
       }
 
-      print('Loading dashboard for tenant: $tenantId, user: ${currentUser.email}');
+      print('Loading dashboard for tenant: $tenantId');
 
-      // First, check if we actually have network connectivity
+      // Check connectivity FIRST
       final connectivityResult = await Connectivity().checkConnectivity();
       final hasNetwork = connectivityResult != ConnectivityResult.none;
 
+      setState(() {
+        _isOnline = hasNetwork;
+        _isOfflineMode = !hasNetwork;
+      });
+
+      // If offline, load cached data immediately
       if (!hasNetwork) {
-        print('No network connectivity - loading offline data');
+        print('No network - loading offline data immediately');
         await _loadOfflineData(tenantId);
-        _isOfflineMode = true;
         return;
       }
 
-      // Check if we have recent cached data first (but don't use it if we're refreshing)
-      if (!_isRefreshing) {
-        final cachedData = await _localDb.getDashboardData(tenantId);
-        if (cachedData != null) {
-          print('Loading dashboard from cache while checking online data');
-          _loadCachedData(cachedData);
-        }
-      }
-
-      // Try to load online data with proper error handling
-      bool onlineSuccess = false;
+      // If online, try to load fresh data with timeout
       try {
-        await _loadOnlineData(tenantId);
-        onlineSuccess = true;
-        _isOfflineMode = false;
+        await _loadOnlineData(tenantId).timeout(Duration(seconds: 10));
       } catch (onlineError) {
-        print('Online data loading failed: $onlineError');
-        onlineSuccess = false;
-      }
-
-      // If online failed, try offline data
-      if (!onlineSuccess) {
-        print('Falling back to offline data');
+        print('Online load failed or timed out: $onlineError');
+        // Fallback to offline data
         await _loadOfflineData(tenantId);
         _isOfflineMode = true;
 
-        // Only show offline warning if we actually failed to get online data
-        if (mounted && hasNetwork) { // We have network but online loading failed
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.wifi_off, size: 20, color: Colors.white),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Showing offline data. Some features may be limited.'),
-                  ),
-                ],
-              ),
-              backgroundColor: Colors.orange[700],
+              content: Text('Using offline data - connection issue'),
+              backgroundColor: Colors.orange,
               duration: Duration(seconds: 3),
             ),
           );
@@ -1016,42 +995,57 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       }
 
     } catch (e) {
-      print('Error loading dashboard data: $e');
+      print('Error in dashboard load: $e');
 
-      // Final fallback - try to generate data from local database
+      // Final fallback - try basic offline data
       try {
         final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
         final tenantId = authProvider.currentUser?.tenantId;
         if (tenantId != null) {
-          await _loadOfflineData(tenantId);
-          _isOfflineMode = true;
-        } else {
-          throw e;
+          await _loadBasicOfflineData();
         }
       } catch (fallbackError) {
-        print('Fallback data loading also failed: $fallbackError');
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _isRefreshing = false;
-          });
-        }
+        print('All data loading failed: $fallbackError');
+      }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load dashboard data: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Retry',
-              onPressed: _loadDashboardData,
-              textColor: Colors.white,
-            ),
-          ),
-        );
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isRefreshing = false;
+        });
       }
     }
   }
+
+// ADD this method for basic offline data fallback
+  Future<void> _loadBasicOfflineData() async {
+    print('Loading basic offline data as final fallback');
+
+    // Create minimal dashboard data
+    final basicStats = DashboardStats.empty();
+    final basicRevenueData = List.generate(7, (index) {
+      final date = DateTime.now().subtract(Duration(days: 6 - index));
+      return RevenueDataPoint(date: date, revenue: 0.0, orders: 0);
+    });
+
+    if (mounted) {
+      setState(() {
+        _stats = basicStats;
+        _recentOrders = [];
+        _lowStockProducts = [];
+        _revenueData = basicRevenueData;
+        _topSellingProducts = [];
+        _recentCustomers = [];
+        _isLoading = false;
+        _isRefreshing = false;
+        _isOfflineMode = true;
+      });
+    }
+  }
+
+
+
+
   void _loadCachedData(OfflineDashboardData cachedData) {
     if (mounted) {
       setState(() {
@@ -1066,36 +1060,36 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       });
     }
   }
+// In ModernDashboardScreen - REPLACE the _loadOnlineData method
   Future<void> _loadOnlineData(String tenantId) async {
-    // Verify tenant exists and is active
-    final tenantDoc = await FirebaseFirestore.instance
-        .collection('tenants')
-        .doc(tenantId)
-        .get();
+    print('🔄 Loading optimized online data...');
 
-    if (!tenantDoc.exists) {
-      throw Exception('Tenant not found in database. ID: $tenantId');
-    }
-
-    final tenantData = tenantDoc.data();
-    if (tenantData != null && (tenantData['isActive'] == false)) {
-      throw Exception('Tenant account is inactive. Please contact administrator.');
+    // Check for recent cached data first (even when online)
+    final cachedData = await _localDb.getDashboardData(tenantId);
+    if (cachedData != null && !_isRefreshing) {
+      print('📁 Loading from cache first for faster display');
+      _loadCachedData(cachedData);
     }
 
     _firestore.setTenantId(tenantId);
     _posService.setTenantContext(tenantId);
 
-    // Load all data with timeout protection
-    final results = await Future.wait([
-      _fetchDashboardStats(tenantId).timeout(Duration(seconds: 30)),
-      _fetchRecentOrders(tenantId).timeout(Duration(seconds: 20)),
-      _fetchLowStockProducts(tenantId).timeout(Duration(seconds: 20)),
-      _fetchRevenueData(tenantId).timeout(Duration(seconds: 25)),
-      _fetchTopSellingProducts(tenantId).timeout(Duration(seconds: 25)),
-      _fetchRecentCustomers(tenantId).timeout(Duration(seconds: 20)),
-    ], eagerError: true).catchError((error) {
-      throw Exception('Data loading timeout: $error');
-    });
+    // Load data in parallel with error handling for each
+    final futures = [
+      _fetchDashboardStats(tenantId),
+      _fetchRecentOrders(tenantId),
+      _fetchLowStockProducts(tenantId),
+      _fetchRevenueData(tenantId),
+      _fetchTopSellingProducts(tenantId),
+      _fetchRecentCustomers(tenantId),
+    ];
+
+    final results = await Future.wait(futures.map((future) =>
+        future.catchError((e) {
+          print('Partial data load error: $e');
+          return _getFallbackForType(future);
+        })
+    ), eagerError: false);
 
     if (mounted) {
       setState(() {
@@ -1107,10 +1101,11 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         _recentCustomers = results[5] as List<Customer>;
         _isLoading = false;
         _isRefreshing = false;
+        _isOfflineMode = false;
       });
     }
 
-    // Cache the data for offline use
+    // Cache the successful data
     final offlineData = OfflineDashboardData(
       stats: _stats,
       recentOrders: _recentOrders,
@@ -1123,8 +1118,19 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     );
 
     await _localDb.saveDashboardData(offlineData);
+    print('✅ Dashboard data loaded and cached');
   }
 
+// ADD this helper method for fallback data
+  dynamic _getFallbackForType(Future future) {
+    if (future == _fetchDashboardStats) return DashboardStats.empty();
+    if (future == _fetchRecentOrders) return [];
+    if (future == _fetchLowStockProducts) return [];
+    if (future == _fetchRevenueData) return [];
+    if (future == _fetchTopSellingProducts) return [];
+    if (future == _fetchRecentCustomers) return [];
+    return null;
+  }
   Future<void> _loadOfflineData(String tenantId) async {
     print('Loading dashboard data from offline sources');
 

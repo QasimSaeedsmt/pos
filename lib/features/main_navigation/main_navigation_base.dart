@@ -1489,6 +1489,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
     _initializeApp();
   }
 
+// UPDATE the initialize method
   Future<void> _initializeApp() async {
     final authProvider = Provider.of<MyAuthProvider>(context, listen: false);
     final tenantId = authProvider.currentUser?.tenantId;
@@ -1508,6 +1509,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
     _posService.initialize();
     await _cartManager.initialize();
 
+    // Check connectivity immediately
+    await _checkInitialConnectivity();
+
+    // Then setup listener for changes
+    _setupConnectivityListener();
+
     // Listen to cart item count changes
     _cartManager.itemCountStream.listen((count) {
       if (mounted) {
@@ -1517,20 +1524,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
       }
     });
 
-    _posService.onlineStatusStream.listen((isOnline) {
-      if (mounted) {
-        setState(() {
-          _isOnline = isOnline;
-          _connectionStatus = isOnline
-              ? 'Online - Connected'
-              : 'Offline - Working Locally';
-        });
-      }
-    });
-
     await _testConnection();
   }
-
   void _initializeScreens(MyAuthProvider authProvider) {
     final user = authProvider.currentUser;
 
@@ -1832,6 +1827,35 @@ class _MainNavScreenState extends State<MainNavScreen> {
       },
     );
   }
+// In MainNavScreen class - REPLACE the existing connectivity setup
+  void _setupConnectivityListener() {
+    _posService.onlineStatusStream.listen((isOnline) {
+      if (mounted) {
+        setState(() {
+          _isOnline = isOnline;
+          _connectionStatus = isOnline
+              ? 'Online - Connected'
+              : 'Offline - Working Locally';
+        });
+      }
+    });
+  }
+
+// ADD this method to check initial connectivity immediately
+  Future<void> _checkInitialConnectivity() async {
+    final connectivity = Connectivity();
+    final result = await connectivity.checkConnectivity();
+    final isOnline = result != ConnectivityResult.none;
+
+    if (mounted) {
+      setState(() {
+        _isOnline = isOnline;
+        _connectionStatus = isOnline
+            ? 'Online - Connected'
+            : 'Offline - Working Locally';
+      });
+    }
+  }
 
   // FIXED: Add the missing _showMoreMenu method
   void _showMoreMenu(BuildContext context, MyAuthProvider authProvider) {
@@ -1888,7 +1912,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
           if (user!.canManageUsers || user.canManageProducts)
             MenuItem(
               icon: Icons.payment_outlined,
-              title: 'Credit Recovery',
+              title: 'Credit Collection',
               description: 'Track and collect overdue payments',
               color: Colors.deepOrange,
               index: 14, // Credit Recovery Screen
@@ -2432,13 +2456,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
             ),
             if (_connectionStatus.isNotEmpty)
               Text(
-                _connectionStatus,
+                _isOnline ? 'Online - Connected' : 'Offline - Working Locally',
                 style: TextStyle(
                   fontSize: 12,
                   color: ThemeUtils.textOnPrimary(context),
                 ),
-              ),
-          ],
+              ),          ],
         ),
         backgroundColor: _isOnline ? ThemeUtils.primary(context) : ThemeUtils.secondary(context),
         elevation: 0,

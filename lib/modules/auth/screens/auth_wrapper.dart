@@ -11,13 +11,14 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import 'package:package_info_plus/package_info_plus.dart';
 
-
 import '../../../features/main_navigation/main_navigation_base.dart';
 import '../../../features/super_admin/super_admin_base.dart';
 import '../constants/auth_measurements.dart';
+import '../models/tenant_model.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/auth_repository.dart';
 
+import '../subscription_expired_screen.dart';
 import 'login_screen.dart';
 import 'splash_screen.dart';
 import 'account_disabled_screen.dart';
@@ -39,7 +40,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
   bool _isDownloading = false;
   static const MethodChannel _apkChannel = MethodChannel('apk_install');
 
-  // Stream controller for download progress
   final StreamController<double> _progressStreamController =
   StreamController<double>.broadcast();
 
@@ -67,10 +67,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     });
   }
-
-  // ------------------------------
-  // CHECK FOR UPDATE
-  // ------------------------------
 
   Future<void> _checkForUpdate() async {
     if (_isCheckingUpdate) return;
@@ -252,10 +248,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
     );
   }
 
-  // ------------------------------
-  // DOWNLOAD AND INSTALL APK (OPTIMIZED FOR LARGE FILES)
-  // ------------------------------
-
   void _showDownloadProgressDialog(BuildContext context, String url) {
     showDialog(
       context: context,
@@ -379,7 +371,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
               TextButton(
                 onPressed: _isDownloading
                     ? () {
-                  // Cancel download
                   setState(() {
                     _isDownloading = false;
                   });
@@ -418,7 +409,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       debugPrint("🔽 Starting APK download from: $url");
       debugPrint("📦 File size: ~93 MB");
 
-      // Check permissions
       final storageStatus = await Permission.storage.status;
       if (storageStatus.isDenied) {
         await Permission.storage.request();
@@ -429,14 +419,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
         await Permission.requestInstallPackages.request();
       }
 
-      // Get directory - use external storage for large files
       final Directory dir = await getTemporaryDirectory();
       final String filePath =
           "${dir.path}/mpcm_update_${DateTime.now().millisecondsSinceEpoch}.apk";
 
       debugPrint("📁 Saving APK to: $filePath");
 
-      // Show progress dialog
       if (mounted) {
         _showDownloadProgressDialog(context, url);
       }
@@ -445,39 +433,33 @@ class _AuthWrapperState extends State<AuthWrapper> {
         _isDownloading = true;
       });
 
-      // Reset progress
       _progressStreamController.add(0.0);
 
-      // Create HTTP client with optimized settings for large files
       client = http.Client();
       file = File(filePath);
 
-      // Create request with optimized headers
       final request = http.Request('GET', Uri.parse(url));
       request.headers['User-Agent'] = 'Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36';
       request.headers['Accept'] = '*/*';
       request.headers['Accept-Encoding'] = 'gzip, deflate';
       request.headers['Connection'] = 'keep-alive';
 
-      // Send request with longer timeout for large file
       final response = await client.send(request).timeout(
-        const Duration(minutes: 15), // 15 minutes for 93MB file
+        const Duration(minutes: 15),
         onTimeout: () {
           throw TimeoutException('Download timed out after 15 minutes');
         },
       );
 
       if (response.statusCode == 200) {
-        final int contentLength = response.contentLength ?? 93 * 1024 * 1024; // Fallback to 93MB
+        final int contentLength = response.contentLength ?? 93 * 1024 * 1024;
         int receivedLength = 0;
         int lastUpdateTime = DateTime.now().millisecondsSinceEpoch;
 
         debugPrint("📊 Total file size: ${(contentLength / (1024 * 1024)).toStringAsFixed(1)} MB");
 
-        // Open file for writing
         sink = file.openWrite();
 
-        // Process stream with optimized chunk handling
         await for (final chunk in response.stream) {
           if (!_isDownloading) {
             debugPrint("❌ Download cancelled by user");
@@ -489,13 +471,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
           receivedLength += chunk.length;
           sink.add(chunk);
 
-          // Update progress (throttle updates to avoid too many rebuilds)
           final currentTime = DateTime.now().millisecondsSinceEpoch;
           if (contentLength > 0 && (currentTime - lastUpdateTime > 100 || receivedLength == contentLength)) {
             final progress = receivedLength / contentLength;
             _progressStreamController.add(progress);
 
-            // Log progress every 5% or when complete
             if ((progress * 100) % 5 < 0.1 || progress == 1.0) {
               debugPrint("📥 Download progress: ${(progress * 100).toStringAsFixed(1)}% "
                   "(${(receivedLength / (1024 * 1024)).toStringAsFixed(1)}MB/"
@@ -513,18 +493,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
           _isDownloading = false;
         });
 
-        // Send final progress
         _progressStreamController.add(1.0);
 
-        // Verify file
         final fileSize = await file.length();
-        if (await file.exists() && fileSize > 10 * 1024 * 1024) { // At least 10MB
+        if (await file.exists() && fileSize > 10 * 1024 * 1024) {
           debugPrint("📦 File verified, size: ${(fileSize / (1024 * 1024)).toStringAsFixed(1)} MB");
 
-          // Show completion for 2 seconds
           await Future.delayed(const Duration(seconds: 2));
 
-          // Close dialog and install
           if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
             Navigator.of(context, rootNavigator: true).pop();
           }
@@ -540,7 +516,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
       debugPrint("❌ APK DOWNLOAD/INSTALL ERROR: $e");
       debugPrint("Stack trace: $stack");
 
-      // Clean up resources
       try {
         await sink?.close();
         await file?.delete();
@@ -552,10 +527,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
         _isDownloading = false;
       });
 
-      // Add error to stream
       _progressStreamController.addError(e.toString());
 
-      // Wait to show error in dialog
       await Future.delayed(const Duration(seconds: 2));
 
       if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
@@ -648,12 +621,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<MyAuthProvider>(context, listen: true);
+    final authProvider = Provider.of<MyAuthProvider>(context);
 
     return FutureBuilder<bool>(
       future: AuthWrapper._superAdminFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, superAdminSnapshot) {
+        if (superAdminSnapshot.connectionState == ConnectionState.waiting) {
           return const SplashScreen();
         }
 
@@ -661,16 +634,62 @@ class _AuthWrapperState extends State<AuthWrapper> {
           stream: FirebaseAuth.instance.authStateChanges(),
           builder: (context, userSnapshot) {
             final user = authProvider.currentUser;
+            final tenant = authProvider.currentTenant;
+            final subscriptionState = authProvider.subscriptionState;
 
             if (userSnapshot.connectionState == ConnectionState.waiting ||
                 authProvider.isLoading) {
               return const SplashScreen();
             }
 
+            // CRITICAL: Handle subscription states BEFORE checking logged-in user
+            if (subscriptionState == SubscriptionState.expired) {
+              return const SubscriptionExpiredScreen();
+            }
+
+            if (subscriptionState == SubscriptionState.tenantInactive) {
+              return Scaffold(
+                body: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.business, size: 64, color: Colors.red),
+                      SizedBox(height: 16),
+                      Text(
+                        'Account Inactive',
+                        style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 16),
+                      Text(
+                        'This business account is no longer active.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 16),
+                      ),
+                      SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () {
+                          authProvider.logout();
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const LoginScreen()),
+                                (route) => false,
+                          );
+                        },
+                        child: Text('Return to Login'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            // Logged-in user - only proceed if subscription is valid
             if ((userSnapshot.hasData && user != null) ||
                 (authProvider.isOfflineMode && user != null)) {
+
               if (!user.isActive) return const AccountDisabledScreen();
 
+              // Show offline mode snackbar
               if (authProvider.isOfflineMode) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -678,7 +697,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                       content: Row(
                         children: [
                           Icon(Icons.wifi_off, color: Colors.orange[300]),
-                          const SizedBox(width: AuthMeasurements.spacingSmall),
+                          const SizedBox(width: 8),
                           const Expanded(
                             child: Text(
                               'Offline Mode - Limited functionality',
@@ -694,6 +713,37 @@ class _AuthWrapperState extends State<AuthWrapper> {
                 });
               }
 
+              // Show subscription warning if expiring soon
+              if (authProvider.showSubscriptionWarning && tenant != null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Row(
+                        children: [
+                          Icon(Icons.warning, color: Colors.orange[300]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Subscription expiring in ${tenant.daysUntilExpiry} days',
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                          ),
+                        ],
+                      ),
+                      backgroundColor: Colors.orange[800],
+                      duration: const Duration(seconds: 5),
+                      action: SnackBarAction(
+                        label: 'Dismiss',
+                        onPressed: () {
+                          authProvider.dismissSubscriptionWarning();
+                        },
+                      ),
+                    ),
+                  );
+                });
+              }
+
+              // Check if app lock should be shown
               return FutureBuilder<bool>(
                 future: _shouldShowAppLock(authProvider),
                 builder: (context, lockSnapshot) {
@@ -707,6 +757,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
                     return const AppLockScreen();
                   }
 
+                  // Navigate based on super admin flag
                   return user.isSuperAdmin
                       ? const SuperAdminDashboard()
                       : const MainNavScreen();
@@ -714,6 +765,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
               );
             }
 
+            // Not logged in
             return const LoginScreen();
           },
         );

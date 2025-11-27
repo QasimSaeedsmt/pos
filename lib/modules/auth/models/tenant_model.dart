@@ -1,4 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+// subscription_state.dart
+enum SubscriptionState {
+  unknown,
+  active,
+  expiringSoon,
+  expired,
+  tenantInactive,
+}
 
 class Tenant {
   final String id;
@@ -37,6 +45,25 @@ class Tenant {
   }
 
   bool get isSubscriptionActive {
-    return isActive && subscriptionExpiry.isAfter(DateTime.now());
+    if (!isActive) return false;
+    if (id == 'super_admin') return true;
+    return subscriptionExpiry.isAfter(DateTime.now());
+  }
+
+  bool get isSubscriptionExpired {
+    if (id == 'super_admin') return false;
+    return !subscriptionExpiry.isAfter(DateTime.now());
+  }
+
+  int get daysUntilExpiry {
+    if (id == 'super_admin') return 365;
+    return subscriptionExpiry.difference(DateTime.now()).inDays;
+  }
+
+  String get subscriptionStatus {
+    if (!isActive) return 'Inactive';
+    if (isSubscriptionExpired) return 'Expired';
+    if (daysUntilExpiry <= 7) return 'Expiring Soon';
+    return 'Active';
   }
 }

@@ -163,6 +163,7 @@ class LocalDatabase {
     );
   }
 
+// In LocalDatabase class - ADD optimized methods
   Future<OfflineDashboardData?> getDashboardData(String tenantId) async {
     final prefs = await _prefs;
     final dashboardDataJson = prefs.getString(_dashboardDataKey);
@@ -172,17 +173,11 @@ class LocalDatabase {
       return null;
     }
 
-    // Check if cache is still valid
-    final lastUpdated = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    if (DateTime.now().difference(lastUpdated) > _dashboardCacheDuration) {
-      return null;
-    }
-
     try {
       final Map<String, dynamic> jsonData = json.decode(dashboardDataJson);
       final data = OfflineDashboardData.fromJson(jsonData);
 
-      // Only return data if it's for the current tenant
+      // Return data if it's for the current tenant (no expiry check for offline)
       if (data.tenantId == tenantId) {
         return data;
       }
@@ -193,6 +188,34 @@ class LocalDatabase {
     }
   }
 
+// ADD quick offline stats generation
+  Future<DashboardStats> getQuickOfflineStats() async {
+    final pendingOrders = await getPendingOrders();
+    final products = await getAllProducts();
+
+    double totalRevenue = 0.0;
+    for (final order in pendingOrders) {
+      final orderData = order['order_data'] as Map<String, dynamic>;
+      totalRevenue += (orderData['total'] as num?)?.toDouble() ?? 0.0;
+    }
+
+    return DashboardStats(
+      totalRevenue: totalRevenue,
+      todayRevenue: totalRevenue, // Simplified for quick load
+      totalSales: pendingOrders.length,
+      todaySales: pendingOrders.length,
+      totalProducts: products.length,
+      lowStockProducts: products.where((p) => p.stockQuantity <= 10).length,
+      totalCustomers: 0, // Simplified
+      todayCustomers: 0,
+      averageOrderValue: pendingOrders.isNotEmpty ? totalRevenue / pendingOrders.length : 0,
+      conversionRate: 0,
+      revenueGrowth: 0,
+      salesGrowth: 0,
+      todayReturns: 0,
+      totalReturns: 0,
+    );
+  }
   Future<void> clearDashboardData() async {
     final prefs = await _prefs;
     await prefs.remove(_dashboardDataKey);
