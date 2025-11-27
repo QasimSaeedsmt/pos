@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:mpcm/core/overlay_manager.dart';
 import 'package:mpcm/theme_utils.dart';
 
 import '../../app.dart';
@@ -736,20 +737,10 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
           _searchController.text = product.name;
           _onSearchTextChanged(product.name);
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No product found with barcode: $barcode'),
-              backgroundColor: Colors.orange,
-            ),
-          );
+         OverlayManager.showError(context, 'No product found with barcode: $barcode');
         }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Search failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        OverlayManager.showError(context, 'Search failed: $e');
       } finally {
         setState(() => _isLoading = false);
       }
@@ -757,20 +748,13 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
   }
 
   void showSmartSnackBar(BuildContext context, String message, {Color? color}) {
-    final messenger = ScaffoldMessenger.of(context);
-
-    messenger.removeCurrentSnackBar();
-
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color ?? Colors.green,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
+    OverlayManager.showToast(
+      context: context,
+      message: message,
+      backgroundColor: color ?? Colors.green,
+      duration: const Duration(seconds: 2),
     );
   }
-
   void _clearSearch() {
     _searchController.clear();
     setState(() {

@@ -13,6 +13,7 @@ import 'package:synchronized/synchronized.dart';
 
 import '../../analytics_screen.dart';
 import '../../constants.dart';
+import '../../core/overlay_manager.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../modules/auth/screens/settings_screen.dart';
 import '../../printing/printing_setting_screen.dart';
@@ -36,6 +37,7 @@ import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../product_selling/product_selling_base.dart';
 import '../profile.dart';
 import '../returnBase/return_base.dart';
+import '../scanning/action_sheets.dart';
 import '../ticketing/ticketing.dart';
 import '../users/users_base.dart';
 
@@ -1457,11 +1459,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
   void _showSnackBar(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: Duration(seconds: 2),
-        ),
+      OverlayManager.showToast(
+        context: context,
+        message: message,
+        duration: Duration(seconds: 2),
       );
     }
   }
@@ -1476,7 +1477,10 @@ void navigateToInvoices(){
   void _handleQuickAction(String action) {
     switch (action) {
       case 'scan':
-        _showSnackBar('Scan feature coming soon');
+        showModalBottomSheet(
+          context: context,
+          builder: (context) => SmartQRScannerWidget(showInDashboard: true),
+        );
         break;
       case 'invoices':
         navigateToInvoices();

@@ -56,6 +56,92 @@ class OrderCreationResult {
   bool get isOffline => pendingOrderId != null;
 }
 
+
+// Business Settings Model
+class BusinessSettings {
+  final String id;
+  final String businessName;
+  final String businessCode;
+  final DateTime dateCreated;
+  final DateTime dateModified;
+
+  BusinessSettings({
+    required this.id,
+    required this.businessName,
+    required this.businessCode,
+    required this.dateCreated,
+    required this.dateModified,
+  });
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'id': id,
+      'businessName': businessName,
+      'businessCode': businessCode,
+      'dateCreated': Timestamp.fromDate(dateCreated),
+      'dateModified': Timestamp.fromDate(dateModified),
+    };
+  }
+
+  static BusinessSettings fromFirestore(Map<String, dynamic> data, String id) {
+    return BusinessSettings(
+      id: id,
+      businessName: data['businessName'] ?? '',
+      businessCode: data['businessCode'] ?? 'POS',
+      dateCreated: (data['dateCreated'] as Timestamp).toDate(),
+      dateModified: (data['dateModified'] as Timestamp).toDate(),
+    );
+  }
+
+  static BusinessSettings createDefault() {
+    final now = DateTime.now();
+    return BusinessSettings(
+      id: 'business_settings',
+      businessName: '',
+      businessCode: 'POS',
+      dateCreated: now,
+      dateModified: now,
+    );
+  }
+}
+
+// Sequence Counter Model
+class SequenceCounter {
+  final String id;
+  final String type; // 'order' or 'invoice'
+  final int lastSequence;
+  final int year; // For order sequences (0 for invoice)
+  final DateTime lastUpdated;
+
+  SequenceCounter({
+    required this.id,
+    required this.type,
+    required this.lastSequence,
+    required this.year,
+    required this.lastUpdated,
+  });
+
+  Map<String, dynamic> toFirestore() {
+    return {
+      'id': id,
+      'type': type,
+      'lastSequence': lastSequence,
+      'year': year,
+      'lastUpdated': Timestamp.fromDate(lastUpdated),
+    };
+  }
+
+  static SequenceCounter fromFirestore(Map<String, dynamic> data, String id) {
+    return SequenceCounter(
+      id: id,
+      type: data['type'],
+      lastSequence: data['lastSequence'],
+      year: data['year'] ?? 0,
+      lastUpdated: (data['lastUpdated'] as Timestamp).toDate(),
+    );
+  }
+}
+
 class FirestoreServices {
   String? _currentTenantId;
 
@@ -68,8 +154,6 @@ class FirestoreServices {
       .collection('tenants')
       .doc(_currentTenantId)
       .collection('products');
-
-
 
   CollectionReference get ordersRef => _firestore
       .collection('tenants')
@@ -95,11 +179,173 @@ class FirestoreServices {
       .collection('tenants')
       .doc(_currentTenantId)
       .collection('returns');
+
+  CollectionReference get purchaseRecordRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('purchaseRecords');
+
+  // New collections for numbering system
+  CollectionReference get businessSettingsRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('business_settings');
+
+  CollectionReference get sequenceCountersRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('sequence_counters');
+
   static final FirestoreServices _instance = FirestoreServices._internal();
-  // Add to FirestoreService class
-  // In FirestoreService class - REPLACE the existing return methods with these:
-  // In FirestoreService - UPDATE the createReturn method to handle no-order returns:
-  // In FirestoreService class, add these methods:
+  factory FirestoreServices() => _instance;
+  FirestoreServices._internal();
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  // POS NUMBERING SYSTEM IMPLEMENTATION
+
+  // Business Code Generation Logic
+  String _generateBusinessCode(String businessName) {
+    if (businessName.isEmpty) {
+      return 'POS'; // Fallback
+    }
+
+    // Remove special characters and convert to uppercase
+    String cleanName = businessName.replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), '').toUpperCase();
+
+    // Split into words
+    List<String> words = cleanName.split(' ').where((word) => word.isNotEmpty).toList();
+
+    if (words.isEmpty) {
+      return 'POS'; // Fallback
+    }
+
+    // Generate code from first letters
+    String code = '';
+    for (String word in words) {
+      if (word.isNotEmpty) {
+        code += word[0];
+        // Limit to 5 characters max
+        if (code.length >= 5) break;
+      }
+    }
+
+    // Ensure minimum 2 characters
+    if (code.length < 2) {
+      code = words.first.length >= 2 ? words.first.substring(0, 2) : 'POS';
+    }
+
+    return code;
+  }
+
+  // Business Settings Management
+  Future<BusinessSettings> getBusinessSettings() async {
+    try {
+      final doc = await businessSettingsRef.doc('business_settings').get();
+      if (doc.exists) {
+        return BusinessSettings.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
+      } else {
+        // Create default settings if not exists
+        final defaultSettings = BusinessSettings.createDefault();
+        await businessSettingsRef.doc('business_settings').set(defaultSettings.toFirestore());
+        return defaultSettings;
+      }
+    } catch (e) {
+      print('Error getting business settings: $e');
+      return BusinessSettings.createDefault();
+    }
+  }
+
+  Future<void> updateBusinessSettings(String businessName) async {
+    try {
+      final businessCode = _generateBusinessCode(businessName);
+      final settings = BusinessSettings(
+        id: 'business_settings',
+        businessName: businessName,
+        businessCode: businessCode,
+        dateCreated: DateTime.now(),
+        dateModified: DateTime.now(),
+      );
+
+      await businessSettingsRef.doc('business_settings').set(settings.toFirestore());
+    } catch (e) {
+      print('Error updating business settings: $e');
+      throw Exception('Failed to update business settings: $e');
+    }
+  }
+
+  // Atomic Sequence Generation with Transactions
+  Future<int> _getNextSequence(String type, {int? year}) async {
+    try {
+      // Use transaction for atomic increment
+      return await _firestore.runTransaction((transaction) async {
+        final String counterId = year != null ? '${type}_$year' : type;
+        final counterRef = sequenceCountersRef.doc(counterId);
+
+        final counterDoc = await transaction.get(counterRef);
+        int nextSequence;
+
+        if (counterDoc.exists) {
+          final data = counterDoc.data() as Map<String, dynamic>;
+          nextSequence = (data['lastSequence'] as int) + 1;
+
+          transaction.update(counterRef, {
+            'lastSequence': nextSequence,
+            'lastUpdated': FieldValue.serverTimestamp(),
+          });
+        } else {
+          nextSequence = 1;
+          final newCounter = SequenceCounter(
+            id: counterId,
+            type: type,
+            lastSequence: nextSequence,
+            year: year ?? 0,
+            lastUpdated: DateTime.now(),
+          );
+          transaction.set(counterRef, newCounter.toFirestore());
+        }
+
+        return nextSequence;
+      });
+    } catch (e) {
+      print('Error generating sequence: $e');
+      throw Exception('Failed to generate sequence: $e');
+    }
+  }
+
+  // Order Number Generation
+  Future<String> generateOrderNumber() async {
+    try {
+      final settings = await getBusinessSettings();
+      final currentYear = DateTime.now().year;
+      final sequence = await _getNextSequence('order', year: currentYear);
+
+      return '${settings.businessCode}-ORD-$currentYear-${sequence.toString().padLeft(4, '0')}';
+    } catch (e) {
+      print('Error generating order number: $e');
+      // Fallback with timestamp (should never happen in normal operation)
+      return 'POS-ORD-${DateTime.now().year}-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+    }
+  }
+
+  // Invoice Number Generation
+  Future<String> generateInvoiceNumber() async {
+    try {
+      final settings = await getBusinessSettings();
+      final sequence = await _getNextSequence('invoice');
+
+      return '${settings.businessCode}-INV-${sequence.toString().padLeft(4, '0')}';
+    } catch (e) {
+      print('Error generating invoice number: $e');
+      // Fallback with timestamp (should never happen in normal operation)
+      return 'POS-INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
+    }
+  }
+
+  // EXISTING FUNCTIONALITY - UPDATED WITH NEW NUMBERING SYSTEM
+
+  // Category operations
   Future<String> addCategory(Category category) async {
     try {
       final categoryData = category.toFirestore();
@@ -299,7 +545,6 @@ class FirestoreServices {
       return null;
     }
   }
-  // In FirestoreService class - REPLACE the existing return methods with these:
 
   Future<List<AppOrder>> getRecentOrders({int limit = 50}) async {
     try {
@@ -318,15 +563,6 @@ class FirestoreServices {
     }
   }
 
-  factory FirestoreServices() => _instance;
-  FirestoreServices._internal();
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  CollectionReference get purchaseRecordRef => _firestore
-      .collection('tenants')
-      .doc(_currentTenantId)
-      .collection('purchaseRecords');
   // Customer operations
   Stream<List<Customer>> getCustomersStream() {
     return customersRef
@@ -415,15 +651,15 @@ class FirestoreServices {
     }
   }
 
-  // Enhanced order creation with customer support
-// In FirestoreServices class - UPDATE the createOrderWithCustomer method
+  // Enhanced order creation with customer support - UPDATED WITH NEW NUMBERING
   Future<AppOrder> createOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
-        Map<String, dynamic>? enhancedData, // Add this parameter
+        Map<String, dynamic>? enhancedData,
       }) async {
     try {
       final orderRef = ordersRef.doc();
+      final orderNumber = await generateOrderNumber(); // Use new numbering system
 
       // Calculate totals with enhanced data if available
       double subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
@@ -440,7 +676,7 @@ class FirestoreServices {
 
       final orderData = {
         'id': orderRef.id,
-        'number': _generateOrderNumber(),
+        'number': orderNumber, // Use generated order number
         'status': 'completed',
         'dateCreated': FieldValue.serverTimestamp(),
         'total': totalAmount,
@@ -528,12 +764,7 @@ class FirestoreServices {
     }
   }
 
-// Add this method to create orders with enhanced data
-// In FirestoreServices class - UPDATE the createOrderWithEnhancedData method
-
-
-
-// In FirestoreServices class - COMPLETE createOrderWithEnhancedData method
+  // Complete createOrderWithEnhancedData method - UPDATED WITH NEW NUMBERING
   Future<AppOrder> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection,
@@ -541,6 +772,7 @@ class FirestoreServices {
       ) async {
     try {
       final orderRef = ordersRef.doc();
+      final orderNumber = await generateOrderNumber(); // Use new numbering system
 
       // Calculate totals
       double subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
@@ -583,7 +815,7 @@ class FirestoreServices {
 
       final orderData = {
         'id': orderRef.id,
-        'number': _generateOrderNumber(),
+        'number': orderNumber, // Use generated order number
         'status': 'completed',
         'dateCreated': FieldValue.serverTimestamp(),
         'total': totalAmount,
@@ -681,7 +913,6 @@ class FirestoreServices {
 
     return addressParts.isNotEmpty ? addressParts.join(', ') : null;
   }
-
 
   Stream<List<Product>> getProductsStream() {
     return productsRef
@@ -841,6 +1072,7 @@ class FirestoreServices {
       throw Exception('Failed to add product: $e');
     }
   }
+
   Future<void> updateProduct(Product product, List<XFile>? newImages) async {
     try {
       List<String> imageUrls = List.from(product.imageUrls);
@@ -925,13 +1157,15 @@ class FirestoreServices {
     return keywords.where((k) => k.length > 1).toSet().toList();
   }
 
-  // Order operations
+  // Order operations - UPDATED WITH NEW NUMBERING
   Future<AppOrder> createOrder(List<CartItem> cartItems) async {
     try {
       final orderRef = ordersRef.doc();
+      final orderNumber = await generateOrderNumber(); // Use new numbering system
+
       final orderData = {
         'id': orderRef.id,
-        'number': _generateOrderNumber(),
+        'number': orderNumber, // Use generated order number
         'status': 'completed',
         'dateCreated': FieldValue.serverTimestamp(),
         'total': cartItems.fold(0.0, (sum, item) => sum + item.subtotal),
@@ -964,6 +1198,8 @@ class FirestoreServices {
     }
   }
 
+  // Keep old method for backward compatibility but mark as deprecated
+  @deprecated
   String _generateOrderNumber() {
     final now = DateTime.now();
     return 'ORD-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch}';
@@ -1007,8 +1243,17 @@ class FirestoreServices {
       return false;
     }
   }
-}
 
+  // Utility method to initialize numbering system for existing tenants
+  Future<void> initializeNumberingSystem(String businessName) async {
+    try {
+      await updateBusinessSettings(businessName);
+      print('Numbering system initialized for business: $businessName');
+    } catch (e) {
+      print('Error initializing numbering system: $e');
+    }
+  }
+}
 class ModernDashboardScreen extends StatefulWidget {
   const ModernDashboardScreen({super.key});
 
@@ -2502,6 +2747,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     super.dispose();
   }
 }
+
 
 class DashboardStats {
   final double totalRevenue;

@@ -3,12 +3,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../constants.dart';
+import '../../printing/invoice_service.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../orderBase/order_base.dart';
 import '../product_selling/product_selling_base.dart';
 
 
+import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import '../../constants.dart';
+import '../invoiceBase/invoice_and_printing_base.dart';
+import '../main_navigation/main_navigation_base.dart';
+import '../orderBase/order_base.dart';
+import '../product_selling/product_selling_base.dart';
+
+// ReturnReason class
 class ReturnReason {
   final String id;
   final String name;
@@ -26,7 +38,7 @@ class ReturnReason {
   String toString() => name;
 }
 
-// Enhanced ReturnItem model
+// ReturnItem class
 class ReturnItem {
   final String productId;
   final String productName;
@@ -61,8 +73,6 @@ class ReturnItem {
     };
   }
 
-  // In ReturnItem class - ENHANCE the fromMap method:
-
   factory ReturnItem.fromMap(Map<String, dynamic> map) {
     return ReturnItem(
       productId: map['productId']?.toString() ?? '',
@@ -76,25 +86,25 @@ class ReturnItem {
   }
 }
 
-// Enhanced Return models with offline support
+// ReturnRequest class
 class ReturnRequest {
   final String id;
   final String orderId;
   final String orderNumber;
   final List<ReturnItem> items;
   final String reason;
-  final String status; // pending, approved, rejected, completed, refunded
+  final String status;
   final String? notes;
   final DateTime dateCreated;
   final DateTime? dateUpdated;
   final double refundAmount;
-  final String refundMethod; // original, cash, credit, store_credit
+  final String refundMethod;
   final String? customerId;
   final Map<String, dynamic>? customerInfo;
   final String? processedBy;
   final bool isOffline;
   final String? offlineId;
-  final String syncStatus; // pending, synced, failed
+  final String syncStatus;
 
   ReturnRequest({
     required this.id,
@@ -275,7 +285,8 @@ class ReturnCreationResult {
 
   bool get isOffline => pendingReturnId != null;
 }
-// REPLACE the entire ReturnsManagementScreen class:
+
+// Enhanced Returns Management Screen with QR Code Scanning
 class ReturnsManagementScreen extends StatefulWidget {
   const ReturnsManagementScreen({super.key});
 
@@ -323,6 +334,381 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
       );
     } finally {
       setState(() => _isLoading = false);
+    }
+  }
+
+  // Enhanced QR Code Scanning with Multiple Format Support
+  void _scanQRCodeForReturn() async {
+    final qrData = await UniversalScanningService.scanBarcode(
+      context,
+      purpose: 'return',
+    );
+
+    if (qrData != null && qrData.isNotEmpty) {
+      _processScannedQRCode(qrData);
+    }
+  }
+
+  // Enhanced QR Code Processing with Multiple Format Support
+  void _processScannedQRCode(String qrData) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: Text('Processing QR Code'),
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(child: Text('Reading order information...')),
+            ],
+          ),
+        ),
+      );
+
+      OrderQRData? orderQRData;
+      QRScanResult? scanResult;
+
+      // Try multiple QR code formats
+      try {
+        // First try the new OrderQRData format (version 2.0)
+        orderQRData = OrderQRData.fromQRString(qrData);
+
+        if (orderQRData != null) {
+          // Process using QRScannerService for enhanced validation
+          scanResult = await QRScannerService().processScannedQRCode(qrData, context);
+        }
+      } catch (e) {
+        print('Failed to parse as OrderQRData: $e');
+      }
+
+      // If new format failed, try the old InvoiceQRData format
+      if (orderQRData == null) {
+        try {
+          final invoiceQRData = InvoiceQRData.fromQRString(qrData);
+          if (invoiceQRData != null) {
+            // Convert old format to new format
+            orderQRData = _convertInvoiceQRToOrderQR(invoiceQRData);
+            scanResult = QRScanResult(
+              success: true,
+              error: null,
+              orderQRData: orderQRData,
+            );
+          }
+        } catch (e) {
+          print('Failed to parse as InvoiceQRData: $e');
+        }
+      }
+
+      // If both formats failed, try to extract order number manually
+      if (orderQRData == null) {
+        final extractedOrder = await _tryExtractOrderFromText(qrData);
+        if (extractedOrder != null) {
+          // Close loading dialog
+          if (mounted) Navigator.of(context).pop();
+
+          _navigateToManualOrderReturn(extractedOrder);
+          return;
+        }
+      }
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      if (orderQRData != null && scanResult?.success == true) {
+        // Check if return is possible
+        if (!scanResult!.canReturn) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('This order cannot be returned. Purchase was ${orderQRData.daysSincePurchase} days ago.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+
+        // Show return options
+        _showQRReturnOptions(orderQRData, scanResult!);
+      } else {
+        _showQRCodeError(qrData, scanResult?.error);
+      }
+    } catch (e) {
+      if (mounted) Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error processing QR code: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // Helper method to convert old InvoiceQRData to new OrderQRData format
+  OrderQRData _convertInvoiceQRToOrderQR(InvoiceQRData invoiceQRData) {
+    return OrderQRData(
+      invoiceId: invoiceQRData.invoiceId,
+      orderId: invoiceQRData.orderId,
+      invoiceNumber: invoiceQRData.invoiceNumber,
+      issueDate: invoiceQRData.issueDate,
+      totalAmount: invoiceQRData.totalAmount,
+      customerId: invoiceQRData.customerId,
+      customerName: invoiceQRData.customerName,
+      customerPhone: null,
+      customerEmail: null,
+      status: invoiceQRData.status,
+      lineItems: [], // Will be populated from order data
+      subtotal: invoiceQRData.totalAmount,
+      taxAmount: 0.0,
+      discountAmount: 0.0,
+      paymentMethod: 'cash',
+      businessName: 'Your Business',
+      businessPhone: '',
+      businessEmail: '',
+      isCreditSale: false,
+      verificationCode: OrderQRData.generateVerificationCode(invoiceQRData.invoiceNumber),
+    );
+  }
+
+  // Helper method to extract order information from plain text
+  Future<AppOrder?> _tryExtractOrderFromText(String text) async {
+    try {
+      // Try to find order number patterns
+      final orderPattern = RegExp(r'[A-Za-z]*-?\d+');
+      final matches = orderPattern.allMatches(text);
+
+      for (final match in matches) {
+        final potentialOrderNumber = match.group(0);
+        if (potentialOrderNumber != null) {
+          // Try to find order in database
+          final orders = await _posService.searchOrders(potentialOrderNumber);
+          if (orders.isNotEmpty) {
+            return orders.first;
+          }
+        }
+      }
+
+      // Try to find numeric order IDs
+      final numericPattern = RegExp(r'\d{6,}');
+      final numericMatches = numericPattern.allMatches(text);
+
+      for (final match in numericMatches) {
+        final potentialOrderId = match.group(0);
+        if (potentialOrderId != null) {
+          try {
+            final order = await _posService.getOrderById(potentialOrderId);
+            if (order != null) {
+              return order;
+            }
+          } catch (e) {
+            // Continue trying other patterns
+          }
+        }
+      }
+    } catch (e) {
+      print('Error extracting order from text: $e');
+    }
+
+    return null;
+  }
+
+  // Enhanced error handling for QR codes
+  void _showQRCodeError(String qrData, String? error) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('QR Code Not Recognized'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('The scanned QR code could not be recognized as a valid order.'),
+            SizedBox(height: 12),
+            Text('Scanned data:', style: TextStyle(fontWeight: FontWeight.bold)),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: SelectableText(
+                qrData.length > 100 ? '${qrData.substring(0, 100)}...' : qrData,
+                style: TextStyle(fontFamily: 'Monospace', fontSize: 12),
+              ),
+            ),
+            if (error != null) ...[
+              SizedBox(height: 8),
+              Text('Error: $error', style: TextStyle(color: Colors.red)),
+            ],
+            SizedBox(height: 12),
+            Text('What would you like to do?'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Try Again'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _navigateToManualOrderSearch(qrData);
+            },
+            child: Text('Search Manually'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Navigate to manual order search with pre-filled text
+  void _navigateToManualOrderSearch(String searchText) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SearchOrderForReturnScreen(initialSearch: searchText),
+      ),
+    ).then((selectedOrder) {
+      if (selectedOrder != null && selectedOrder is AppOrder) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => CreateReturnScreen(selectedOrder: selectedOrder),
+          ),
+        ).then((_) => _loadReturns());
+      }
+    });
+  }
+
+  // Navigate to return screen for manually found order
+  void _navigateToManualOrderReturn(AppOrder order) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateReturnScreen(selectedOrder: order),
+      ),
+    ).then((_) => _loadReturns());
+  }
+
+  // Show return options for scanned QR code
+  void _showQRReturnOptions(OrderQRData orderQRData, QRScanResult scanResult) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Process Return from QR Code',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(height: 16),
+
+            // Order Information
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Order Information', style: TextStyle(fontWeight: FontWeight.bold)),
+                    SizedBox(height: 8),
+                    Text('Invoice: ${orderQRData.invoiceNumber}'),
+                    Text('Date: ${DateFormat('MMM dd, yyyy').format(orderQRData.issueDate)}'),
+                    Text('Customer: ${orderQRData.customerName ?? 'Walk-in Customer'}'),
+                    Text('Total: ${Constants.CURRENCY_NAME}${orderQRData.totalAmount.toStringAsFixed(2)}'),
+                    SizedBox(height: 8),
+                    if (scanResult.daysLeftForReturn > 0)
+                      Text(
+                        '${scanResult.daysLeftForReturn} days left for return',
+                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: 16),
+
+            // Return Options
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _navigateToQRReturn(orderQRData, 'full');
+                    },
+                    icon: Icon(Icons.assignment_return),
+                    label: Text('Full Return'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _navigateToQRReturn(orderQRData, 'partial');
+                    },
+                    icon: Icon(Icons.shopping_cart),
+                    label: Text('Partial Return'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text('Cancel'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Navigate to QR-based return screen
+  void _navigateToQRReturn(OrderQRData orderQRData, String returnType) async {
+    try {
+      // Fetch the complete order data
+      final order = await _posService.getOrderById(orderQRData.orderId);
+      if (order != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => QRCodeReturnScreen(
+              order: order,
+              orderQRData: orderQRData,
+              returnType: returnType,
+            ),
+          ),
+        ).then((_) => _loadReturns());
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not find order details. Please try manual return.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading order: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -451,7 +837,20 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 16),
-                // Option 1: Return with Order
+
+                // QR Code Scan Option
+                Card(
+                  child: ListTile(
+                    leading: Icon(Icons.qr_code_scanner, color: Colors.purple),
+                    title: Text('Scan QR Code'),
+                    subtitle: Text('Scan invoice QR code for quick return'),
+                    trailing: Icon(Icons.arrow_forward),
+                    onTap: _scanQRCodeForReturn,
+                  ),
+                ),
+                SizedBox(height: 12),
+
+                // Return with Order
                 Card(
                   child: ListTile(
                     leading: Icon(Icons.receipt_long, color: Colors.blue),
@@ -462,7 +861,8 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
                   ),
                 ),
                 SizedBox(height: 12),
-                // Option 2: Return Any Product
+
+                // Return Any Product
                 Card(
                   child: ListTile(
                     leading: Icon(Icons.shopping_bag, color: Colors.green),
@@ -519,6 +919,12 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
                     style: TextStyle(color: Colors.grey),
                     textAlign: TextAlign.center,
                   ),
+                  SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: _scanQRCodeForReturn,
+                    icon: Icon(Icons.qr_code_scanner),
+                    label: Text('Scan QR Code to Start'),
+                  ),
                 ],
               ),
             )
@@ -544,8 +950,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
   }
 }
 
-// REPLACE the entire CreateReturnScreen class:
-// ADD this new EnhancedReturnRequestCard class:
+// Enhanced Return Request Card
 class EnhancedReturnRequestCard extends StatelessWidget {
   final ReturnRequest returnRequest;
 
@@ -696,6 +1101,830 @@ class EnhancedReturnRequestCard extends StatelessWidget {
   }
 }
 
+// QR Code Return Screen
+class QRCodeReturnScreen extends StatefulWidget {
+  final AppOrder order;
+  final OrderQRData orderQRData;
+  final String returnType;
+
+  const QRCodeReturnScreen({
+    super.key,
+    required this.order,
+    required this.orderQRData,
+    required this.returnType,
+  });
+
+  @override
+  _QRCodeReturnScreenState createState() => _QRCodeReturnScreenState();
+}
+
+class _QRCodeReturnScreenState extends State<QRCodeReturnScreen> {
+  final EnhancedPOSService _posService = EnhancedPOSService();
+  final List<ReturnItem> _returnItems = [];
+  String _returnReason = 'defective';
+  String _refundMethod = 'original';
+  String? _notes;
+  bool _isProcessing = false;
+
+  final List<ReturnReason> _returnReasons = [
+    ReturnReason(
+      id: 'defective',
+      name: 'Defective Product',
+      description: 'Product not working properly',
+    ),
+    ReturnReason(
+      id: 'wrong_item',
+      name: 'Wrong Item Received',
+      description: 'Received different product',
+    ),
+    ReturnReason(
+      id: 'damaged',
+      name: 'Damaged Product',
+      description: 'Product arrived damaged',
+    ),
+    ReturnReason(
+      id: 'not_as_described',
+      name: 'Not as Described',
+      description: 'Product different from description',
+    ),
+    ReturnReason(
+      id: 'customer_change_mind',
+      name: 'Changed Mind',
+      description: 'Customer changed their mind',
+    ),
+    ReturnReason(
+      id: 'size_issue',
+      name: 'Size Issue',
+      description: 'Wrong size ordered',
+    ),
+    ReturnReason(
+      id: 'quality_issue',
+      name: 'Quality Issue',
+      description: 'Poor quality product',
+    ),
+  ];
+
+  final List<String> _refundMethods = [
+    'original',
+    'cash',
+    'credit',
+    'store_credit',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeReturnItems();
+  }
+
+  void _initializeReturnItems() {
+    if (widget.returnType == 'full') {
+      // Add all items for full return
+      for (final lineItem in widget.orderQRData.lineItems) {
+        _returnItems.add(
+          ReturnItem(
+            productId: '', // Will be populated from order data
+            productName: lineItem.productName,
+            productSku: lineItem.productSku,
+            quantity: lineItem.quantity,
+            price: lineItem.unitPrice,
+            returnReason: _returnReason,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showAddItemsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Select Items to Return'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: widget.orderQRData.lineItems.length,
+            itemBuilder: (context, index) {
+              final item = widget.orderQRData.lineItems[index];
+              final isAlreadyAdded = _returnItems.any((returnItem) =>
+              returnItem.productName == item.productName);
+
+              return Card(
+                margin: EdgeInsets.symmetric(vertical: 4),
+                child: ListTile(
+                  title: Text(item.productName),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Qty: ${item.quantity} • ${Constants.CURRENCY_NAME}${item.unitPrice.toStringAsFixed(2)} each'),
+                      Text('Total: ${Constants.CURRENCY_NAME}${item.totalPrice.toStringAsFixed(2)}'),
+                      if (item.hasDiscount)
+                        Text('Discount: -${Constants.CURRENCY_NAME}${item.discountAmount.toStringAsFixed(2)}'),
+                    ],
+                  ),
+                  trailing: isAlreadyAdded
+                      ? Icon(Icons.check_circle, color: Colors.green)
+                      : Icon(Icons.add, color: Colors.blue),
+                  onTap: () {
+                    if (!isAlreadyAdded) {
+                      _addReturnItem(
+                        item.productName,
+                        '', // productId
+                        item.productSku,
+                        item.quantity,
+                        item.unitPrice,
+                        _returnReason,
+                      );
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Added ${item.productName} to return'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _addReturnItem(
+      String productName,
+      String productId,
+      String sku,
+      int quantity,
+      double price,
+      String reason,
+      ) {
+    setState(() {
+      _returnItems.add(
+        ReturnItem(
+          productId: productId,
+          productName: productName,
+          productSku: sku,
+          quantity: quantity,
+          price: price,
+          returnReason: reason,
+        ),
+      );
+    });
+  }
+
+  void _removeReturnItem(int index) {
+    setState(() {
+      _returnItems.removeAt(index);
+    });
+  }
+
+  void _updateReturnItemQuantity(int index, int newQuantity) {
+    if (newQuantity <= 0) {
+      _removeReturnItem(index);
+      return;
+    }
+
+    setState(() {
+      _returnItems[index] = ReturnItem(
+        productId: _returnItems[index].productId,
+        productName: _returnItems[index].productName,
+        productSku: _returnItems[index].productSku,
+        quantity: newQuantity,
+        price: _returnItems[index].price,
+        returnReason: _returnItems[index].returnReason,
+        notes: _returnItems[index].notes,
+      );
+    });
+  }
+
+  double get _totalRefundAmount {
+    return _returnItems.fold(0.0, (sum, item) => sum + item.subtotal);
+  }
+
+  Future<void> _processReturn() async {
+    if (_returnItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Please add items to return')));
+      return;
+    }
+
+    setState(() => _isProcessing = true);
+
+    try {
+      final returnRequest = ReturnRequest(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        orderId: widget.order.id,
+        orderNumber: widget.order.number,
+        items: _returnItems,
+        reason: _returnReason,
+        status: 'completed',
+        notes: _notes,
+        dateCreated: DateTime.now(),
+        refundAmount: _totalRefundAmount,
+        refundMethod: _refundMethod,
+        customerId: widget.orderQRData.customerId,
+        customerInfo: widget.orderQRData.customerName != null ? {
+          'name': widget.orderQRData.customerName!,
+          'phone': widget.orderQRData.customerPhone ?? '',
+          'email': widget.orderQRData.customerEmail ?? '',
+          'qr_scan': true,
+          'original_invoice': widget.orderQRData.invoiceNumber,
+        } : null,
+      );
+
+      await _posService.createReturn(returnRequest);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Return processed successfully! Refund: ${Constants.CURRENCY_NAME}${_totalRefundAmount.toStringAsFixed(2)}',
+          ),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+
+      Navigator.of(context).pop();
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to process return: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  Widget _buildOrderInfo() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.qr_code, color: Colors.purple, size: 24),
+                SizedBox(width: 8),
+                Text(
+                  'QR Code Return',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            SizedBox(height: 12),
+            Text('Invoice: ${widget.orderQRData.invoiceNumber}'),
+            Text('Order: ${widget.orderQRData.orderId}'),
+            Text('Customer: ${widget.orderQRData.customerName ?? 'Walk-in Customer'}'),
+            Text('Date: ${DateFormat('MMM dd, yyyy').format(widget.orderQRData.issueDate)}'),
+            Text('Original Total: ${Constants.CURRENCY_NAME}${widget.orderQRData.totalAmount.toStringAsFixed(2)}'),
+            SizedBox(height: 8),
+            Container(
+              padding: EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${widget.orderQRData.daysSincePurchase} days since purchase • Valid for return',
+                style: TextStyle(color: Colors.green[700]),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReturnItemCard(ReturnItem item, int index) {
+    return Card(
+      margin: EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.assignment_return, color: Colors.orange, size: 40),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.productName,
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      if (item.productSku.isNotEmpty)
+                        Text(
+                          'SKU: ${item.productSku}',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      Text(
+                        '${Constants.CURRENCY_NAME}${item.price.toStringAsFixed(2)} each',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.delete, color: Colors.red),
+                  onPressed: () => _removeReturnItem(index),
+                ),
+              ],
+            ),
+            SizedBox(height: 8),
+            Row(
+              children: [
+                Text(
+                  'Quantity:',
+                  style: TextStyle(fontWeight: FontWeight.w500),
+                ),
+                SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.grey[300]!),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.remove, size: 18),
+                        onPressed: () =>
+                            _updateReturnItemQuantity(index, item.quantity - 1),
+                        padding: EdgeInsets.zero,
+                      ),
+                      Text(
+                        item.quantity.toString(),
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.add, size: 18),
+                        onPressed: () =>
+                            _updateReturnItemQuantity(index, item.quantity + 1),
+                        padding: EdgeInsets.zero,
+                      ),
+                    ],
+                  ),
+                ),
+                Spacer(),
+                Text(
+                  'Subtotal: ${Constants.CURRENCY_NAME}${item.subtotal.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('QR Code Return'),
+        backgroundColor: Colors.purple,
+      ),
+      body: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            _buildOrderInfo(),
+            SizedBox(height: 16),
+
+            // Return Items Section
+            if (widget.returnType == 'partial') ...[
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Select Items to Return',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: 12),
+                      ElevatedButton.icon(
+                        onPressed: _showAddItemsDialog,
+                        icon: Icon(Icons.add_shopping_cart),
+                        label: Text('Add Items from Order'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+            ],
+
+            // Return Items List
+            if (_returnItems.isNotEmpty) ...[
+              Text(
+                'Return Items (${_returnItems.length})',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: _returnItems.length,
+                  itemBuilder: (context, index) {
+                    return _buildReturnItemCard(_returnItems[index], index);
+                  },
+                ),
+              ),
+            ],
+
+            if (_returnItems.isEmpty && widget.returnType == 'partial') ...[
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.shopping_cart_outlined,
+                        size: 80,
+                        color: Colors.grey[400],
+                      ),
+                      SizedBox(height: 16),
+                      Text('No items added for return'),
+                      SizedBox(height: 8),
+                      Text(
+                        'Add products from the order to process return',
+                        style: TextStyle(color: Colors.grey),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+
+            // Return Details
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    DropdownButtonFormField(
+                      initialValue: _returnReason,
+                      items: _returnReasons.map((reason) {
+                        return DropdownMenuItem(
+                          value: reason.id,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(reason.name),
+                              Text(
+                                reason.description,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: (value) =>
+                          setState(() => _returnReason = value!),
+                      decoration: InputDecoration(labelText: 'Return Reason'),
+                    ),
+                    SizedBox(height: 12),
+                    DropdownButtonFormField(
+                      initialValue: _refundMethod,
+                      items: _refundMethods.map((method) {
+                        return DropdownMenuItem(
+                          value: method,
+                          child: Text(_getRefundMethodDisplayName(method)),
+                        );
+                      }).toList(),
+                      onChanged: (value) =>
+                          setState(() => _refundMethod = value!),
+                      decoration: InputDecoration(labelText: 'Refund Method'),
+                    ),
+                    SizedBox(height: 12),
+                    TextField(
+                      decoration: InputDecoration(
+                        labelText: 'Notes (Optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) => _notes = value,
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Total and Action
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                border: Border(top: BorderSide(color: Colors.grey[300]!)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total Refund:',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '${Constants.CURRENCY_NAME}${_totalRefundAmount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: _isProcessing
+                        ? ElevatedButton(
+                      onPressed: null,
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    )
+                        : ElevatedButton(
+                      onPressed: _returnItems.isNotEmpty ? _processReturn : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                      ),
+                      child: Text(
+                        'PROCESS RETURN & REFUND',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getRefundMethodDisplayName(String method) {
+    switch (method) {
+      case 'original':
+        return 'Original Payment Method';
+      case 'cash':
+        return 'Cash Refund';
+      case 'credit':
+        return 'Credit Card Refund';
+      case 'store_credit':
+        return 'Store Credit';
+      default:
+        return method;
+    }
+  }
+}
+
+// Update SearchOrderForReturnScreen to accept initial search
+class SearchOrderForReturnScreen extends StatefulWidget {
+  final String? initialSearch;
+
+  const SearchOrderForReturnScreen({super.key, this.initialSearch});
+
+  @override
+  _SearchOrderForReturnScreenState createState() =>
+      _SearchOrderForReturnScreenState();
+}
+
+class _SearchOrderForReturnScreenState
+    extends State<SearchOrderForReturnScreen> {
+  final EnhancedPOSService _posService = EnhancedPOSService();
+  final TextEditingController _searchController = TextEditingController();
+  final List<AppOrder> _searchResults = [];
+  bool _isSearching = false;
+  String _searchError = '';
+  Timer? _searchDebounce;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Pre-fill search if initial text provided
+    if (widget.initialSearch != null) {
+      _searchController.text = widget.initialSearch!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _searchOrders(widget.initialSearch!);
+      });
+    } else {
+      // Load recent orders initially
+      _loadRecentOrders();
+    }
+  }
+
+  Future<void> _loadRecentOrders() async {
+    setState(() {
+      _isSearching = true;
+      _searchError = '';
+    });
+
+    try {
+      final recentOrders = await _posService.getRecentOrders(limit: 20);
+      setState(() {
+        _searchResults.clear();
+        _searchResults.addAll(recentOrders);
+        _isSearching = false;
+      });
+    } catch (e) {
+      setState(() {
+        _searchError = 'Failed to load recent orders: $e';
+        _isSearching = false;
+      });
+    }
+  }
+
+  void _searchOrders(String query) {
+    _searchDebounce?.cancel();
+
+    if (query.isEmpty) {
+      _loadRecentOrders();
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+      _searchError = '';
+    });
+
+    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
+      try {
+        final results = await _posService.searchOrders(query);
+        setState(() {
+          _searchResults.clear();
+          _searchResults.addAll(results);
+          _isSearching = false;
+          if (results.isEmpty && query.isNotEmpty) {
+            _searchError = 'No orders found for "$query"';
+          }
+        });
+      } catch (e) {
+        setState(() {
+          _searchError = 'Search failed: $e';
+          _isSearching = false;
+        });
+      }
+    });
+  }
+
+  void _selectOrder(AppOrder order) {
+    Navigator.pop(context, order);
+  }
+
+  void _scanOrderBarcode() async {
+    final barcode = await UniversalScanningService.scanBarcode(
+      context,
+      purpose: 'return',
+    );
+    if (barcode != null && barcode.isNotEmpty) {
+      _searchController.text = barcode;
+      _searchOrders(barcode);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Find Order for Return')),
+      body: Column(
+        children: [
+          // Search Bar
+          Padding(
+            padding: EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search by order number...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: _searchOrders,
+                  ),
+                ),
+                SizedBox(width: 8),
+                IconButton(
+                  icon: Icon(Icons.qr_code_scanner),
+                  onPressed: _scanOrderBarcode,
+                  tooltip: 'Scan Order Barcode',
+                ),
+              ],
+            ),
+          ),
+
+          // Search Results
+          Expanded(
+            child: _isSearching
+                ? Center(child: CircularProgressIndicator())
+                : _searchError.isNotEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.search_off,
+                    size: 64,
+                    color: Colors.grey[400],
+                  ),
+                  SizedBox(height: 16),
+                  Text(_searchError, textAlign: TextAlign.center),
+                  SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: _loadRecentOrders,
+                    child: Text('Show Recent Orders'),
+                  ),
+                ],
+              ),
+            )
+                : _searchResults.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.receipt_long,
+                    size: 64,
+                    color: Colors.grey[400],
+                  ),
+                  SizedBox(height: 16),
+                  Text('No orders found'),
+                  SizedBox(height: 8),
+                  Text(
+                    'Search for orders or scan order barcode',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ],
+              ),
+            )
+                : ListView.builder(
+              itemCount: _searchResults.length,
+              itemBuilder: (context, index) {
+                final order = _searchResults[index];
+                return OrderCard(
+                  order: order,
+                  onSelect: () => _selectOrder(order),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
+  }
+}
+
+// Keep all your other existing classes (CreateReturnScreen, ReturnDetailsScreen,
+// ReturnAnyProductScreen, ProductSearchDialog, etc.) exactly as they were
 class CreateReturnScreen extends StatefulWidget {
   final AppOrder? selectedOrder;
 
@@ -1644,198 +2873,6 @@ class ReturnRequestCard extends StatelessWidget {
   }
 } // Search Order for Return Screen
 
-class SearchOrderForReturnScreen extends StatefulWidget {
-  const SearchOrderForReturnScreen({super.key});
-
-  @override
-  _SearchOrderForReturnScreenState createState() =>
-      _SearchOrderForReturnScreenState();
-}
-
-class _SearchOrderForReturnScreenState
-    extends State<SearchOrderForReturnScreen> {
-  final EnhancedPOSService _posService = EnhancedPOSService();
-  final TextEditingController _searchController = TextEditingController();
-  final List<AppOrder> _searchResults = [];
-  bool _isSearching = false;
-  String _searchError = '';
-  Timer? _searchDebounce;
-
-  @override
-  void initState() {
-    super.initState();
-    // Load recent orders initially
-    _loadRecentOrders();
-  }
-
-  Future<void> _loadRecentOrders() async {
-    setState(() {
-      _isSearching = true;
-      _searchError = '';
-    });
-
-    try {
-      final recentOrders = await _posService.getRecentOrders(limit: 20);
-      setState(() {
-        _searchResults.clear();
-        _searchResults.addAll(recentOrders);
-        _isSearching = false;
-      });
-    } catch (e) {
-      setState(() {
-        _searchError = 'Failed to load recent orders: $e';
-        _isSearching = false;
-      });
-    }
-  }
-
-  void _searchOrders(String query) {
-    _searchDebounce?.cancel();
-
-    if (query.isEmpty) {
-      _loadRecentOrders();
-      return;
-    }
-
-    setState(() {
-      _isSearching = true;
-      _searchError = '';
-    });
-
-    _searchDebounce = Timer(const Duration(milliseconds: 500), () async {
-      try {
-        final results = await _posService.searchOrders(query);
-        setState(() {
-          _searchResults.clear();
-          _searchResults.addAll(results);
-          _isSearching = false;
-          if (results.isEmpty && query.isNotEmpty) {
-            _searchError = 'No orders found for "$query"';
-          }
-        });
-      } catch (e) {
-        setState(() {
-          _searchError = 'Search failed: $e';
-          _isSearching = false;
-        });
-      }
-    });
-  }
-
-  void _selectOrder(AppOrder order) {
-    Navigator.pop(context, order);
-  }
-
-  void _scanOrderBarcode() async {
-    final barcode = await UniversalScanningService.scanBarcode(
-      context,
-      purpose: 'return',
-    );
-    if (barcode != null && barcode.isNotEmpty) {
-      _searchController.text = barcode;
-      _searchOrders(barcode);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Find Order for Return')),
-      body: Column(
-        children: [
-          // Search Bar
-          Padding(
-            padding: EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search by order number...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: _searchOrders,
-                  ),
-                ),
-                SizedBox(width: 8),
-                IconButton(
-                  icon: Icon(Icons.qr_code_scanner),
-                  onPressed: _scanOrderBarcode,
-                  tooltip: 'Scan Order Barcode',
-                ),
-              ],
-            ),
-          ),
-
-          // Search Results
-          Expanded(
-            child: _isSearching
-                ? Center(child: CircularProgressIndicator())
-                : _searchError.isNotEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.search_off,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  SizedBox(height: 16),
-                  Text(_searchError, textAlign: TextAlign.center),
-                  SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: _loadRecentOrders,
-                    child: Text('Show Recent Orders'),
-                  ),
-                ],
-              ),
-            )
-                : _searchResults.isEmpty
-                ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.receipt_long,
-                    size: 64,
-                    color: Colors.grey[400],
-                  ),
-                  SizedBox(height: 16),
-                  Text('No orders found'),
-                  SizedBox(height: 8),
-                  Text(
-                    'Search for orders or scan order barcode',
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            )
-                : ListView.builder(
-              itemCount: _searchResults.length,
-              itemBuilder: (context, index) {
-                final order = _searchResults[index];
-                return OrderCard(
-                  order: order,
-                  onSelect: () => _selectOrder(order),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _searchDebounce?.cancel();
-    _searchController.dispose();
-    super.dispose();
-  }
-}
 
 class ReturnAnyProductScreen extends StatefulWidget {
   const ReturnAnyProductScreen({super.key});

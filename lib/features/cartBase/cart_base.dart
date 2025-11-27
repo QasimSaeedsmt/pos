@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mpcm/core/overlay_manager.dart';
 import 'package:mpcm/theme_utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -116,11 +117,7 @@ class _CartScreenState extends State<CartScreen> {
               onPressed: () {
                 widget.cartManager.removeItemDiscount(item.product.id);
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Discount removed from ${item.product.name}'),
-                  ),
-                );
+               OverlayManager.showToast(context: context, message: 'Discount removed from ${item.product.name}');
               },
               child: Text(
                 'Remove Discount',
@@ -147,11 +144,7 @@ class _CartScreenState extends State<CartScreen> {
                   discountPercent: discountPercent,
                 );
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Discount applied to ${item.product.name}'),
-                  ),
-                );
+               OverlayManager.showToast(context: context, message: 'Discount applied to ${item.product.name}');
               }
             },
             child: Text('Apply Discount'),
@@ -214,9 +207,7 @@ class _CartScreenState extends State<CartScreen> {
               onPressed: () {
                 widget.cartManager.removeCartDiscount();
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Cart discount removed')),
-                );
+               OverlayManager.showToast(context: context, message: 'Cart discount removed');
               },
               child: Text(
                 'Remove Discount',
@@ -242,9 +233,7 @@ class _CartScreenState extends State<CartScreen> {
                   discountPercent: discountPercent,
                 );
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Cart discount applied')),
-                );
+               OverlayManager.showToast(context: context, message: 'Cart discount applied');
               }
             },
             child: Text('Apply Discount'),
@@ -425,9 +414,7 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message), backgroundColor: color));
+ OverlayManager.showToast(context: context, message: message,backgroundColor: color);
   }
 }
 

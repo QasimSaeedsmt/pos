@@ -781,19 +781,19 @@ class InvoiceService {
             height: 60,
           ),
           pw.SizedBox(height: 4),
-          pw.Text(
-            'Scan for order details',
-            style: pw.TextStyle(fontSize: 6),
-          ),
-          pw.Text(
-            '& returns',
-            style: pw.TextStyle(fontSize: 6),
-          ),
-          pw.SizedBox(height: 2),
-          pw.Text(
-            'Ref: ${invoice.invoiceNumber}',
-            style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
-          ),
+          // pw.Text(
+          //   'Scan for order details',
+          //   style: pw.TextStyle(fontSize: 6),
+          // ),
+          // pw.Text(
+          //   '& returns',
+          //   style: pw.TextStyle(fontSize: 6),
+          // ),
+          // pw.SizedBox(height: 2),
+          // pw.Text(
+          //   'Ref: ${invoice.invoiceNumber}',
+          //   style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+          // ),
         ],
       ),
     );

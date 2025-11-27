@@ -1,5 +1,6 @@
 // app.dart - Optimized Multi-Tenant SaaS System
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -105,95 +106,88 @@ class ExitConfirmationHandler {
     _lastBackPressTime = null;
   }
 }
+// --- Smart Slider Back Press Handler ---
 
-class BackPressHandler extends StatefulWidget {
+
+// --- Smart Slider Back Press Handler ---
+// --- Smart Slider Back Press Handler ---
+class SmartSliderBackPressHandler extends StatefulWidget {
   final Widget child;
-  const BackPressHandler({super.key, required this.child});
+  const SmartSliderBackPressHandler({super.key, required this.child});
 
   @override
-  State<BackPressHandler> createState() => _BackPressHandlerState();
+  State<SmartSliderBackPressHandler> createState() => _SmartSliderBackPressHandlerState();
 }
 
-class _BackPressHandlerState extends State<BackPressHandler> {
-  final ExitConfirmationHandler _exitHandler = ExitConfirmationHandler();
+class _SmartSliderBackPressHandlerState extends State<SmartSliderBackPressHandler> {
+  DateTime? _lastBackPressTime;
   OverlayEntry? _overlayEntry;
-  Timer? _overlayTimer;
+  double _sliderValue = 0.0;
 
-  @override
-  void dispose() {
+  void _showSmartSlider() {
     _overlayEntry?.remove();
-    _overlayTimer?.cancel();
-    super.dispose();
-  }
 
-  void _showExitToast(BuildContext context) {
-    // Remove existing overlay if any
-    _overlayEntry?.remove();
-    _overlayTimer?.cancel();
-
-    // Create a modern overlay
     _overlayEntry = OverlayEntry(
-      builder: (context) => Positioned(
-        top: MediaQuery.of(context).viewPadding.top + 80,
-        left: 0,
-        right: 0,
-        child: Material(
-          color: Colors.transparent,
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 24),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.inverseSurface,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.touch_app_rounded,
-                    color: Theme.of(context).colorScheme.onInverseSurface,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Press back again to exit',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onInverseSurface,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 14,
+      builder: (context) {
+        return Positioned.fill(
+          child: Material(
+            color: Colors.black54,
+            child: Center(
+              child: Container(
+                width: 320,
+                margin: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.3),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                child: _SliderContent(
+                  sliderValue: _sliderValue,
+                  onSliderValueChanged: (value) {
+                    setState(() {
+                      _sliderValue = value;
+                    });
+
+                    if (value >= 0.95) {
+                      _confirmExit();
+                    }
+                  },
+                  onCancel: _cancelExit,
+                ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
 
-    // Insert overlay
     Overlay.of(context).insert(_overlayEntry!);
 
-    // Auto remove after 2 seconds
-    _overlayTimer = Timer(const Duration(seconds: 2), () {
-      _overlayEntry?.remove();
-      _overlayEntry = null;
+    // Reset slider when shown
+    setState(() {
+      _sliderValue = 0.0;
     });
   }
 
-  void _hideExitToast() {
-    _overlayTimer?.cancel();
+  void _cancelExit() {
     _overlayEntry?.remove();
     _overlayEntry = null;
+    setState(() {
+      _sliderValue = 0.0;
+    });
+  }
+
+  void _confirmExit() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+    SystemNavigator.pop();
   }
 
   @override
@@ -203,101 +197,387 @@ class _BackPressHandlerState extends State<BackPressHandler> {
       onPopInvoked: (bool didPop) {
         if (didPop) return;
 
-        if (_exitHandler.shouldExit) {
-          // Exit the app
+        final now = DateTime.now();
+        final shouldExit = _lastBackPressTime != null &&
+            now.difference(_lastBackPressTime!) < const Duration(seconds: 2);
+
+        if (shouldExit) {
           SystemNavigator.pop();
         } else {
-          // Show exit confirmation
-          _showExitToast(context);
+          _lastBackPressTime = now;
+          _showSmartSlider();
         }
       },
       child: widget.child,
     );
   }
-}
-
-// --- Alternative: Modern Dialog Approach ---
-class BackPressHandlerWithDialog extends StatefulWidget {
-  final Widget child;
-  const BackPressHandlerWithDialog({super.key, required this.child});
 
   @override
-  State<BackPressHandlerWithDialog> createState() => _BackPressHandlerWithDialogState();
+  void dispose() {
+    _overlayEntry?.remove();
+    super.dispose();
+  }
 }
 
-class _BackPressHandlerWithDialogState extends State<BackPressHandlerWithDialog> {
-  final ExitConfirmationHandler _exitHandler = ExitConfirmationHandler();
+// --- Separate Slider Content Widget ---
+class _SliderContent extends StatefulWidget {
+  final double sliderValue;
+  final ValueChanged<double> onSliderValueChanged;
+  final VoidCallback onCancel;
 
-  Future<void> _showExitDialog(BuildContext context) async {
-    final shouldExit = await showDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierColor: Colors.black54,
-      builder: (context) => AlertDialog.adaptive(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        surfaceTintColor: Colors.transparent,
-        title: Row(
-          children: [
-            Icon(
-              Icons.exit_to_app_rounded,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'Exit App?',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          'Are you sure you want to exit the application?',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              'CANCEL',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-              ),
-            ),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('EXIT'),
-          ),
-        ],
-      ),
-    );
+  const _SliderContent({
+    required this.sliderValue,
+    required this.onSliderValueChanged,
+    required this.onCancel,
+  });
 
-    if (shouldExit == true && mounted) {
-      SystemNavigator.pop();
+  @override
+  State<_SliderContent> createState() => _ModernSliderContentState();
+}
+
+class _ModernSliderContentState extends State<_SliderContent>
+    with SingleTickerProviderStateMixin {
+  final GlobalKey _sliderKey = GlobalKey();
+
+  late AnimationController _controller;
+  bool _isDragging = false;
+
+  static const double trackWidth = 310;
+  static const double thumbSize = 52;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      value: widget.sliderValue,
+      duration: const Duration(milliseconds: 500),
+      lowerBound: 0,
+      upperBound: 1,
+    )..addListener(() {
+      widget.onSliderValueChanged(_controller.value);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SliderContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (!_isDragging && widget.sliderValue != _controller.value) {
+      _controller.animateTo(
+        widget.sliderValue,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutQuart,
+      );
     }
+  }
+
+  double _positionToValue(Offset globalPos) {
+    final RenderBox renderBox =
+    _sliderKey.currentContext!.findRenderObject() as RenderBox;
+
+    final local = renderBox.globalToLocal(globalPos);
+
+    double pos = (local.dx - (thumbSize / 2));
+    double value = pos / (trackWidth - thumbSize);
+
+    return value.clamp(0.0, 1.0);
+  }
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    setState(() => _isDragging = true);
+
+    final value = _positionToValue(details.globalPosition);
+
+    // Beautiful magnetic pull
+    if (value > 0.88) {
+      HapticFeedback.lightImpact();
+      _controller.value = value + (1 - value) * 0.40;
+    } else {
+      _controller.value = value;
+    }
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    setState(() => _isDragging = false);
+
+    if (_controller.value >= 0.94) {
+      HapticFeedback.heavyImpact();
+      widget.onSliderValueChanged(1.0);
+      return;
+    }
+
+    // Smooth rebound
+    _controller.animateTo(
+      0.0,
+      duration: const Duration(milliseconds: 450),
+      curve: Curves.easeOutBack,
+    );
+    widget.onSliderValueChanged(0.0);
   }
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvoked: (bool didPop) async {
-        if (didPop) return;
+    final theme = Theme.of(context);
 
-        if (_exitHandler.shouldExit) {
-          SystemNavigator.pop();
-        } else {
-          await _showExitDialog(context);
-        }
-      },
-      child: widget.child,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        /* -------------------- HEADER -------------------- */
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              colors: [
+                theme.colorScheme.primary.withOpacity(0.15),
+                theme.colorScheme.primary.withOpacity(0.05),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: theme.shadowColor.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [
+                      theme.colorScheme.primary,
+                      theme.colorScheme.primary.withOpacity(0.7),
+                    ],
+                  ),
+                ),
+                child: const Icon(Icons.power_settings_new_rounded,
+                    color: Colors.white, size: 26),
+              ),
+              const SizedBox(width: 18),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Exit Application",
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  Text(
+                    "Slide to confirm",
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              )
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 32),
+
+        /* -------------------- MODERN SLIDER -------------------- */
+        ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: Container(
+            key: _sliderKey,
+            height: 70,
+            width: trackWidth,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(40),
+            ),
+            child: Stack(
+              children: [
+                // Background blur glass
+                Positioned.fill(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.surface.withOpacity(0.3),
+                        borderRadius: BorderRadius.circular(40),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Liquid progress bar
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (_, __) {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: Container(
+                        width: _controller.value * trackWidth,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              theme.colorScheme.primary,
+                              theme.colorScheme.primary.withOpacity(0.6),
+                              theme.colorScheme.primary.withOpacity(0.3),
+                            ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // Glow highlight
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (_, __) {
+                    return Positioned(
+                      left: (_controller.value * trackWidth) -
+                          (thumbSize / 2) -
+                          20,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 40,
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            colors: [
+                              theme.colorScheme.primary.withOpacity(0.4),
+                              Colors.transparent
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+
+                // Thumb
+                AnimatedBuilder(
+                  animation: _controller,
+                  builder: (_, __) {
+                    return Positioned(
+                      left: _controller.value * (trackWidth - thumbSize),
+                      top: 9,
+                      child: GestureDetector(
+                        onHorizontalDragUpdate: _onDragUpdate,
+                        onHorizontalDragEnd: _onDragEnd,
+                        child: Container(
+                          width: thumbSize,
+                          height: thumbSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: theme.colorScheme.surface,
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                theme.colorScheme.primary.withOpacity(0.25),
+                                blurRadius: 20,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.arrow_forward_rounded,
+                            color: theme.colorScheme.primary,
+                            size: 28,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 24),
+
+        Text(
+          "${(_controller.value * 100).toInt()}%",
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.primary,
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
+        Text(
+          _controller.value > 0.88
+              ? "Release to exit"
+              : "Slide to the right to exit",
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurface.withOpacity(0.6),
+          ),
+        ),
+
+        const SizedBox(height: 28),
+
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: widget.onCancel,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: theme.colorScheme.surfaceVariant,
+              foregroundColor: theme.colorScheme.onSurfaceVariant,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            child: const Text("Cancel"),
+          ),
+        )
+      ],
     );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 }
 
-// --- Enhanced App Lifecycle Management ---
+// --- Updated MultiTenantSaaSApp ---
+class MultiTenantSaaSApp extends StatelessWidget {
+  const MultiTenantSaaSApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = context.watch<ThemeProvider>();
+
+    return MaterialApp(
+      title: 'Multi-Tenant SaaS',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+        primaryColor: themeProvider.getPrimaryColor(),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: themeProvider.getPrimaryColor(),
+          brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+        ),
+      ),
+      home: AppLifecycleWrapper(
+        child: SmartSliderBackPressHandler(
+          child: const AuthWrapper(),
+        ),
+      ),
+    );
+  }
+}
 class AppStateManager {
   static final AppStateManager _instance = AppStateManager._internal();
   factory AppStateManager() => _instance;
@@ -425,38 +705,38 @@ class ErrorApp extends StatelessWidget {
   }
 }
 
-class MultiTenantSaaSApp extends StatelessWidget {
-  const MultiTenantSaaSApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-
-    return MaterialApp(
-      title: 'Multi-Tenant SaaS',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
-        primaryColor: themeProvider.getPrimaryColor(),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: themeProvider.getPrimaryColor(),
-          brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
-        ),
-        scaffoldBackgroundColor: themeProvider.getBackgroundColor(),
-        cardColor: themeProvider.getSurfaceColor(),
-        textTheme: TextTheme(
-          bodyLarge: TextStyle(color: themeProvider.getPrimaryTextColor()),
-          bodyMedium: TextStyle(color: themeProvider.getSecondaryTextColor()),
-        ),
-      ),
-      home: AppLifecycleWrapper(
-        // Choose either approach:
-        child: BackPressHandler( // Modern toast approach
-          // child: BackPressHandlerWithDialog( // Modern dialog approach
-          child: const AuthWrapper(),
-        ),
-      ),
-    );
-  }
-}
+// class MultiTenantSaaSApp extends StatelessWidget {
+//   const MultiTenantSaaSApp({super.key});
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     final themeProvider = context.watch<ThemeProvider>();
+//
+//     return MaterialApp(
+//       title: 'Multi-Tenant SaaS',
+//       debugShowCheckedModeBanner: false,
+//       theme: ThemeData(
+//         useMaterial3: true,
+//         brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+//         primaryColor: themeProvider.getPrimaryColor(),
+//         colorScheme: ColorScheme.fromSeed(
+//           seedColor: themeProvider.getPrimaryColor(),
+//           brightness: themeProvider.isDarkMode ? Brightness.dark : Brightness.light,
+//         ),
+//         scaffoldBackgroundColor: themeProvider.getBackgroundColor(),
+//         cardColor: themeProvider.getSurfaceColor(),
+//         textTheme: TextTheme(
+//           bodyLarge: TextStyle(color: themeProvider.getPrimaryTextColor()),
+//           bodyMedium: TextStyle(color: themeProvider.getSecondaryTextColor()),
+//         ),
+//       ),
+//       home: AppLifecycleWrapper(
+//         // Choose either approach:
+//         child: BackPressHandler( // Modern toast approach
+//           // child: BackPressHandlerWithDialog( // Modern dialog approach
+//           child: const AuthWrapper(),
+//         ),
+//       ),
+//     );
+//   }
+// }
