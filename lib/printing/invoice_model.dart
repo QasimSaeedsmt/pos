@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app.dart';
 import '../constants.dart';
+import '../features/credit/credit_sale_model.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
 import 'invoice_service.dart';
@@ -352,6 +353,8 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
   }
 }
 
+
+
 class Invoice {
   final String id;
   final String orderId;
@@ -373,6 +376,17 @@ class Invoice {
   final Map<String, dynamic>? enhancedData;
   final bool hasEnhancedPricing;
 
+  // Credit-specific properties
+  final bool isCreditSale;
+  final double? creditAmount;
+  final double? paidAmount;
+  final DateTime? creditDueDate;
+  final String? creditTerms;
+  final double? previousBalance;
+  final double? newBalance;
+  final CreditSaleData? creditSaleData;
+
+  // Getters
   String? get logoPath => businessInfo['logoPath'] as String?;
   bool get includeLogo => invoiceSettings['includeLogo'] as bool? ?? true;
   bool get showCustomerDetails => customer != null && (invoiceSettings['includeCustomerDetails'] ?? true);
@@ -382,6 +396,14 @@ class Invoice {
   bool get showShipping => hasEnhancedPricing && shippingAmount > 0;
   bool get showTip => hasEnhancedPricing && tipAmount > 0;
   bool get showTax => taxAmount > 0;
+
+  // Credit-related getters
+  bool get showCreditDetails => isCreditSale && creditAmount != null;
+  bool get hasPartialPayment => isCreditSale && (paidAmount ?? 0) > 0;
+  bool get isOverdueCredit => creditDueDate != null && creditDueDate!.isBefore(DateTime.now());
+  int get daysOverdue => creditDueDate != null && isOverdueCredit
+      ? DateTime.now().difference(creditDueDate!).inDays
+      : 0;
 
   double get totalItemDiscounts {
     if (hasEnhancedPricing) {
@@ -463,6 +485,14 @@ class Invoice {
     required this.templateType,
     this.enhancedData,
     this.hasEnhancedPricing = false,
+    this.isCreditSale = false,
+    this.creditAmount,
+    this.paidAmount,
+    this.creditDueDate,
+    this.creditTerms,
+    this.previousBalance,
+    this.newBalance,
+    this.creditSaleData,
   });
 
   factory Invoice.fromEnhancedOrder(
@@ -472,41 +502,33 @@ class Invoice {
       Map<String, dynamic> invoiceSettings, {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
+        CreditSaleData? creditSaleData,
       }) {
-    // Use enhanced invoice creation if enhanced data is available
     final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData ?? {});
 
-    // Calculate totals using the enhanced data
     final cartData = enhancedData?['cartData'] as Map<String, dynamic>?;
     final discountBreakdown = enhancedData?['discountBreakdown'] as Map<String, dynamic>?;
 
     final subtotal = (cartData?['subtotal'] as num?)?.toDouble() ?? 0.0;
     final totalDiscount = (discountBreakdown?['total_savings'] as num?)?.toDouble() ?? 0.0;
 
-    // Calculate net amount (after all discounts)
     final netAmount = subtotal - totalDiscount;
 
-    // Get shipping and tip amounts
     final shippingAmount = (enhancedData?['shippingAmount'] as num?)?.toDouble() ?? 0.0;
     final tipAmount = (enhancedData?['tipAmount'] as num?)?.toDouble() ?? 0.0;
 
-    // Ensure tax is properly calculated and included
     final taxRate = (invoiceSettings['taxRate'] as num?)?.toDouble() ?? 0.0;
     final taxAmount = (discountBreakdown?['tax_amount'] as num?)?.toDouble() ??
         (netAmount * taxRate / 100);
 
-    // Calculate final total
     final totalAmount = netAmount + taxAmount + shippingAmount + tipAmount;
 
-    print('DEBUG: Enhanced invoice creation -');
-    print('DEBUG: Subtotal: $subtotal');
-    print('DEBUG: Total Discount: $totalDiscount');
-    print('DEBUG: Net Amount: $netAmount');
-    print('DEBUG: Tax Rate: $taxRate%');
-    print('DEBUG: Tax Amount: $taxAmount');
-    print('DEBUG: Shipping: $shippingAmount');
-    print('DEBUG: Tip: $tipAmount');
-    print('DEBUG: Final Total: $totalAmount');
+    final isCreditSale = creditSaleData?.isCreditSale ?? enhancedData?['isCreditSale'] ?? false;
+    final creditAmount = creditSaleData?.creditAmount ?? (enhancedData?['creditAmount'] as num?)?.toDouble();
+    final paidAmount = creditSaleData?.paidAmount ?? (enhancedData?['paidAmount'] as num?)?.toDouble();
+    final creditDueDate = creditSaleData?.dueDate;
+    final previousBalance = creditSaleData?.previousBalance;
+    final newBalance = creditSaleData?.newBalance;
 
     return Invoice(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -528,6 +550,13 @@ class Invoice {
       templateType: templateType,
       enhancedData: enhancedData,
       hasEnhancedPricing: true,
+      isCreditSale: isCreditSale,
+      creditAmount: creditAmount,
+      paidAmount: paidAmount,
+      creditDueDate: creditDueDate,
+      previousBalance: previousBalance,
+      newBalance: newBalance,
+      creditSaleData: creditSaleData,
     );
   }
 
@@ -535,18 +564,12 @@ class Invoice {
     final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
     final enhancedLineItems = cartData?['line_items'] as List<dynamic>? ?? cartData?['items'] as List<dynamic>?;
 
-    print('DEBUG: Creating enhanced items from ${lineItems.length} line items');
-    print('DEBUG: Enhanced line items available: ${enhancedLineItems?.length ?? 0}');
-
     return lineItems.asMap().entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
       final enhancedItem = enhancedLineItems != null && enhancedLineItems.length > index
           ? enhancedLineItems[index]
           : null;
-
-      print('DEBUG: Processing item $index: ${item['productName']}');
-      print('DEBUG: Enhanced item data: $enhancedItem');
 
       return InvoiceItem(
         name: item['productName']?.toString() ?? 'Unknown Product',
@@ -573,13 +596,12 @@ class Invoice {
       Map<String, dynamic> invoiceSettings, {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
+        CreditSaleData? creditSaleData,
       }) {
-    // Try to extract enhanced data from order if available
     final hasEnhancedData = enhancedData != null ||
         (order.lineItems.isNotEmpty && order.lineItems[0].containsKey('base_price'));
 
     if (hasEnhancedData) {
-      // Use enhanced invoice creation if enhanced data is available
       return Invoice.fromEnhancedOrder(
         order,
         customer,
@@ -587,10 +609,10 @@ class Invoice {
         invoiceSettings,
         templateType: templateType,
         enhancedData: enhancedData,
+        creditSaleData: creditSaleData,
       );
     }
 
-    // Fallback to basic invoice creation
     final items = (order.lineItems).map((item) {
       return InvoiceItem(
         name: item['productName']?.toString() ?? 'Unknown Product',
@@ -611,12 +633,12 @@ class Invoice {
 
     final totalAmount = subtotal + taxAmount - discountAmount;
 
-    print('DEBUG: Basic invoice creation -');
-    print('DEBUG: Subtotal: $subtotal');
-    print('DEBUG: Tax Rate: $taxRate%');
-    print('DEBUG: Tax Amount: $taxAmount');
-    print('DEBUG: Discount: $discountAmount');
-    print('DEBUG: Final Total: $totalAmount');
+    final isCreditSale = creditSaleData?.isCreditSale ?? false;
+    final creditAmount = creditSaleData?.creditAmount;
+    final paidAmount = creditSaleData?.paidAmount;
+    final creditDueDate = creditSaleData?.dueDate;
+    final previousBalance = creditSaleData?.previousBalance;
+    final newBalance = creditSaleData?.newBalance;
 
     return Invoice(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -638,6 +660,13 @@ class Invoice {
       invoiceSettings: invoiceSettings,
       templateType: templateType,
       hasEnhancedPricing: false,
+      isCreditSale: isCreditSale,
+      creditAmount: creditAmount,
+      paidAmount: paidAmount,
+      creditDueDate: creditDueDate,
+      previousBalance: previousBalance,
+      newBalance: newBalance,
+      creditSaleData: creditSaleData,
     );
   }
 
@@ -660,11 +689,22 @@ class Invoice {
       'businessInfo': businessInfo,
       'invoiceSettings': invoiceSettings,
       'templateType': templateType,
+      'isCreditSale': isCreditSale,
+      'creditAmount': creditAmount,
+      'paidAmount': paidAmount,
+      'creditDueDate': creditDueDate?.toIso8601String(),
+      'creditTerms': creditTerms,
+      'previousBalance': previousBalance,
+      'newBalance': newBalance,
     };
 
     if (hasEnhancedPricing && enhancedData != null) {
       data['enhancedData'] = enhancedData;
       data['hasEnhancedPricing'] = true;
+    }
+
+    if (creditSaleData != null) {
+      data['creditSaleData'] = creditSaleData!.toMap();
     }
 
     return data;
@@ -693,6 +733,15 @@ class Invoice {
       templateType: data['templateType'] ?? 'traditional',
       enhancedData: data['enhancedData'] != null ? Map<String, dynamic>.from(data['enhancedData']) : null,
       hasEnhancedPricing: data['hasEnhancedPricing'] ?? false,
+      isCreditSale: data['isCreditSale'] ?? false,
+      creditAmount: (data['creditAmount'] as num?)?.toDouble(),
+      paidAmount: (data['paidAmount'] as num?)?.toDouble(),
+      creditDueDate: data['creditDueDate'] != null ? DateTime.parse(data['creditDueDate']) : null,
+      creditTerms: data['creditTerms'],
+      previousBalance: (data['previousBalance'] as num?)?.toDouble(),
+      newBalance: (data['newBalance'] as num?)?.toDouble(),
+      creditSaleData: data['creditSaleData'] != null ?
+      CreditSaleData.fromMap(Map<String, dynamic>.from(data['creditSaleData'])) : null,
     );
   }
 
@@ -716,6 +765,14 @@ class Invoice {
     String? templateType,
     Map<String, dynamic>? enhancedData,
     bool? hasEnhancedPricing,
+    bool? isCreditSale,
+    double? creditAmount,
+    double? paidAmount,
+    DateTime? creditDueDate,
+    String? creditTerms,
+    double? previousBalance,
+    double? newBalance,
+    CreditSaleData? creditSaleData,
   }) {
     return Invoice(
       id: id ?? this.id,
@@ -737,6 +794,14 @@ class Invoice {
       templateType: templateType ?? this.templateType,
       enhancedData: enhancedData ?? this.enhancedData,
       hasEnhancedPricing: hasEnhancedPricing ?? this.hasEnhancedPricing,
+      isCreditSale: isCreditSale ?? this.isCreditSale,
+      creditAmount: creditAmount ?? this.creditAmount,
+      paidAmount: paidAmount ?? this.paidAmount,
+      creditDueDate: creditDueDate ?? this.creditDueDate,
+      creditTerms: creditTerms ?? this.creditTerms,
+      previousBalance: previousBalance ?? this.previousBalance,
+      newBalance: newBalance ?? this.newBalance,
+      creditSaleData: creditSaleData ?? this.creditSaleData,
     );
   }
 }

@@ -529,18 +529,160 @@ class FirestoreServices {
   }
 
 // Add this method to create orders with enhanced data
+// In FirestoreServices class - UPDATE the createOrderWithEnhancedData method
+
+
+
+// In FirestoreServices class - COMPLETE createOrderWithEnhancedData method
   Future<AppOrder> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection,
       Map<String, dynamic> enhancedData,
       ) async {
-    return await createOrderWithCustomer(
-      cartItems,
-      customerSelection,
-      enhancedData: enhancedData,
-    );
+    try {
+      final orderRef = ordersRef.doc();
+
+      // Calculate totals
+      double subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
+      double totalAmount = cartItems.fold(0.0, (sum, item) => sum + item.subtotal);
+
+      // Use enhanced data if provided for more accurate totals
+      final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
+      if (cartData != null) {
+        subtotal = cartData['subtotal'] ?? subtotal;
+        totalAmount = cartData['totalAmount'] ?? totalAmount;
+      }
+
+      // Prepare customer data for order level storage
+      Map<String, dynamic>? customerOrderData;
+      String? customerId;
+      String? customerName;
+
+      if (customerSelection.hasCustomer) {
+        final customer = customerSelection.customer!;
+        customerId = customer.id;
+        customerName = customer.fullName;
+
+        customerOrderData = {
+          'id': customer.id,
+          'firstName': customer.firstName,
+          'lastName': customer.lastName,
+          'email': customer.email,
+          'phone': customer.phone,
+          'company': customer.company,
+          'address1': customer.address1,
+          'address2': customer.address2,
+          'city': customer.city,
+          'state': customer.state,
+          'postcode': customer.postcode,
+          'country': customer.country,
+        };
+      } else {
+        customerName = 'Walk-in Customer';
+      }
+
+      final orderData = {
+        'id': orderRef.id,
+        'number': _generateOrderNumber(),
+        'status': 'completed',
+        'dateCreated': FieldValue.serverTimestamp(),
+        'total': totalAmount,
+        'subtotal': subtotal,
+        'lineItems': cartItems.map((item) {
+          final itemData = {
+            'productId': item.product.id,
+            'productName': item.product.name,
+            'quantity': item.quantity,
+            'price': item.product.price,
+            'subtotal': item.subtotal,
+            'baseSubtotal': item.baseSubtotal,
+            'hasManualDiscount': item.hasManualDiscount,
+          };
+
+          // Add discount information if available
+          if (item.hasManualDiscount) {
+            itemData['manualDiscount'] = item.manualDiscount ?? 0.0;
+            itemData['manualDiscountPercent'] = item.manualDiscountPercent ?? 0.0;
+            itemData['discountAmount'] = item.discountAmount;
+          }
+
+          return itemData;
+        }).toList(),
+        'paymentMethod': enhancedData['paymentMethod'] ?? 'cash',
+        'paymentStatus': 'paid',
+
+        // Store customer data at ORDER LEVEL (not in line items)
+        'customerId': customerId,
+        'customerName': customerName,
+        'customerEmail': customerSelection.hasCustomer ? customerSelection.customer!.email : null,
+        'customerPhone': customerSelection.hasCustomer ? customerSelection.customer!.phone : null,
+        'customerAddress': customerSelection.hasCustomer ? _formatCustomerAddress(customerSelection.customer!) : null,
+        'customer': customerOrderData,
+
+        // Enhanced data for detailed reporting
+        'enhancedData': enhancedData,
+      };
+
+      // Add pricing breakdown if available in enhanced data
+      if (cartData != null) {
+        orderData['pricingBreakdown'] = {
+          'itemDiscounts': cartData['item_discounts'] ?? 0.0,
+          'cartDiscount': cartData['cart_discount'] ?? 0.0,
+          'cartDiscountPercent': cartData['cart_discount_percent'] ?? 0.0,
+          'cartDiscountAmount': cartData['cart_discount_amount'] ?? 0.0,
+          'additionalDiscount': enhancedData['additionalDiscount'] ?? 0.0,
+          'shippingAmount': enhancedData['shippingAmount'] ?? 0.0,
+          'tipAmount': enhancedData['tipAmount'] ?? 0.0,
+          'taxRate': cartData['tax_rate'] ?? 0.0,
+          'taxAmount': cartData['tax_amount'] ?? 0.0,
+          'totalDiscount': cartData['total_discount'] ?? 0.0,
+          'finalTotal': cartData['totalAmount'] ?? totalAmount,
+        };
+      }
+
+      await orderRef.set(orderData);
+
+      // Update stock quantities
+      for (final item in cartItems) {
+        await productsRef.doc(item.product.id).update({
+          'stockQuantity': FieldValue.increment(-item.quantity),
+          'dateModified': FieldValue.serverTimestamp(),
+        });
+      }
+
+      // Update customer stats if customer is associated
+      if (customerSelection.hasCustomer) {
+        await updateCustomerStats(
+          customerSelection.customer!.id,
+          totalAmount,
+        );
+      }
+
+      final createdOrder = AppOrder.fromFirestore(orderData, orderRef.id);
+
+      // Debug: Print customer data to verify it's stored correctly
+      createdOrder.printCustomerData();
+
+      return createdOrder;
+    } catch (e) {
+      print('Error creating order with enhanced data: $e');
+      throw Exception('Failed to create order: $e');
+    }
   }
-  // Product operations
+
+  String? _formatCustomerAddress(Customer customer) {
+    final addressParts = [
+      customer.address1,
+      customer.city,
+      customer.state,
+      customer.postcode,
+      customer.country,
+    ].where((part) => part != null && part.isNotEmpty).toList();
+
+    return addressParts.isNotEmpty ? addressParts.join(', ') : null;
+  }
+
+
   Stream<List<Product>> getProductsStream() {
     return productsRef
         .where('status', isEqualTo: 'publish')

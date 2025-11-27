@@ -1465,14 +1465,21 @@ class _MainNavScreenState extends State<MainNavScreen> {
       );
     }
   }
-
+void navigateToInvoices(){
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => OrdersManagementScreen(),
+    ),
+  );
+}
   void _handleQuickAction(String action) {
     switch (action) {
       case 'scan':
         _showSnackBar('Scan feature coming soon');
         break;
       case 'invoices':
-        _showSnackBar('Invoice management coming soon');
+        navigateToInvoices();
         break;
       case 'credit':
         _handleMenuNavigation(13); // Navigate to Credit Management
@@ -2431,12 +2438,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
         actions: [
           TextButton(
               onPressed: () {
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(
-                //     builder: (context) => InvoiceArchiveScreen(),
-                //   ),
-                // );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => OrdersManagementScreen(),
+                  ),
+                );
               },
               child: Text("Invoices")
           )

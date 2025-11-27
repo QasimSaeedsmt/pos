@@ -1,3 +1,80 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/invoiceBase/invoice_and_printing_base.dart';
+import 'invoice_model.dart';
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/invoiceBase/invoice_and_printing_base.dart';
+import 'invoice_model.dart';
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/invoiceBase/invoice_and_printing_base.dart';
+import 'invoice_model.dart';
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/invoiceBase/invoice_and_printing_base.dart';
+import 'invoice_model.dart';
+
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
+import '../constants.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/invoiceBase/invoice_and_printing_base.dart';
+import 'invoice_model.dart';
+
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -48,6 +125,11 @@ class InvoiceService {
                 pw.SizedBox(height: 8),
                 _buildThermalInvoiceDetails(invoice),
                 pw.SizedBox(height: 8),
+
+                // Credit Notice Section
+                if (invoice.showCreditDetails)
+                  _buildCreditNoticeSection(invoice),
+
                 if (invoice.showCustomerDetails && invoice.customer != null)
                   _buildCompactCustomerInfo(invoice.customer!),
                 if (invoice.showCustomerDetails && invoice.customer != null)
@@ -56,6 +138,11 @@ class InvoiceService {
                 pw.SizedBox(height: 8),
                 _buildEnhancedThermalTotals(invoice),
                 pw.SizedBox(height: 8),
+
+                // Credit Details Section
+                if (invoice.showCreditDetails)
+                  _buildCreditDetailsSection(invoice),
+
                 _buildPaymentAndFooter(invoice),
                 pw.SizedBox(height: 8),
                 _buildCompactQRCode(invoice),
@@ -129,6 +216,37 @@ class InvoiceService {
           ),
         ),
       ],
+    );
+  }
+
+  pw.Widget _buildCreditNoticeSection(Invoice invoice) {
+    return pw.Container(
+      width: double.infinity,
+      padding: pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.orange[50],
+        border: pw.Border.all(color: PdfColors.orange, width: 0.5),
+      ),
+      child: pw.Column(
+        children: [
+          pw.Text(
+            'CREDIT SALE',
+            style: pw.TextStyle(
+              fontSize: 10,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColors.orange[800],
+            ),
+          ),
+          if (invoice.hasPartialPayment)
+            pw.Text(
+              'Partial Payment Received',
+              style: pw.TextStyle(
+                fontSize: 8,
+                color: PdfColors.orange[700],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -306,7 +424,6 @@ class InvoiceService {
           if (hasEnhanced)
             _buildTotalLine('Net Amount', invoice.netAmount, isEmphasized: true),
 
-          // ALWAYS SHOW TAX - FIXED
           if (invoice.taxAmount > 0)
             _buildTotalLine('Tax', invoice.taxAmount),
 
@@ -335,7 +452,11 @@ class InvoiceService {
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
                 pw.Text(
-                  'TOTAL AMOUNT:',
+                  invoice.showCreditDetails && invoice.hasPartialPayment
+                      ? 'AMOUNT DUE:'
+                      : invoice.showCreditDetails
+                      ? 'CREDIT AMOUNT:'
+                      : 'TOTAL AMOUNT:',
                   style: pw.TextStyle(
                     fontSize: 10,
                     fontWeight: pw.FontWeight.bold,
@@ -343,7 +464,11 @@ class InvoiceService {
                   ),
                 ),
                 pw.Text(
-                  '${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}',
+                  invoice.showCreditDetails && invoice.hasPartialPayment
+                      ? '${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}'
+                      : invoice.showCreditDetails
+                      ? '${Constants.CURRENCY_NAME}${invoice.creditAmount!.toStringAsFixed(2)}'
+                      : '${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}',
                   style: pw.TextStyle(
                     fontSize: 10,
                     fontWeight: pw.FontWeight.bold,
@@ -386,7 +511,6 @@ class InvoiceService {
                       ),
                     ],
                   ),
-                  // Add tax to savings breakdown if applicable
                   if (invoice.taxAmount > 0)
                     pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -408,6 +532,7 @@ class InvoiceService {
       ),
     );
   }
+
   List<pw.Widget> _buildIndependentDiscounts(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 
@@ -428,23 +553,6 @@ class InvoiceService {
     }
 
     return widgets;
-  }
-
-  String _getDiscountLabel(String discountType) {
-    switch (discountType) {
-      case 'item_discounts':
-        return '  • Item Discounts';
-      case 'cart_discount':
-        return '  • Cart Discount';
-      case 'additional_discount':
-        return '  • Additional Discount';
-      case 'settings_discount':
-        return '  • Standard Discount';
-      case 'legacy_discount':
-        return '  • Discount';
-      default:
-        return '  • $discountType';
-    }
   }
 
   pw.Widget _buildTotalLine(String label, double amount, {bool isEmphasized = false}) {
@@ -495,6 +603,122 @@ class InvoiceService {
               fontWeight: pw.FontWeight.bold,
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _buildCreditDetailsSection(Invoice invoice) {
+    return pw.Container(
+      width: double.infinity,
+      padding: pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey, width: 0.5),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'CREDIT TERMS',
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 6),
+
+          if (invoice.hasPartialPayment)
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Amount Paid:', style: pw.TextStyle(fontSize: 8)),
+                pw.Text(
+                  '${Constants.CURRENCY_NAME}${invoice.paidAmount!.toStringAsFixed(2)}',
+                  style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+                ),
+              ],
+            ),
+
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text('Credit Amount:', style: pw.TextStyle(fontSize: 8)),
+              pw.Text(
+                '${Constants.CURRENCY_NAME}${invoice.creditAmount!.toStringAsFixed(2)}',
+                style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+              ),
+            ],
+          ),
+
+          if (invoice.creditDueDate != null)
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text('Due Date:', style: pw.TextStyle(fontSize: 8)),
+                pw.Text(
+                  DateFormat('dd/MM/yyyy').format(invoice.creditDueDate!),
+                  style: pw.TextStyle(
+                    fontSize: 8,
+                    fontWeight: pw.FontWeight.bold,
+                    color: invoice.isOverdueCredit ? PdfColors.red : PdfColors.black,
+                  ),
+                ),
+              ],
+            ),
+
+          if (invoice.previousBalance != null && invoice.newBalance != null)
+            pw.Column(
+              children: [
+                pw.SizedBox(height: 4),
+                pw.Container(
+                  width: double.infinity,
+                  height: 0.5,
+                  color: PdfColors.grey,
+                ),
+                pw.SizedBox(height: 4),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('Previous Balance:', style: pw.TextStyle(fontSize: 7)),
+                    pw.Text(
+                      '${Constants.CURRENCY_NAME}${invoice.previousBalance!.toStringAsFixed(2)}',
+                      style: pw.TextStyle(fontSize: 7),
+                    ),
+                  ],
+                ),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text('New Balance:', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
+                    pw.Text(
+                      '${Constants.CURRENCY_NAME}${invoice.newBalance!.toStringAsFixed(2)}',
+                      style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+          if (invoice.isOverdueCredit)
+            pw.Container(
+              width: double.infinity,
+              margin: pw.EdgeInsets.only(top: 4),
+              padding: pw.EdgeInsets.all(4),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.red[50],
+                borderRadius: pw.BorderRadius.circular(2),
+              ),
+              child: pw.Text(
+                'OVERDUE - Please settle immediately',
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  color: PdfColors.red,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                textAlign: pw.TextAlign.center,
+              ),
+            ),
         ],
       ),
     );
@@ -576,12 +800,16 @@ class InvoiceService {
   }
 
   String _generateQRData(Invoice invoice) {
+    final creditInfo = invoice.showCreditDetails
+        ? '\nCredit: ${Constants.CURRENCY_NAME}${invoice.creditAmount!.toStringAsFixed(2)}'
+        : '';
+
     return '''
 INVOICE REFERENCE
 Invoice: ${invoice.invoiceNumber}
 Order: ${invoice.orderId}
 Date: ${DateFormat('dd/MM/yyyy').format(invoice.issueDate)}
-Total: ${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}
+Total: ${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}$creditInfo
 Business: ${invoice.businessInfo['name']}
 Customer: ${invoice.customer?.fullName ?? 'Walk-in'}
 For returns or inquiries, present this QR code
@@ -621,6 +849,10 @@ For returns or inquiries, present this QR code
             children: [
               _buildTraditionalHeader(invoice),
               pw.SizedBox(height: 20),
+
+              if (invoice.showCreditDetails)
+                _buildTraditionalCreditNotice(invoice),
+
               pw.Row(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
@@ -633,6 +865,10 @@ For returns or inquiries, present this QR code
               pw.SizedBox(height: 20),
               _buildTraditionalItemsTable(invoice),
               pw.SizedBox(height: 20),
+
+              if (invoice.showCreditDetails)
+                _buildTraditionalCreditDetails(invoice),
+
               _buildEnhancedTraditionalTotals(invoice),
               pw.SizedBox(height: 20),
               pw.Center(
@@ -647,59 +883,46 @@ For returns or inquiries, present this QR code
     );
   }
 
-  pw.Widget _buildTraditionalQRCode(Invoice invoice) {
-    final qrData = _generateQRData(invoice);
-
-    return pw.Center(
-      child: pw.Container(
-        constraints: pw.BoxConstraints(
-          maxWidth: 250,
-        ),
-        padding: pw.EdgeInsets.all(20),
-        decoration: pw.BoxDecoration(
-          border: pw.Border.all(color: PdfColors.grey300),
-          borderRadius: pw.BorderRadius.circular(8),
-        ),
-        child: pw.Column(
-          mainAxisSize: pw.MainAxisSize.min,
-          children: [
-            pw.Text(
-              'ORDER REFERENCE',
-              style: pw.TextStyle(
-                fontSize: 16,
-                fontWeight: pw.FontWeight.bold,
-              ),
+  pw.Widget _buildTraditionalCreditNotice(Invoice invoice) {
+    return pw.Container(
+      width: double.infinity,
+      padding: pw.EdgeInsets.all(12),
+      decoration: pw.BoxDecoration(
+        color: PdfColors.orange[50],
+        border: pw.Border.all(color: PdfColors.orange, width: 1),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Row(
+        children: [
+          pw.Text(
+            '⚠️',
+            style: pw.TextStyle(fontSize: 16),
+          ),
+          pw.SizedBox(width: 12),
+          pw.Expanded(
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'CREDIT SALE INVOICE',
+                  style: pw.TextStyle(
+                    fontSize: 14,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.orange[800],
+                  ),
+                ),
+                if (invoice.hasPartialPayment)
+                  pw.Text(
+                    'Partial payment received. Balance on credit.',
+                    style: pw.TextStyle(
+                      fontSize: 11,
+                      color: PdfColors.orange[700],
+                    ),
+                  ),
+              ],
             ),
-            pw.SizedBox(height: 15),
-            pw.Container(
-              color: PdfColors.white,
-              padding: pw.EdgeInsets.all(10),
-              child: pw.BarcodeWidget(
-                barcode: pw.Barcode.qrCode(),
-                data: qrData,
-                width: 100,
-                height: 100,
-              ),
-            ),
-            pw.SizedBox(height: 15),
-            pw.Text(
-              'Scan for order details & returns',
-              style: pw.TextStyle(
-                fontSize: 11,
-                fontStyle: pw.FontStyle.italic,
-              ),
-              textAlign: pw.TextAlign.center,
-            ),
-            pw.SizedBox(height: 10),
-            pw.Text(
-              'Ref: ${invoice.invoiceNumber}',
-              style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -844,6 +1067,123 @@ For returns or inquiries, present this QR code
     );
   }
 
+  pw.Widget _buildTraditionalCreditDetails(Invoice invoice) {
+    return pw.Container(
+      width: double.infinity,
+      padding: pw.EdgeInsets.all(16),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey300),
+        borderRadius: pw.BorderRadius.circular(8),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            'Credit Sale Details',
+            style: pw.TextStyle(
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 12),
+
+          pw.Table(
+            columnWidths: {
+              0: pw.FlexColumnWidth(2),
+              1: pw.FlexColumnWidth(3),
+            },
+            children: [
+              if (invoice.hasPartialPayment)
+                _buildTraditionalCreditDetailRow(
+                  'Amount Paid',
+                  invoice.paidAmount!,
+                  isEmphasized: false,
+                ),
+              _buildTraditionalCreditDetailRow(
+                'Credit Amount',
+                invoice.creditAmount!,
+                isEmphasized: false,
+              ),
+              if (invoice.creditDueDate != null)
+                _buildTraditionalCreditDetailRow(
+                  'Due Date',
+                  0,
+                  textValue: DateFormat('MMMM dd, yyyy').format(invoice.creditDueDate!),
+                  isOverdue: invoice.isOverdueCredit,
+                  isEmphasized: false,
+                ),
+              if (invoice.previousBalance != null)
+                _buildTraditionalCreditDetailRow(
+                  'Previous Balance',
+                  invoice.previousBalance!,
+                  isEmphasized: false,
+                ),
+              if (invoice.newBalance != null)
+                _buildTraditionalCreditDetailRow(
+                  'New Balance',
+                  invoice.newBalance!,
+                  isEmphasized: true,
+                ),
+            ],
+          ),
+
+          if (invoice.isOverdueCredit)
+            pw.Container(
+              width: double.infinity,
+              margin: pw.EdgeInsets.only(top: 12),
+              padding: pw.EdgeInsets.all(8),
+              decoration: pw.BoxDecoration(
+                color: PdfColors.red[50],
+                border: pw.Border.all(color: PdfColors.red),
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: pw.Text(
+                'OVERDUE - This invoice is past due. Please settle immediately to avoid additional charges.',
+                style: pw.TextStyle(
+                  color: PdfColors.red,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                textAlign: pw.TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // CORRECTED METHOD - Properly defined parameters
+  pw.TableRow _buildTraditionalCreditDetailRow(
+      String label,
+      double amount, {
+        String? textValue,
+        bool isEmphasized = false,
+        bool isOverdue = false,
+      }) {
+    return pw.TableRow(
+      children: [
+        pw.Padding(
+          padding: pw.EdgeInsets.symmetric(vertical: 4),
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontWeight: isEmphasized ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+        pw.Padding(
+          padding: pw.EdgeInsets.symmetric(vertical: 4),
+          child: pw.Text(
+            textValue ?? '${Constants.CURRENCY_NAME}${amount.toStringAsFixed(2)}',
+            style: pw.TextStyle(
+              fontWeight: isEmphasized ? pw.FontWeight.bold : pw.FontWeight.normal,
+              color: isOverdue ? PdfColors.red : PdfColors.black,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   pw.Widget _buildEnhancedTraditionalTotals(Invoice invoice) {
     final bool hasEnhanced = invoice.hasEnhancedPricing;
     final allDiscounts = invoice.allDiscounts;
@@ -871,7 +1211,6 @@ For returns or inquiries, present this QR code
                     if (hasEnhanced)
                       _enhancedTotalRow('NET AMOUNT', invoice.netAmount, isNetAmount: true),
 
-                    // ALWAYS SHOW TAX - FIXED
                     if (invoice.taxAmount > 0)
                       _enhancedTotalRow('Tax', invoice.taxAmount),
 
@@ -882,7 +1221,14 @@ For returns or inquiries, present this QR code
                       _enhancedTotalRow('Tip', invoice.tipAmount),
 
                     pw.Divider(thickness: 2),
-                    _enhancedTotalRow('FINAL TOTAL', invoice.totalAmount, isTotal: true),
+
+                    // Credit-specific total display
+                    if (invoice.showCreditDetails && invoice.hasPartialPayment)
+                      _enhancedTotalRow('AMOUNT DUE', invoice.totalAmount, isTotal: true)
+                    else if (invoice.showCreditDetails)
+                      _enhancedTotalRow('CREDIT AMOUNT', invoice.creditAmount!, isTotal: true)
+                    else
+                      _enhancedTotalRow('FINAL TOTAL', invoice.totalAmount, isTotal: true),
 
                     if (invoice.totalSavings > 0 || invoice.taxAmount > 0)
                       pw.Container(
@@ -905,7 +1251,6 @@ For returns or inquiries, present this QR code
                                 ],
                               ),
 
-                            // Always show tax breakdown
                             if (invoice.taxAmount > 0)
                               pw.Padding(
                                 padding: pw.EdgeInsets.only(top: 8),
@@ -960,6 +1305,7 @@ For returns or inquiries, present this QR code
       ),
     );
   }
+
   List<pw.Widget> _buildEnhancedDiscountBreakdown(Invoice invoice, Map<String, double> discounts) {
     final List<pw.Widget> widgets = [];
 
@@ -980,6 +1326,23 @@ For returns or inquiries, present this QR code
     }
 
     return widgets;
+  }
+
+  String _getDiscountLabel(String discountType) {
+    switch (discountType) {
+      case 'item_discounts':
+        return 'Item Discounts';
+      case 'cart_discount':
+        return 'Cart Discount';
+      case 'additional_discount':
+        return 'Additional Discount';
+      case 'settings_discount':
+        return 'Standard Discount';
+      case 'legacy_discount':
+        return 'Discount';
+      default:
+        return discountType.replaceAll('_', ' ');
+    }
   }
 
   pw.Widget _enhancedTotalRow(String label, double amount, {
@@ -1013,6 +1376,63 @@ For returns or inquiries, present this QR code
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  pw.Widget _buildTraditionalQRCode(Invoice invoice) {
+    final qrData = _generateQRData(invoice);
+
+    return pw.Center(
+      child: pw.Container(
+        constraints: pw.BoxConstraints(
+          maxWidth: 250,
+        ),
+        padding: pw.EdgeInsets.all(20),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300),
+          borderRadius: pw.BorderRadius.circular(8),
+        ),
+        child: pw.Column(
+          mainAxisSize: pw.MainAxisSize.min,
+          children: [
+            pw.Text(
+              'ORDER REFERENCE',
+              style: pw.TextStyle(
+                fontSize: 16,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+            pw.SizedBox(height: 15),
+            pw.Container(
+              color: PdfColors.white,
+              padding: pw.EdgeInsets.all(10),
+              child: pw.BarcodeWidget(
+                barcode: pw.Barcode.qrCode(),
+                data: qrData,
+                width: 100,
+                height: 100,
+              ),
+            ),
+            pw.SizedBox(height: 15),
+            pw.Text(
+              'Scan for order details & returns',
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontStyle: pw.FontStyle.italic,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+            pw.SizedBox(height: 10),
+            pw.Text(
+              'Ref: ${invoice.invoiceNumber}',
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1099,7 +1519,7 @@ For returns or inquiries, present this QR code
   }
 
   Future<void> _printEnhancedThermalInvoice(Invoice invoice) async {
-    print('Enhanced thermal invoice with independent discounts: ${invoice.invoiceNumber}');
+    print('Enhanced thermal invoice with credit support: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 
@@ -1109,7 +1529,7 @@ For returns or inquiries, present this QR code
   }
 
   Future<void> _printEnhancedTraditionalInvoice(Invoice invoice) async {
-    print('Enhanced traditional invoice with detailed breakdown: ${invoice.invoiceNumber}');
+    print('Enhanced traditional invoice with credit details: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 
@@ -1118,5 +1538,896 @@ For returns or inquiries, present this QR code
     await printInvoice(invoice);
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extension on PdfColor {
+  PdfColor? operator [](int other) {}
+}
+
+class OrderQRData {
+  final String invoiceId;
+  final String orderId;
+  final String invoiceNumber;
+  final DateTime issueDate;
+  final double totalAmount;
+  final String? customerId;
+  final String? customerName;
+  final String? customerPhone;
+  final String? customerEmail;
+  final String status;
+  final List<QRLineItem> lineItems;
+  final double subtotal;
+  final double taxAmount;
+  final double discountAmount;
+  final String paymentMethod;
+  final String businessName;
+  final String businessPhone;
+  final String businessEmail;
+  final bool isCreditSale;
+  final double? creditAmount;
+  final double? paidAmount;
+  final DateTime? creditDueDate;
+  final String? returnPolicy;
+  final String? warrantyInfo;
+  final String verificationCode;
+
+  OrderQRData({
+    required this.invoiceId,
+    required this.orderId,
+    required this.invoiceNumber,
+    required this.issueDate,
+    required this.totalAmount,
+    this.customerId,
+    this.customerName,
+    this.customerPhone,
+    this.customerEmail,
+    required this.status,
+    required this.lineItems,
+    required this.subtotal,
+    required this.taxAmount,
+    required this.discountAmount,
+    required this.paymentMethod,
+    required this.businessName,
+    required this.businessPhone,
+    required this.businessEmail,
+    this.isCreditSale = false,
+    this.creditAmount,
+    this.paidAmount,
+    this.creditDueDate,
+    this.returnPolicy,
+    this.warrantyInfo,
+    required this.verificationCode,
+  });
+  static String generateVerificationCode(String invoiceNumber) {
+    final now = DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch;
+    final random = DateTime.now().microsecondsSinceEpoch % 10000;
+    return '${invoiceNumber.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}-${timestamp.toString().substring(8)}-${random.toString().padLeft(4, '0')}';
+  }
+
+  // ✅ Fixed fromInvoice factory
+  factory OrderQRData.fromInvoice(Invoice invoice) {
+    // Use the static method correctly
+    final verificationCode = OrderQRData.generateVerificationCode(invoice.invoiceNumber);
+
+    // Extract line items for QR data
+    final lineItems = invoice.items.map((item) {
+      return QRLineItem(
+        productName: item.name,
+        productSku: item.description,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        totalPrice: item.total,
+        hasDiscount: item.hasManualDiscount,
+        discountAmount: item.discountAmount ?? 0.0,
+        discountPercent: item.manualDiscountPercent ?? 0.0,
+      );
+    }).toList();
+
+    return OrderQRData(
+      invoiceId: invoice.id,
+      orderId: invoice.orderId,
+      invoiceNumber: invoice.invoiceNumber,
+      issueDate: invoice.issueDate,
+      totalAmount: invoice.totalAmount,
+      customerId: invoice.customer?.id,
+      customerName: invoice.customer?.fullName,
+      customerPhone: invoice.customer?.phone,
+      customerEmail: invoice.customer?.email,
+      status: invoice.status,
+      lineItems: lineItems,
+      subtotal: invoice.subtotal,
+      taxAmount: invoice.taxAmount,
+      discountAmount: invoice.discountAmount,
+      paymentMethod: invoice.paymentMethod,
+      businessName: invoice.businessInfo['name']?.toString() ?? 'Your Business',
+      businessPhone: invoice.businessInfo['phone']?.toString() ?? '',
+      businessEmail: invoice.businessInfo['email']?.toString() ?? '',
+      isCreditSale: invoice.isCreditSale,
+      creditAmount: invoice.creditAmount,
+      paidAmount: invoice.paidAmount,
+      creditDueDate: invoice.creditDueDate,
+      returnPolicy: invoice.businessInfo['returnPolicy']?.toString(),
+      warrantyInfo: invoice.businessInfo['warrantyInfo']?.toString(),
+      verificationCode: verificationCode,
+    );
+  }
+
+  // ✅ Fixed fromJson factory
+  factory OrderQRData.fromJson(Map<String, dynamic> json) {
+    // Declare lineItems first
+    final lineItems = (json['lineItems'] as List).map((item) {
+      return QRLineItem.fromJson(item);
+    }).toList();
+
+    final customer = json['customer'] as Map<String, dynamic>;
+    final financials = json['financials'] as Map<String, dynamic>;
+    final business = json['business'] as Map<String, dynamic>;
+    final creditInfo = json['creditInfo'] as Map<String, dynamic>?;
+    final policies = json['policies'] as Map<String, dynamic>;
+    final verification = json['verification'] as Map<String, dynamic>;
+
+    return OrderQRData(
+      invoiceId: json['invoiceId'] ?? '',
+      orderId: json['orderId'] ?? '',
+      invoiceNumber: json['invoiceNumber'] ?? '',
+      issueDate: DateTime.parse(json['issueDate']),
+      totalAmount: (json['totalAmount'] as num).toDouble(),
+      customerId: customer['id'],
+      customerName: customer['name'],
+      customerPhone: customer['phone'],
+      customerEmail: customer['email'],
+      status: json['status'] ?? 'paid',
+      lineItems: lineItems,
+      subtotal: (financials['subtotal'] as num).toDouble(),
+      taxAmount: (financials['taxAmount'] as num).toDouble(),
+      discountAmount: (financials['discountAmount'] as num).toDouble(),
+      paymentMethod: financials['paymentMethod'] ?? 'cash',
+      businessName: business['name'] ?? '',
+      businessPhone: business['phone'] ?? '',
+      businessEmail: business['email'] ?? '',
+      isCreditSale: creditInfo?['isCreditSale'] ?? false,
+      creditAmount: (creditInfo?['creditAmount'] as num?)?.toDouble(),
+      paidAmount: (creditInfo?['paidAmount'] as num?)?.toDouble(),
+      creditDueDate: creditInfo?['dueDate'] != null
+          ? DateTime.parse(creditInfo!['dueDate'])
+          : null,
+      returnPolicy: policies['returnPolicy'],
+      warrantyInfo: policies['warrantyInfo'],
+      verificationCode: verification['code'] ?? '',
+    );
+  }
+
+
+  static String _generateVerificationCode(String invoiceNumber) {
+    final now = DateTime.now();
+    final timestamp = now.millisecondsSinceEpoch;
+    final random = DateTime.now().microsecondsSinceEpoch % 10000;
+    return '${invoiceNumber.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')}-${timestamp.toString().substring(8)}-${random.toString().padLeft(4, '0')}';
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'version': '2.0',
+      'type': 'pos_invoice',
+      'invoiceId': invoiceId,
+      'orderId': orderId,
+      'invoiceNumber': invoiceNumber,
+      'issueDate': issueDate.toIso8601String(),
+      'totalAmount': totalAmount,
+      'customer': {
+        'id': customerId,
+        'name': customerName,
+        'phone': customerPhone,
+        'email': customerEmail,
+      },
+      'status': status,
+      'lineItems': lineItems.map((item) => item.toJson()).toList(),
+      'financials': {
+        'subtotal': subtotal,
+        'taxAmount': taxAmount,
+        'discountAmount': discountAmount,
+        'paymentMethod': paymentMethod,
+      },
+      'business': {
+        'name': businessName,
+        'phone': businessPhone,
+        'email': businessEmail,
+      },
+      'creditInfo': isCreditSale ? {
+        'isCreditSale': true,
+        'creditAmount': creditAmount,
+        'paidAmount': paidAmount,
+        'dueDate': creditDueDate?.toIso8601String(),
+      } : null,
+      'policies': {
+        'returnPolicy': returnPolicy,
+        'warrantyInfo': warrantyInfo,
+      },
+      'verification': {
+        'code': verificationCode,
+        'timestamp': DateTime.now().toIso8601String(),
+      },
+      'metadata': {
+        'currency': Constants.CURRENCY_NAME,
+        'generatedAt': DateTime.now().toIso8601String(),
+        'schemaVersion': '2.0',
+      }
+    };
+  }
+
+  String toQRString() {
+    return jsonEncode(toJson());
+  }
+
+  static OrderQRData? fromQRString(String qrString) {
+    try {
+      final data = jsonDecode(qrString);
+      if (data['type'] == 'pos_invoice' && data['version'] == '2.0') {
+        return OrderQRData.fromJson(data);
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+
+
+  // Helper method to get formatted string for display
+  String getFormattedSummary() {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final timeFormat = DateFormat('HH:mm');
+
+    return '''
+INVOICE: $invoiceNumber
+ORDER: $orderId
+DATE: ${dateFormat.format(issueDate)}
+TIME: ${timeFormat.format(issueDate)}
+TOTAL: ${Constants.CURRENCY_NAME}${totalAmount.toStringAsFixed(2)}
+CUSTOMER: ${customerName ?? 'Walk-in Customer'}
+ITEMS: ${lineItems.length}
+STATUS: ${status.toUpperCase()}
+VERIFICATION: $verificationCode
+''';
+  }
+
+  // Method to validate if QR code is still valid (within 1 year)
+  bool get isValid {
+    final oneYearAgo = DateTime.now().subtract(Duration(days: 365));
+    return issueDate.isAfter(oneYearAgo);
+  }
+
+  // Method to check if return is possible (within 30 days)
+  bool get isReturnable {
+    final thirtyDaysAgo = DateTime.now().subtract(Duration(days: 30));
+    return issueDate.isAfter(thirtyDaysAgo);
+  }
+
+  // Method to get days since purchase
+  int get daysSincePurchase {
+    return DateTime.now().difference(issueDate).inDays;
+  }
+}
+
+class QRLineItem {
+  final String productName;
+  final String productSku;
+  final int quantity;
+  final double unitPrice;
+  final double totalPrice;
+  final bool hasDiscount;
+  final double discountAmount;
+  final double discountPercent;
+
+  QRLineItem({
+    required this.productName,
+    required this.productSku,
+    required this.quantity,
+    required this.unitPrice,
+    required this.totalPrice,
+    required this.hasDiscount,
+    required this.discountAmount,
+    required this.discountPercent,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'productName': productName,
+      'productSku': productSku,
+      'quantity': quantity,
+      'unitPrice': unitPrice,
+      'totalPrice': totalPrice,
+      'hasDiscount': hasDiscount,
+      'discountAmount': discountAmount,
+      'discountPercent': discountPercent,
+    };
+  }
+
+  factory QRLineItem.fromJson(Map<String, dynamic> json) {
+    return QRLineItem(
+      productName: json['productName'] ?? '',
+      productSku: json['productSku'] ?? '',
+      quantity: json['quantity'] ?? 0,
+      unitPrice: (json['unitPrice'] as num).toDouble(),
+      totalPrice: (json['totalPrice'] as num).toDouble(),
+      hasDiscount: json['hasDiscount'] ?? false,
+      discountAmount: (json['discountAmount'] as num).toDouble(),
+      discountPercent: (json['discountPercent'] as num).toDouble(),
+    );
+  }
+
+  String getFormattedLine() {
+    final discountText = hasDiscount
+        ? ' (Disc: ${Constants.CURRENCY_NAME}${discountAmount.toStringAsFixed(2)})'
+        : '';
+    return '$productName x$quantity - ${Constants.CURRENCY_NAME}${totalPrice.toStringAsFixed(2)}$discountText';
+  }
+}
+
+
+
+class QRScannerService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _currentTenantId;
+
+  void setTenantId(String tenantId) {
+    _currentTenantId = tenantId;
+  }
+
+  CollectionReference get _ordersRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('orders');
+
+  CollectionReference get _returnsRef => _firestore
+      .collection('tenants')
+      .doc(_currentTenantId)
+      .collection('returns');
+
+  // Process scanned QR code and return order information
+  Future<QRScanResult> processScannedQRCode(String qrData, BuildContext context) async {
+    try {
+      final orderQRData = OrderQRData.fromQRString(qrData);
+
+      if (orderQRData == null) {
+        return QRScanResult(
+          success: false,
+          error: 'Invalid QR code format',
+          orderQRData: null,
+        );
+      }
+
+      // Verify the order exists in database
+      final orderDoc = await _ordersRef.doc(orderQRData.orderId).get();
+
+      if (!orderDoc.exists) {
+        return QRScanResult(
+          success: false,
+          error: 'Order not found in system',
+          orderQRData: orderQRData,
+        );
+      }
+
+      // Verify the invoice matches
+      final orderData = orderDoc.data() as Map<String, dynamic>;
+      final storedInvoiceNumber = orderData['invoiceNumber']?.toString();
+
+      if (storedInvoiceNumber != orderQRData.invoiceNumber) {
+        return QRScanResult(
+          success: false,
+          error: 'Invoice verification failed',
+          orderQRData: orderQRData,
+        );
+      }
+
+      // Check if QR code is still valid
+      if (!orderQRData.isValid) {
+        return QRScanResult(
+          success: false,
+          error: 'QR code has expired (over 1 year old)',
+          orderQRData: orderQRData,
+        );
+      }
+
+      return QRScanResult(
+        success: true,
+        error: null,
+        orderQRData: orderQRData,
+        firestoreData: orderData,
+      );
+
+    } catch (e) {
+      return QRScanResult(
+        success: false,
+        error: 'Error processing QR code: $e',
+        orderQRData: null,
+      );
+    }
+  }
+
+  // Process return using QR code
+  Future<ReturnProcessResult> processReturn(OrderQRData qrData, List<int> returnItemIndexes, String reason) async {
+    try {
+      // Check if return is possible
+      if (!qrData.isReturnable) {
+        return ReturnProcessResult(
+          success: false,
+          error: 'Return period has ended. Purchase was ${qrData.daysSincePurchase} days ago.',
+          returnId: null,
+          refundAmount: 0.0,
+        );
+      }
+
+      // Calculate refund amount for returned items
+      double refundAmount = 0.0;
+      final returnedItems = <QRLineItem>[];
+
+      for (final index in returnItemIndexes) {
+        if (index >= 0 && index < qrData.lineItems.length) {
+          final item = qrData.lineItems[index];
+          refundAmount += item.totalPrice;
+          returnedItems.add(item);
+        }
+      }
+
+      if (returnedItems.isEmpty) {
+        return ReturnProcessResult(
+          success: false,
+          error: 'No valid items selected for return',
+          returnId: null,
+          refundAmount: 0.0,
+        );
+      }
+
+      // Get the original order data to update
+      final orderDoc = await _ordersRef.doc(qrData.orderId).get();
+      final orderData = orderDoc.data() as Map<String, dynamic>? ?? {};
+
+      // Create return record in Firestore
+      final returnId = 'RET-${DateTime.now().millisecondsSinceEpoch}';
+
+      final returnData = {
+        'returnId': returnId,
+        'originalInvoiceId': qrData.invoiceId,
+        'originalOrderId': qrData.orderId,
+        'invoiceNumber': qrData.invoiceNumber,
+        'customerId': qrData.customerId,
+        'customerName': qrData.customerName,
+        'customerPhone': qrData.customerPhone,
+        'customerEmail': qrData.customerEmail,
+        'returnDate': DateTime.now().toIso8601String(),
+        'refundAmount': refundAmount,
+        'returnReason': reason,
+        'returnedItems': returnedItems.map((item) => item.toJson()).toList(),
+        'originalPurchaseDate': qrData.issueDate.toIso8601String(),
+        'verificationCode': qrData.verificationCode,
+        'status': 'processed',
+        'processedBy': 'system', // You can replace with actual user ID
+        'processedAt': DateTime.now().toIso8601String(),
+        'businessName': qrData.businessName,
+        'businessPhone': qrData.businessPhone,
+      };
+
+      await _returnsRef.doc(returnId).set(returnData);
+
+      // Update original order with return information
+      final currentReturnAmount = (orderData['returnAmount'] as num?)?.toDouble() ?? 0.0;
+      final currentRefundAmount = (orderData['totalRefunded'] as num?)?.toDouble() ?? 0.0;
+
+      await _ordersRef.doc(qrData.orderId).update({
+        'hasReturns': true,
+        'returnAmount': currentReturnAmount + refundAmount,
+        'totalRefunded': currentRefundAmount + refundAmount,
+        'lastReturnDate': DateTime.now().toIso8601String(),
+        'returnStatus': 'partially_returned', // or 'fully_returned' if all items returned
+        'modifiedAt': DateTime.now().toIso8601String(),
+      });
+
+      return ReturnProcessResult(
+        success: true,
+        error: null,
+        returnId: returnId,
+        refundAmount: refundAmount,
+        returnedItems: returnedItems,
+      );
+
+    } catch (e) {
+      return ReturnProcessResult(
+        success: false,
+        error: 'Error processing return: $e',
+        returnId: null,
+        refundAmount: 0.0,
+      );
+    }
+  }
+
+  // Process exchange using QR code
+  Future<ExchangeProcessResult> processExchange(
+      OrderQRData qrData,
+      List<int> exchangeItemIndexes,
+      List<Map<String, dynamic>> newItems,
+      String reason
+      ) async {
+    try {
+      // Check if exchange is possible
+      if (!qrData.isReturnable) {
+        return ExchangeProcessResult(
+          success: false,
+          error: 'Exchange period has ended. Purchase was ${qrData.daysSincePurchase} days ago.',
+          exchangeId: null,
+        );
+      }
+
+      // Calculate values for exchanged items
+      double originalValue = 0.0;
+      double newValue = 0.0;
+      final exchangedItems = <QRLineItem>[];
+
+      for (final index in exchangeItemIndexes) {
+        if (index >= 0 && index < qrData.lineItems.length) {
+          final item = qrData.lineItems[index];
+          originalValue += item.totalPrice;
+          exchangedItems.add(item);
+        }
+      }
+
+      for (final newItem in newItems) {
+        final price = (newItem['price'] as num?)?.toDouble() ?? 0.0;
+        final quantity = (newItem['quantity'] as num?)?.toInt() ?? 1;
+        newValue += price * quantity;
+      }
+
+      if (exchangedItems.isEmpty) {
+        return ExchangeProcessResult(
+          success: false,
+          error: 'No valid items selected for exchange',
+          exchangeId: null,
+        );
+      }
+
+      // Create exchange record in Firestore
+      final exchangeId = 'EXC-${DateTime.now().millisecondsSinceEpoch}';
+
+      final exchangeData = {
+        'exchangeId': exchangeId,
+        'originalInvoiceId': qrData.invoiceId,
+        'originalOrderId': qrData.orderId,
+        'invoiceNumber': qrData.invoiceNumber,
+        'customerId': qrData.customerId,
+        'customerName': qrData.customerName,
+        'exchangeDate': DateTime.now().toIso8601String(),
+        'originalValue': originalValue,
+        'newValue': newValue,
+        'valueDifference': newValue - originalValue,
+        'exchangeReason': reason,
+        'exchangedItems': exchangedItems.map((item) => item.toJson()).toList(),
+        'newItems': newItems,
+        'originalPurchaseDate': qrData.issueDate.toIso8601String(),
+        'verificationCode': qrData.verificationCode,
+        'status': 'processed',
+        'processedBy': 'system',
+        'processedAt': DateTime.now().toIso8601String(),
+      };
+
+      await _returnsRef.doc(exchangeId).set(exchangeData);
+
+      return ExchangeProcessResult(
+        success: true,
+        error: null,
+        exchangeId: exchangeId,
+        originalValue: originalValue,
+        newValue: newValue,
+        valueDifference: newValue - originalValue,
+      );
+
+    } catch (e) {
+      return ExchangeProcessResult(
+        success: false,
+        error: 'Error processing exchange: $e',
+        exchangeId: null,
+      );
+    }
+  }
+
+  // Get return history for an order
+  Future<List<ReturnRecord>> getReturnHistory(String orderId) async {
+    try {
+      final snapshot = await _returnsRef
+          .where('originalOrderId', isEqualTo: orderId)
+          .where('status', isEqualTo: 'processed')
+          .orderBy('returnDate', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return ReturnRecord.fromFirestore(data, doc.id);
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Get exchange history for an order
+  Future<List<ExchangeRecord>> getExchangeHistory(String orderId) async {
+    try {
+      final snapshot = await _returnsRef
+          .where('originalOrderId', isEqualTo: orderId)
+          .where('status', isEqualTo: 'processed')
+          .orderBy('exchangeDate', descending: true)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data() as Map<String, dynamic>;
+        return ExchangeRecord.fromFirestore(data, doc.id);
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  // Validate if an item can be returned (not already returned)
+  Future<bool> validateItemReturn(String orderId, int itemIndex) async {
+    try {
+      final returns = await getReturnHistory(orderId);
+
+      for (final returnRecord in returns) {
+        for (final returnedItem in returnRecord.returnedItems) {
+          if (returnedItem is Map<String, dynamic>) {
+            final originalIndex = returnedItem['originalIndex'] as int?;
+            if (originalIndex == itemIndex) {
+              return false; // Item already returned
+            }
+          }
+        }
+      }
+
+      return true; // Item can be returned
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Get customer return statistics
+  Future<CustomerReturnStats> getCustomerReturnStats(String customerId) async {
+    try {
+      final returnsSnapshot = await _returnsRef
+          .where('customerId', isEqualTo: customerId)
+          .where('status', isEqualTo: 'processed')
+          .get();
+
+      final returns = returnsSnapshot.docs;
+      double totalRefunded = 0.0;
+      int totalReturns = returns.length;
+      Set<String> returnedOrders = {};
+
+      for (final returnDoc in returns) {
+        final data = returnDoc.data() as Map<String, dynamic>;
+        totalRefunded += (data['refundAmount'] as num?)?.toDouble() ?? 0.0;
+        returnedOrders.add(data['originalOrderId']?.toString() ?? '');
+      }
+
+      return CustomerReturnStats(
+        customerId: customerId,
+        totalReturns: totalReturns,
+        totalRefunded: totalRefunded,
+        uniqueOrdersReturned: returnedOrders.length,
+        averageRefund: totalReturns > 0 ? totalRefunded / totalReturns : 0.0,
+        lastReturnDate: returns.isNotEmpty
+            ? DateTime.parse(returns.first['returnDate'] as String)
+            : null,
+      );
+    } catch (e) {
+      return CustomerReturnStats(
+        customerId: customerId,
+        totalReturns: 0,
+        totalRefunded: 0.0,
+        uniqueOrdersReturned: 0,
+        averageRefund: 0.0,
+        lastReturnDate: null,
+      );
+    }
+  }
+}
+
+class QRScanResult {
+  final bool success;
+  final String? error;
+  final OrderQRData? orderQRData;
+  final Map<String, dynamic>? firestoreData;
+
+  QRScanResult({
+    required this.success,
+    required this.error,
+    required this.orderQRData,
+    this.firestoreData,
+  });
+
+  bool get canReturn => orderQRData?.isReturnable ?? false;
+  int get daysLeftForReturn => orderQRData?.isReturnable == true
+      ? (30 - (orderQRData?.daysSincePurchase ?? 0))
+      : 0;
+}
+
+class ReturnProcessResult {
+  final bool success;
+  final String? error;
+  final String? returnId;
+  final double refundAmount;
+  final List<QRLineItem>? returnedItems;
+
+  ReturnProcessResult({
+    required this.success,
+    required this.error,
+    required this.returnId,
+    required this.refundAmount,
+    this.returnedItems,
+  });
+}
+
+class ExchangeProcessResult {
+  final bool success;
+  final String? error;
+  final String? exchangeId;
+  final double? originalValue;
+  final double? newValue;
+  final double? valueDifference;
+
+  ExchangeProcessResult({
+    required this.success,
+    required this.error,
+    required this.exchangeId,
+    this.originalValue,
+    this.newValue,
+    this.valueDifference,
+  });
+}
+
+class ReturnRecord {
+  final String returnId;
+  final String originalInvoiceId;
+  final String originalOrderId;
+  final String invoiceNumber;
+  final DateTime returnDate;
+  final double refundAmount;
+  final String returnReason;
+  final String status;
+  final List<dynamic> returnedItems;
+  final String? customerName;
+  final String? customerPhone;
+
+  ReturnRecord({
+    required this.returnId,
+    required this.originalInvoiceId,
+    required this.originalOrderId,
+    required this.invoiceNumber,
+    required this.returnDate,
+    required this.refundAmount,
+    required this.returnReason,
+    required this.status,
+    required this.returnedItems,
+    this.customerName,
+    this.customerPhone,
+  });
+
+  factory ReturnRecord.fromFirestore(Map<String, dynamic> data, String id) {
+    return ReturnRecord(
+      returnId: id,
+      originalInvoiceId: data['originalInvoiceId'] ?? '',
+      originalOrderId: data['originalOrderId'] ?? '',
+      invoiceNumber: data['invoiceNumber'] ?? '',
+      returnDate: DateTime.parse(data['returnDate'] ?? DateTime.now().toIso8601String()),
+      refundAmount: (data['refundAmount'] as num?)?.toDouble() ?? 0.0,
+      returnReason: data['returnReason'] ?? '',
+      status: data['status'] ?? 'processed',
+      returnedItems: data['returnedItems'] ?? [],
+      customerName: data['customerName'],
+      customerPhone: data['customerPhone'],
+    );
+  }
+
+  String get formattedReturnDate {
+    return '${returnDate.day}/${returnDate.month}/${returnDate.year}';
+  }
+
+  int get returnedItemCount {
+    return returnedItems.length;
+  }
+}
+
+class ExchangeRecord {
+  final String exchangeId;
+  final String originalOrderId;
+  final String invoiceNumber;
+  final DateTime exchangeDate;
+  final double originalValue;
+  final double newValue;
+  final double valueDifference;
+  final String exchangeReason;
+  final String status;
+  final List<dynamic> exchangedItems;
+  final List<dynamic> newItems;
+
+  ExchangeRecord({
+    required this.exchangeId,
+    required this.originalOrderId,
+    required this.invoiceNumber,
+    required this.exchangeDate,
+    required this.originalValue,
+    required this.newValue,
+    required this.valueDifference,
+    required this.exchangeReason,
+    required this.status,
+    required this.exchangedItems,
+    required this.newItems,
+  });
+
+  factory ExchangeRecord.fromFirestore(Map<String, dynamic> data, String id) {
+    return ExchangeRecord(
+      exchangeId: id,
+      originalOrderId: data['originalOrderId'] ?? '',
+      invoiceNumber: data['invoiceNumber'] ?? '',
+      exchangeDate: DateTime.parse(data['exchangeDate'] ?? DateTime.now().toIso8601String()),
+      originalValue: (data['originalValue'] as num?)?.toDouble() ?? 0.0,
+      newValue: (data['newValue'] as num?)?.toDouble() ?? 0.0,
+      valueDifference: (data['valueDifference'] as num?)?.toDouble() ?? 0.0,
+      exchangeReason: data['exchangeReason'] ?? '',
+      status: data['status'] ?? 'processed',
+      exchangedItems: data['exchangedItems'] ?? [],
+      newItems: data['newItems'] ?? [],
+    );
+  }
+
+  bool get requiresAdditionalPayment => valueDifference > 0;
+  bool get providesRefund => valueDifference < 0;
+}
+
+class CustomerReturnStats {
+  final String customerId;
+  final int totalReturns;
+  final double totalRefunded;
+  final int uniqueOrdersReturned;
+  final double averageRefund;
+  final DateTime? lastReturnDate;
+
+  CustomerReturnStats({
+    required this.customerId,
+    required this.totalReturns,
+    required this.totalRefunded,
+    required this.uniqueOrdersReturned,
+    required this.averageRefund,
+    required this.lastReturnDate,
+  });
+
+  double get returnRate {
+    return uniqueOrdersReturned > 0 ? totalReturns / uniqueOrdersReturned : 0.0;
+  }
+
+  String get returnBehavior {
+    if (totalReturns == 0) return 'No Returns';
+    if (returnRate < 0.1) return 'Low Return Rate';
+    if (returnRate < 0.3) return 'Moderate Return Rate';
+    return 'High Return Rate';
+  }
+
+}
+
 
 

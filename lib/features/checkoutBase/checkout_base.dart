@@ -554,6 +554,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     try {
       // Create enhanced order data with all discount information
+// In the _processOrder method, update the orderData to include credit information:
       final orderData = {
         'cartData': widget.cartManager.getCartDataForOrder(),
         'additionalDiscount': _additionalDiscount,
@@ -563,8 +564,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'paymentMethod': _selectedPaymentMethod,
         'invoiceSettings': _invoiceSettings,
         'businessInfo': _businessInfo,
+        // Add credit data
+        'isCreditSale': _isCreditSale,
+        'creditAmount': _creditSaleData?.creditAmount,
+        'paidAmount': _creditSaleData?.paidAmount,
+        'previousBalance': _creditSaleData?.previousBalance,
+        'newBalance': _creditSaleData?.newBalance,
       };
 
+// Update the enhanced invoice options call:
+      void _showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          builder: (context) => InvoiceOptionsBottomSheetWithOptions(
+            order: order,
+            customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
+            enhancedData: enhancedData,
+            creditSaleData: _isCreditSale ? _creditSaleData : null,
+          ),
+        ).then((_) {
+          _resetCheckoutScreen();
+        });
+      }
       // Use the enhanced order creation method with credit data
       final result = await _posService.createOrderWithEnhancedData(
         widget.cartItems,

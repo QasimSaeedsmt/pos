@@ -5,129 +5,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
 import '../constants.dart';
+import '../features/credit/credit_sale_model.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
 import 'invoice_model.dart';
 import 'invoice_service.dart';
-
-class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
-  final AppOrder order;
-  final Customer? customer;
-  final Map<String, dynamic> businessInfo;
-  final Map<String, dynamic> invoiceSettings;
-
-  const InvoiceOptionsBottomSheetWithNoOptions({
-    super.key,
-    required this.order,
-    this.customer,
-    required this.businessInfo,
-    required this.invoiceSettings,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Order Completed!',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 16),
-            Text(
-              'Order #${order.number} has been processed successfully',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Total: ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.green[700],
-              ),
-            ),
-            SizedBox(height: 24),
-
-            // Invoice Options
-            if (invoiceSettings['autoPrint'] ?? false)
-              ListTile(
-                leading: Icon(Icons.print, color: Colors.blue),
-                title: Text('Auto-printing invoice...'),
-                trailing: CircularProgressIndicator(),
-              )
-            else
-              Column(
-                children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        // Generate and print invoice
-                        _printInvoice(context);
-                      },
-                      icon: Icon(Icons.print),
-                      label: Text('Print Invoice'),
-                      style: ElevatedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                      },
-                      icon: Icon(Icons.done),
-                      label: Text('Continue'),
-                    ),
-                  ),
-                ],
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _printInvoice(BuildContext context) {
-    // Use business info and invoice settings for printing
-    final invoice = Invoice.fromOrder(
-      order,
-      customer,
-      businessInfo,
-      invoiceSettings,
-      templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
-    );
-
-    // Print the invoice
-    InvoiceService().printInvoice(invoice);
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Invoice sent to printer')));
-
-    Navigator.pop(context);
-  }
-}
 
 
 class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
   final AppOrder order;
   final Customer? customer;
   final Map<String, dynamic>? enhancedData;
+  final CreditSaleData? creditSaleData;
 
   const InvoiceOptionsBottomSheetWithOptions({
     super.key,
     required this.order,
     this.customer,
     this.enhancedData,
+    this.creditSaleData,
   });
 
   @override
@@ -181,7 +77,6 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
     final businessInfo = await _getBusinessInfo();
     final invoiceSettings = await _getInvoiceSettings();
 
-    // Use enhanced invoice creation if enhanced data is available
     final invoice = widget.enhancedData != null
         ? Invoice.fromEnhancedOrder(
       widget.order,
@@ -190,6 +85,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       invoiceSettings,
       templateType: _selectedTemplate,
       enhancedData: widget.enhancedData,
+      creditSaleData: widget.creditSaleData,
     )
         : Invoice.fromOrder(
       widget.order,
@@ -197,17 +93,15 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       businessInfo,
       invoiceSettings,
       templateType: _selectedTemplate,
+      creditSaleData: widget.creditSaleData,
     );
 
-    // Generate PDF
     final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
 
-    // Auto print if enabled
     if (_autoPrint) {
       await InvoiceService().printInvoice(invoice);
     }
 
-    // Show success dialog with options
     _showSuccessDialog(invoice, pdfFile);
   }
 
@@ -216,7 +110,44 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Invoice Generated'),
-        content: Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+            if (invoice.showCreditDetails) ...[
+              SizedBox(height: 12),
+              Container(
+                padding: EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange[50],
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Credit Sale Invoice',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange[800],
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Credit Amount: ${Constants.CURRENCY_NAME}${invoice.creditAmount!.toStringAsFixed(2)}',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (invoice.hasPartialPayment)
+                      Text(
+                        'Paid: ${Constants.CURRENCY_NAME}${invoice.paidAmount!.toStringAsFixed(2)}',
+                        style: TextStyle(color: Colors.green[700]),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -243,6 +174,9 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
 
   @override
   Widget build(BuildContext context) {
+    final hasCreditData = widget.creditSaleData?.isCreditSale ?? false;
+    final hasEnhancedData = widget.enhancedData != null;
+
     return SafeArea(
       child: Container(
         padding: EdgeInsets.all(16),
@@ -255,20 +189,40 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
             ),
             SizedBox(height: 16),
 
-            // Enhanced Data Indicator
-            if (widget.enhancedData != null)
+            if (hasCreditData || hasEnhancedData)
               Card(
-                color: Colors.green[50],
+                color: hasCreditData ? Colors.orange[50] : Colors.green[50],
                 child: Padding(
                   padding: EdgeInsets.all(12),
                   child: Row(
                     children: [
-                      Icon(Icons.discount, color: Colors.green),
+                      Icon(
+                        hasCreditData ? Icons.credit_card : Icons.discount,
+                        color: hasCreditData ? Colors.orange : Colors.green,
+                      ),
                       SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          'Enhanced pricing data available',
-                          style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              hasCreditData
+                                  ? 'Credit Sale Invoice'
+                                  : 'Enhanced Pricing Data',
+                              style: TextStyle(
+                                color: hasCreditData ? Colors.orange[800] : Colors.green[800],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (hasCreditData && widget.creditSaleData != null)
+                              Text(
+                                'Credit: ${Constants.CURRENCY_NAME}${widget.creditSaleData!.creditAmount.toStringAsFixed(2)} | Paid: ${Constants.CURRENCY_NAME}${widget.creditSaleData!.paidAmount.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.orange[700],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -276,7 +230,6 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
                 ),
               ),
 
-            // Template Selection
             Card(
               child: Padding(
                 padding: EdgeInsets.all(16),
@@ -298,7 +251,6 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
             ),
             SizedBox(height: 16),
 
-            // Auto Print Option
             Card(
               child: Padding(
                 padding: EdgeInsets.all(16),
@@ -317,7 +269,6 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
             ),
             SizedBox(height: 16),
 
-            // Action Buttons
             Row(
               children: [
                 Expanded(
@@ -366,3 +317,5 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
     );
   }
 }
+
+
