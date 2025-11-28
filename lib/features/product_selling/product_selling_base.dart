@@ -13,6 +13,7 @@ import '../cartBase/cart_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart' hide EnhancedPOSService;
+import '../scanning/smart_scan_models.dart';
 // Add this new class for tracking individual restocks
 class PurchaseRecord {
   final String id;
@@ -1198,12 +1199,14 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final EnhancedCartManager _cartManager = EnhancedCartManager();
     return Scaffold(
       appBar: _isDesktop ? AppBar(
         title: Text('Sell Products'),
         actions: _buildAppBarActions(),
       ) : null,
       body: _isDesktop ? _buildDesktopLayout() : _buildMobileLayout(),
+
     );
   }
 

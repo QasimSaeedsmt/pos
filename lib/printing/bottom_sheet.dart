@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:mpcm/core/overlay_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
@@ -8,15 +9,17 @@ import '../constants.dart';
 import '../features/credit/credit_sale_model.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
+import '../features/users/users_base.dart';
 import 'invoice_model.dart';
 import 'invoice_service.dart';
-
 
 class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
   final AppOrder order;
   final Customer? customer;
   final Map<String, dynamic>? enhancedData;
   final CreditSaleData? creditSaleData;
+  final AppUser? currentUser; // Add this
+
 
   const InvoiceOptionsBottomSheetWithOptions({
     super.key,
@@ -24,6 +27,8 @@ class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
     this.customer,
     this.enhancedData,
     this.creditSaleData,
+    this.currentUser, // Add this
+
   });
 
   @override
@@ -33,6 +38,7 @@ class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
 class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBottomSheetWithOptions> {
   String _selectedTemplate = 'traditional';
   bool _autoPrint = false;
+  String _printerSelection = 'default';
 
   @override
   void initState() {
@@ -45,13 +51,14 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
     setState(() {
       _selectedTemplate = prefs.getString('default_invoice_template') ?? 'traditional';
       _autoPrint = prefs.getBool('auto_print') ?? false;
+      _printerSelection = prefs.getString('printer_selection') ?? 'default';
     });
   }
 
   Future<Map<String, dynamic>> _getBusinessInfo() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'name': prefs.getString('business_name') ?? 'Your Business Name',
+      'name': prefs.getString('business_name') ?? '',
       'address': prefs.getString('business_address') ?? '',
       'phone': prefs.getString('business_phone') ?? '',
       'email': prefs.getString('business_email') ?? '',
@@ -70,6 +77,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       'autoPrint': prefs.getBool('auto_print') ?? false,
       'includeCustomerDetails': prefs.getBool('include_customer_details') ?? true,
       'defaultNotes': prefs.getString('default_notes') ?? 'Thank you for your business!',
+      'printerSelection': prefs.getString('printer_selection') ?? 'default',
     };
   }
 
@@ -77,32 +85,103 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
     final businessInfo = await _getBusinessInfo();
     final invoiceSettings = await _getInvoiceSettings();
 
+    final templateToUse = _selectedTemplate == 'ask' ? 'traditional' : _selectedTemplate;
+
     final invoice = widget.enhancedData != null
         ? Invoice.fromEnhancedOrder(
       widget.order,
       widget.customer,
       businessInfo,
       invoiceSettings,
-      templateType: _selectedTemplate,
+      templateType: templateToUse,
       enhancedData: widget.enhancedData,
       creditSaleData: widget.creditSaleData,
+      printedBy: widget.currentUser?.formattedName,
     )
         : Invoice.fromOrder(
       widget.order,
       widget.customer,
       businessInfo,
       invoiceSettings,
-      templateType: _selectedTemplate,
+      templateType: templateToUse,
       creditSaleData: widget.creditSaleData,
+      printedBy: widget.currentUser?.formattedName,
     );
 
-    final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
+    // Make sure currentUser is passed here
+    final pdfFile = await InvoiceService().generatePdfInvoice(
+        invoice,
+        currentUser: widget.currentUser // This was missing
+    );
 
     if (_autoPrint) {
-      await InvoiceService().printInvoice(invoice);
+      await _handlePrinting(invoice, currentUser: widget.currentUser);
     }
-
     _showSuccessDialog(invoice, pdfFile);
+
+  }
+
+
+  Future<void> _handlePrinting(Invoice invoice, {AppUser? currentUser}) async {
+    if (_printerSelection == 'ask') {
+      final selectedPrinter = await _showPrinterSelectionDialog();
+      if (selectedPrinter != null) {
+        await InvoiceService().printInvoice(
+            invoice,
+            printer: selectedPrinter,
+            currentUser: currentUser // Add this
+        );
+      }
+    } else {
+      // Use default printer - make sure currentUser is passed
+      await InvoiceService().printInvoice(
+          invoice,
+          currentUser: currentUser // Add this
+      );
+    }
+  }
+  Future<String?> _showPrinterSelectionDialog() async {
+    // In a real app, you would get actual printers from a printing plugin
+    final availablePrinters = await _getAvailablePrinters();
+
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Select Printer'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: availablePrinters.length,
+            itemBuilder: (context, index) {
+              final printer = availablePrinters[index];
+              return ListTile(
+                leading: Icon(Icons.print),
+                title: Text(printer),
+                onTap: () => Navigator.of(context).pop(printer),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<List<String>> _getAvailablePrinters() async {
+    // Mock implementation - replace with actual printer discovery
+    await Future.delayed(Duration(milliseconds: 300));
+    return [
+      'Default Printer',
+      'Office HP LaserJet',
+      'Receipt Printer Epson',
+      'PDF Printer'
+    ];
   }
 
   void _showSuccessDialog(Invoice invoice, File pdfFile) {
@@ -156,7 +235,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              InvoiceService().printInvoice(invoice);
+              _handlePrinting(invoice);
             },
             child: Text('Print'),
           ),
@@ -169,6 +248,147 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTemplateSection() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getInvoiceSettings(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return CircularProgressIndicator();
+        }
+
+        final settings = snapshot.data!;
+        final defaultTemplate = settings['defaultTemplate'] ?? 'traditional';
+
+        // If default template is "ask", show template selection options
+        if (defaultTemplate == 'ask') {
+          return Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Select Template', style: TextStyle(fontWeight: FontWeight.bold)),
+                  SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
+                      _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else {
+          // Show the current template being used
+          return Card(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Icon(Icons.receipt_long, color: Colors.green),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Template',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          defaultTemplate == 'traditional' ? 'Traditional A4' : 'Thermal Receipt',
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.check, color: Colors.green),
+                ],
+              ),
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildPrintSettingsSection() {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _getInvoiceSettings(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return CircularProgressIndicator();
+        }
+
+        final settings = snapshot.data!;
+        final autoPrint = settings['autoPrint'] ?? false;
+        final printerSelection = settings['printerSelection'] ?? 'default';
+
+        return Column(
+          children: [
+            Card(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(Icons.print, color: Colors.blue),
+                    SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Auto Print', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text(
+                            autoPrint ? 'Enabled' : 'Disabled',
+                            style: TextStyle(color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch(
+                      value: _autoPrint,
+                      onChanged: (value) => setState(() => _autoPrint = value),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (autoPrint) ...[
+              SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.print_outlined, color: Colors.orange),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Printer Selection', style: TextStyle(fontWeight: FontWeight.bold)),
+                            Text(
+                              printerSelection == 'default'
+                                  ? 'Default Printer'
+                                  : 'Ask Every Time',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -230,43 +450,44 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
                 ),
               ),
 
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Invoice Template', style: TextStyle(fontWeight: FontWeight.bold)),
-                    SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _buildTemplateOption('Traditional A4', 'traditional', Icons.description),
-                        _buildTemplateOption('Thermal Receipt', 'thermal', Icons.receipt),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
             SizedBox(height: 16),
 
-            Card(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(Icons.print, color: Colors.blue),
-                    SizedBox(width: 12),
-                    Expanded(child: Text('Auto Print After Generation')),
-                    Switch(
-                      value: _autoPrint,
-                      onChanged: (value) => setState(() => _autoPrint = value),
+            // Template Section (shows selection only if "ask every time" is set in settings)
+            _buildTemplateSection(),
+            SizedBox(height: 16),
+
+            // Print Settings Section
+            _buildPrintSettingsSection(),
+            SizedBox(height: 16),
+
+            // Business Info Preview
+            FutureBuilder<Map<String, dynamic>>(
+              future: _getBusinessInfo(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData && snapshot.data!['name'].isNotEmpty) {
+                  return Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.business, color: Colors.blue, size: 16),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              snapshot.data!['name'],
+                              style: TextStyle(fontWeight: FontWeight.w500),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
-              ),
+                  );
+                }
+                return SizedBox();
+              },
             ),
+
             SizedBox(height: 16),
 
             Row(
@@ -274,7 +495,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
                 Expanded(
                   child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Skip'),
+                    child: Text('Cancel'),
                   ),
                 ),
                 SizedBox(width: 12),
@@ -285,6 +506,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
                     label: Text('Generate Invoice'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
                     ),
                   ),
                 ),

@@ -7,6 +7,8 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:mpcm/features/customerBase/customer_management_screen.dart';
+import 'package:mpcm/features/invoiceBase/invoice_and_printing_base.dart';
+import 'package:mpcm/features/scanning/smart_scan_models.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synchronized/synchronized.dart';
@@ -38,6 +40,7 @@ import '../product_selling/product_selling_base.dart';
 import '../profile.dart';
 import '../returnBase/return_base.dart';
 import '../scanning/action_sheets.dart';
+import '../scanning/smart_scanner_overlay.dart';
 import '../ticketing/ticketing.dart';
 import '../users/users_base.dart';
 
@@ -2440,18 +2443,36 @@ void navigateToInvoices(){
     return Scaffold(
       appBar: AppBar(
         actions: [
-          TextButton(
+          Container(
+            margin: const EdgeInsets.only(right: 12,bottom: 12),
+            child: FloatingActionButton.extended(
               onPressed: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => OrdersManagementScreen(),
+                    builder: (context) => AllInOnePOSScreen(cartManager: _cartManager),
                   ),
                 );
               },
-              child: Text("Invoices")
-          )
+              backgroundColor: Theme.of(context).highlightColor,
+              foregroundColor: Colors.white,
+              elevation: 5,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              icon: const Icon(Icons.rocket_launch_rounded, size: 20),
+              label: const Text(
+                "QUICK SALE",
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          ),
         ],
+
+
+
         flexibleSpace: Container(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

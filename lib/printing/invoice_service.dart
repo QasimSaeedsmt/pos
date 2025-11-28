@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 import '../constants.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/invoiceBase/invoice_and_printing_base.dart';
+import '../features/users/users_base.dart';
 import 'invoice_model.dart';
 
 import 'dart:io';
@@ -95,23 +96,30 @@ class InvoiceService {
   factory InvoiceService() => _instance;
   InvoiceService._internal();
 
-  Future<File> generatePdfInvoice(Invoice invoice) async {
-    final pdf = pw.Document();
+  // Updated method to accept currentUser
+  Future<File> generatePdfInvoice(Invoice invoice, {AppUser? currentUser}) async {
+    try {
+      final pdf = pw.Document();
 
-    if (invoice.templateType == 'thermal') {
-      _buildThermalInvoice(pdf, invoice);
-    } else {
-      _buildTraditionalInvoice(pdf, invoice);
+      if (invoice.templateType == 'thermal') {
+        _buildThermalInvoice(pdf, invoice, currentUser: currentUser);
+      } else {
+        _buildTraditionalInvoice(pdf, invoice, currentUser: currentUser);
+      }
+
+      final output = await getTemporaryDirectory();
+      final file = File('${output.path}/invoice_${invoice.invoiceNumber}.pdf');
+      await file.writeAsBytes(await pdf.save());
+
+      return file;
+    } catch (e) {
+      print('Error generating PDF: $e');
+      rethrow;
     }
-
-    final output = await getTemporaryDirectory();
-    final file = File('${output.path}/invoice_${invoice.invoiceNumber}.pdf');
-    await file.writeAsBytes(await pdf.save());
-
-    return file;
   }
 
-  void _buildThermalInvoice(pw.Document pdf, Invoice invoice) {
+  // Updated thermal invoice with user attribution
+  void _buildThermalInvoice(pw.Document pdf, Invoice invoice, {AppUser? currentUser}) {
     pdf.addPage(
       pw.Page(
         pageFormat: PdfPageFormat.roll80,
@@ -121,9 +129,9 @@ class InvoiceService {
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                _buildProfessionalThermalHeader(invoice),
+                _buildProfessionalThermalHeader(invoice, currentUser: currentUser),
                 pw.SizedBox(height: 8),
-                _buildThermalInvoiceDetails(invoice),
+                _buildThermalInvoiceDetails(invoice, currentUser: currentUser),
                 pw.SizedBox(height: 8),
 
                 // Credit Notice Section
@@ -143,11 +151,11 @@ class InvoiceService {
                 if (invoice.showCreditDetails)
                   _buildCreditDetailsSection(invoice),
 
-                _buildPaymentAndFooter(invoice),
+                _buildPaymentAndFooter(invoice, currentUser: currentUser),
                 pw.SizedBox(height: 8),
                 _buildCompactQRCode(invoice),
                 pw.SizedBox(height: 8),
-                _buildThankYouFooter(invoice),
+                _buildThankYouFooter(invoice, currentUser: currentUser),
               ],
             ),
           );
@@ -156,7 +164,8 @@ class InvoiceService {
     );
   }
 
-  pw.Widget _buildProfessionalThermalHeader(Invoice invoice) {
+  // Updated thermal header with user attribution
+  pw.Widget _buildProfessionalThermalHeader(Invoice invoice, {AppUser? currentUser}) {
     final business = invoice.businessInfo;
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -182,6 +191,23 @@ class InvoiceService {
             ),
             textAlign: pw.TextAlign.center,
           ),
+
+        // ADDED: User attribution line for thermal receipts
+        if (currentUser != null)
+          pw.Container(
+            width: double.infinity,
+            margin: pw.EdgeInsets.only(top: 2),
+            child: pw.Text(
+              'Processed by: ${currentUser.formattedName}',
+              style: pw.TextStyle(
+                fontSize: 7,
+                color: PdfColors.grey600,
+                fontStyle: pw.FontStyle.italic,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.center,
           children: [
@@ -219,6 +245,428 @@ class InvoiceService {
     );
   }
 
+  // Updated thermal invoice details with user attribution
+  pw.Widget _buildThermalInvoiceDetails(Invoice invoice, {AppUser? currentUser}) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'INVOICE',
+          style: pw.TextStyle(
+            fontWeight: pw.FontWeight.bold,
+            fontSize: 10,
+          ),
+        ),
+        pw.Text(
+          '#${invoice.invoiceNumber}',
+          style: pw.TextStyle(
+            fontWeight: pw.FontWeight.bold,
+            fontSize: 9,
+          ),
+        ),
+        pw.Text(
+          'Date: ${DateFormat('dd/MM/yyyy').format(invoice.issueDate)}',
+          style: pw.TextStyle(fontSize: 8),
+        ),
+        pw.Text(
+          'Time: ${DateFormat('HH:mm').format(invoice.issueDate)}',
+          style: pw.TextStyle(fontSize: 8),
+        ),
+
+        // ADDED: Staff information in invoice details section
+        if (currentUser != null)
+          pw.Text(
+            'Staff: ${currentUser.formattedName}',
+            style: pw.TextStyle(
+              fontSize: 7,
+              color: PdfColors.grey600,
+            ),
+          ),
+
+        if (invoice.orderId.isNotEmpty)
+          pw.Text(
+            'Order: ${invoice.orderId}',
+            style: pw.TextStyle(fontSize: 8),
+          ),
+      ],
+    );
+  }
+
+  // Updated payment section with user attribution
+  pw.Widget _buildPaymentAndFooter(Invoice invoice, {AppUser? currentUser}) {
+    return pw.Column(
+      children: [
+        pw.Container(
+          width: double.infinity,
+          padding: pw.EdgeInsets.symmetric(vertical: 4),
+          decoration: pw.BoxDecoration(
+            border: pw.Border(
+              top: pw.BorderSide(width: 0.5, color: PdfColors.black),
+              bottom: pw.BorderSide(width: 0.5, color: PdfColors.black),
+            ),
+          ),
+          child: pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Text(
+                    'Payment Method:',
+                    style: pw.TextStyle(
+                      fontSize: 8,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    invoice.paymentMethod.toUpperCase(),
+                    style: pw.TextStyle(
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+
+              // ADDED: Staff initials or name in payment section
+              if (currentUser != null)
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.end,
+                  children: [
+                    pw.Text(
+                      'Handled by:',
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        color: PdfColors.grey600,
+                      ),
+                    ),
+                    pw.Text(
+                      _getUserInitials(currentUser.formattedName),
+                      style: pw.TextStyle(
+                        fontSize: 8,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Updated thank you footer with user attribution
+  pw.Widget _buildThankYouFooter(Invoice invoice, {AppUser? currentUser}) {
+    return pw.Container(
+      width: double.infinity,
+      padding: pw.EdgeInsets.symmetric(vertical: 8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border(
+          top: pw.BorderSide(width: 0.5, color: PdfColors.black),
+        ),
+      ),
+      child: pw.Column(
+        children: [
+          pw.Text(
+            invoice.notes.isNotEmpty ? invoice.notes : "Thank you for your Business",
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+
+          // ADDED: Final user attribution in footer
+          if (currentUser != null)
+            pw.Container(
+              margin: pw.EdgeInsets.only(top: 4),
+              child: pw.Text(
+                'Served by: ${currentUser.formattedName}',
+                style: pw.TextStyle(
+                  fontSize: 7,
+                  color: PdfColors.grey600,
+                  fontStyle: pw.FontStyle.italic,
+                ),
+                textAlign: pw.TextAlign.center,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // Updated traditional invoice with user attribution
+  void _buildTraditionalInvoice(pw.Document pdf, Invoice invoice, {AppUser? currentUser}) {
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              _buildTraditionalHeader(invoice, currentUser: currentUser),
+              pw.SizedBox(height: 20),
+
+              if (invoice.showCreditDetails)
+                _buildTraditionalCreditNotice(invoice),
+
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _buildInvoiceDetails(invoice, currentUser: currentUser),
+                  pw.SizedBox(width: 50),
+                  if (invoice.showCustomerDetails && invoice.customer != null)
+                    _buildCustomerDetails(invoice.customer!),
+                ],
+              ),
+              pw.SizedBox(height: 20),
+              _buildTraditionalItemsTable(invoice),
+              pw.SizedBox(height: 20),
+
+              if (invoice.showCreditDetails)
+                _buildTraditionalCreditDetails(invoice),
+
+              _buildEnhancedTraditionalTotals(invoice),
+              pw.SizedBox(height: 20),
+              pw.Center(
+                child: _buildTraditionalQRCode(invoice),
+              ),
+              pw.SizedBox(height: 20),
+              _buildTraditionalFooter(invoice, currentUser: currentUser),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // Updated traditional header with professional user attribution
+  pw.Widget _buildTraditionalHeader(Invoice invoice, {AppUser? currentUser}) {
+    final business = invoice.businessInfo;
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  business['name']?.toString() ?? 'Your Business Name',
+                  style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
+                ),
+                if (business['tagline'] != null)
+                  pw.Text(
+                    business['tagline']!,
+                    style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
+                  ),
+
+                // ADDED: Professional user attribution in traditional header
+                if (currentUser != null)
+                  pw.Container(
+                    margin: pw.EdgeInsets.only(top: 4),
+                    child: pw.Text(
+                      'Invoice prepared by: ${currentUser.formattedName}',
+                      style: pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.grey600,
+                        fontStyle: pw.FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Container(
+                  width: 80,
+                  height: 80,
+                  decoration: pw.BoxDecoration(
+                    border: pw.Border.all(color: PdfColors.black, width: 1),
+                  ),
+                  child: pw.Center(
+                    child: pw.Text('LOGO', style: pw.TextStyle(fontSize: 10)),
+                  ),
+                ),
+
+                // ADDED: User role/position in traditional header
+                if (currentUser != null)
+                  pw.Container(
+                    margin: pw.EdgeInsets.only(top: 4),
+                    child: pw.Text(
+                      _getUserRoleDisplay(currentUser.role),
+                      style: pw.TextStyle(
+                        fontSize: 9,
+                        color: PdfColors.grey500,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // Updated traditional invoice details with user attribution
+  pw.Widget _buildInvoiceDetails(Invoice invoice, {AppUser? currentUser}) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text('INVOICE', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 10),
+        pw.Row(
+          children: [
+            pw.Text('Invoice No:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(width: 10),
+            pw.Text(invoice.invoiceNumber),
+          ],
+        ),
+        pw.Row(
+          children: [
+            pw.Text('Date:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            pw.SizedBox(width: 10),
+            pw.Text(DateFormat('MMMM dd, yyyy').format(invoice.issueDate)),
+          ],
+        ),
+
+        // ADDED: Staff information in traditional invoice details
+        if (currentUser != null)
+          pw.Row(
+            children: [
+              pw.Text('Processed by:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(width: 10),
+              pw.Text(currentUser.formattedName),
+            ],
+          ),
+
+        if (invoice.dueDate != null)
+          pw.Row(
+            children: [
+              pw.Text('Due Date:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.SizedBox(width: 10),
+              pw.Text(DateFormat('MMMM dd, yyyy').format(invoice.dueDate!)),
+            ],
+          ),
+      ],
+    );
+  }
+
+  // Updated traditional footer with user attribution
+  pw.Widget _buildTraditionalFooter(Invoice invoice, {AppUser? currentUser}) {
+    final business = invoice.businessInfo;
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Divider(),
+        pw.SizedBox(height: 10),
+
+        // ADDED: Professional attribution in footer
+        if (currentUser != null)
+          pw.Container(
+            width: double.infinity,
+            margin: pw.EdgeInsets.only(bottom: 8),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  'Processed by:',
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+                pw.Text(
+                  currentUser.formattedName,
+                  style: pw.TextStyle(
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+        pw.Text(invoice.notes, style: pw.TextStyle(fontStyle: pw.FontStyle.italic)),
+        pw.SizedBox(height: 20),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+          children: [
+            if (business['phone'] != null)
+              pw.Column(
+                children: [
+                  pw.Text('Contact', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text(business['phone']!),
+                ],
+              ),
+            if (business['email'] != null)
+              pw.Column(
+                children: [
+                  pw.Text('Email', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text(business['email']!),
+                ],
+              ),
+            if (business['website'] != null)
+              pw.Column(
+                children: [
+                  pw.Text('Website', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                  pw.Text(business['website']!),
+                ],
+              ),
+          ],
+        ),
+        pw.SizedBox(height: 20),
+        pw.Text('Thank you for your business!', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+      ],
+    );
+  }
+
+  // Helper methods for user attribution
+  String _getUserInitials(String fullName) {
+    final names = fullName.split(' ');
+    if (names.length >= 2) {
+      return '${names[0][0]}${names[1][0]}'.toUpperCase();
+    } else if (fullName.isNotEmpty) {
+      return fullName.substring(0, 1).toUpperCase();
+    }
+    return 'U'; // Default for Unknown
+  }
+
+  String _getUserRoleDisplay(UserRole role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return 'Super Administrator';
+      case UserRole.clientAdmin:
+        return 'Administrator';
+      case UserRole.cashier:
+        return 'Cashier';
+      case UserRole.salesInventoryManager:
+        return 'Sales Manager';
+      default:
+        return 'Staff';
+    }
+  }
+
+  // Update other methods to accept currentUser parameter
+  Future<void> printInvoice(Invoice invoice, {String? printer, AppUser? currentUser}) async {
+    // Pass currentUser to generatePdfInvoice
+    final pdfFile = await generatePdfInvoice(invoice, currentUser: currentUser);
+
+    if (printer != null) {
+      await _printToSpecificPrinter(invoice, printer);
+    } else {
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async {
+          return await pdfFile.readAsBytes();
+        },
+      );
+    }
+  }
+
   pw.Widget _buildCreditNoticeSection(Invoice invoice) {
     return pw.Container(
       width: double.infinity,
@@ -250,40 +698,6 @@ class InvoiceService {
     );
   }
 
-  pw.Widget _buildThermalInvoiceDetails(Invoice invoice) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text(
-          'INVOICE',
-          style: pw.TextStyle(
-            fontWeight: pw.FontWeight.bold,
-            fontSize: 10,
-          ),
-        ),
-        pw.Text(
-          '#${invoice.invoiceNumber}',
-          style: pw.TextStyle(
-            fontWeight: pw.FontWeight.bold,
-            fontSize: 9,
-          ),
-        ),
-        pw.Text(
-          'Date: ${DateFormat('dd/MM/yyyy').format(invoice.issueDate)}',
-          style: pw.TextStyle(fontSize: 8),
-        ),
-        pw.Text(
-          'Time: ${DateFormat('HH:mm').format(invoice.issueDate)}',
-          style: pw.TextStyle(fontSize: 8),
-        ),
-        if (invoice.orderId.isNotEmpty)
-          pw.Text(
-            'Order: ${invoice.orderId}',
-            style: pw.TextStyle(fontSize: 8),
-          ),
-      ],
-    );
-  }
 
   pw.Widget _buildCompactCustomerInfo(Customer customer) {
     return pw.Container(
@@ -724,41 +1138,6 @@ class InvoiceService {
     );
   }
 
-  pw.Widget _buildPaymentAndFooter(Invoice invoice) {
-    return pw.Column(
-      children: [
-        pw.Container(
-          width: double.infinity,
-          padding: pw.EdgeInsets.symmetric(vertical: 4),
-          decoration: pw.BoxDecoration(
-            border: pw.Border(
-              top: pw.BorderSide(width: 0.5, color: PdfColors.black),
-              bottom: pw.BorderSide(width: 0.5, color: PdfColors.black),
-            ),
-          ),
-          child: pw.Row(
-            children: [
-              pw.Text(
-                'Payment Method:',
-                style: pw.TextStyle(
-                  fontSize: 8,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(width: 4),
-              pw.Text(
-                invoice.paymentMethod.toUpperCase(),
-                style: pw.TextStyle(
-                  fontSize: 9,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   pw.Widget _buildCompactQRCode(Invoice invoice) {
     final qrData = _generateQRData(invoice);
@@ -800,88 +1179,22 @@ class InvoiceService {
   }
 
   String _generateQRData(Invoice invoice) {
-    final creditInfo = invoice.showCreditDetails
-        ? '\nCredit: ${Constants.CURRENCY_NAME}${invoice.creditAmount!.toStringAsFixed(2)}'
-        : '';
+    final businessName = invoice.businessInfo['name'] ?? 'Your Business';
+    final customerName = invoice.customer?.fullName ?? 'Walk-in Customer';
 
-    return '''
-INVOICE REFERENCE
-Invoice: ${invoice.invoiceNumber}
-Order: ${invoice.orderId}
-Date: ${DateFormat('dd/MM/yyyy').format(invoice.issueDate)}
-Total: ${Constants.CURRENCY_NAME}${invoice.totalAmount.toStringAsFixed(2)}$creditInfo
-Business: ${invoice.businessInfo['name']}
-Customer: ${invoice.customer?.fullName ?? 'Walk-in'}
-For returns or inquiries, present this QR code
-    ''';
+    return jsonEncode({
+      'type': 'invoice_reference',
+      'invoice_number': invoice.invoiceNumber,
+      'order_id': invoice.orderId,
+      'date': DateFormat('yyyy-MM-dd').format(invoice.issueDate),
+      'total': invoice.totalAmount,
+      'currency': Constants.CURRENCY_NAME,
+      'business': businessName,
+      'customer': customerName,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
   }
 
-  pw.Widget _buildThankYouFooter(Invoice invoice) {
-    return pw.Container(
-      width: double.infinity,
-      padding: pw.EdgeInsets.symmetric(vertical: 8),
-      decoration: pw.BoxDecoration(
-        border: pw.Border(
-          top: pw.BorderSide(width: 0.5, color: PdfColors.black),
-        ),
-      ),
-      child: pw.Column(
-        children: [
-          pw.Text(
-            invoice.notes.isNotEmpty ? invoice.notes : "Thank you for your Business",
-            style: pw.TextStyle(
-              fontSize: 9,
-              fontWeight: pw.FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _buildTraditionalInvoice(pw.Document pdf, Invoice invoice) {
-    pdf.addPage(
-      pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              _buildTraditionalHeader(invoice),
-              pw.SizedBox(height: 20),
-
-              if (invoice.showCreditDetails)
-                _buildTraditionalCreditNotice(invoice),
-
-              pw.Row(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  _buildInvoiceDetails(invoice),
-                  pw.SizedBox(width: 50),
-                  if (invoice.showCustomerDetails && invoice.customer != null)
-                    _buildCustomerDetails(invoice.customer!),
-                ],
-              ),
-              pw.SizedBox(height: 20),
-              _buildTraditionalItemsTable(invoice),
-              pw.SizedBox(height: 20),
-
-              if (invoice.showCreditDetails)
-                _buildTraditionalCreditDetails(invoice),
-
-              _buildEnhancedTraditionalTotals(invoice),
-              pw.SizedBox(height: 20),
-              pw.Center(
-                child: _buildTraditionalQRCode(invoice),
-              ),
-              pw.SizedBox(height: 20),
-              _buildTraditionalFooter(invoice),
-            ],
-          );
-        },
-      ),
-    );
-  }
 
   pw.Widget _buildTraditionalCreditNotice(Invoice invoice) {
     return pw.Container(
@@ -924,71 +1237,6 @@ For returns or inquiries, present this QR code
           ),
         ],
       ),
-    );
-  }
-
-  pw.Widget _buildTraditionalHeader(Invoice invoice) {
-    final business = invoice.businessInfo;
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-      children: [
-        pw.Column(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              business['name']?.toString() ?? 'Your Business Name',
-              style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold),
-            ),
-            if (business['tagline'] != null)
-              pw.Text(
-                business['tagline']!,
-                style: pw.TextStyle(fontSize: 12, color: PdfColors.grey600),
-              ),
-          ],
-        ),
-        pw.Container(
-          width: 80,
-          height: 80,
-          decoration: pw.BoxDecoration(
-            border: pw.Border.all(color: PdfColors.black, width: 1),
-          ),
-          child: pw.Center(
-            child: pw.Text('LOGO', style: pw.TextStyle(fontSize: 10)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  pw.Widget _buildInvoiceDetails(Invoice invoice) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Text('INVOICE', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 10),
-        pw.Row(
-          children: [
-            pw.Text('Invoice No:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(width: 10),
-            pw.Text(invoice.invoiceNumber),
-          ],
-        ),
-        pw.Row(
-          children: [
-            pw.Text('Date:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-            pw.SizedBox(width: 10),
-            pw.Text(DateFormat('MMMM dd, yyyy').format(invoice.issueDate)),
-          ],
-        ),
-        if (invoice.dueDate != null)
-          pw.Row(
-            children: [
-              pw.Text('Due Date:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-              pw.SizedBox(width: 10),
-              pw.Text(DateFormat('MMMM dd, yyyy').format(invoice.dueDate!)),
-            ],
-          ),
-      ],
     );
   }
 
@@ -1437,56 +1685,13 @@ For returns or inquiries, present this QR code
     );
   }
 
-  pw.Widget _buildTraditionalFooter(Invoice invoice) {
-    final business = invoice.businessInfo;
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.center,
-      children: [
-        pw.Divider(),
-        pw.SizedBox(height: 10),
-        pw.Text(invoice.notes, style: pw.TextStyle(fontStyle: pw.FontStyle.italic)),
-        pw.SizedBox(height: 20),
-        pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
-          children: [
-            if (business['phone'] != null)
-              pw.Column(
-                children: [
-                  pw.Text('Contact', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text(business['phone']!),
-                ],
-              ),
-            if (business['email'] != null)
-              pw.Column(
-                children: [
-                  pw.Text('Email', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text(business['email']!),
-                ],
-              ),
-            if (business['website'] != null)
-              pw.Column(
-                children: [
-                  pw.Text('Website', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text(business['website']!),
-                ],
-              ),
-          ],
-        ),
-        pw.SizedBox(height: 20),
-        pw.Text('Thank you for your business!', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-      ],
-    );
-  }
 
-  Future<void> printInvoice(Invoice invoice) async {
-    final pdfFile = await generatePdfInvoice(invoice);
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async {
-        return await pdfFile.readAsBytes();
-      },
-    );
+  Future<void> _printToSpecificPrinter(Invoice invoice, String printerName) async {
+    // Implement specific printer logic here
+    // This depends on your printing plugin capabilities
+    print('Printing to: $printerName');
+    await printInvoice(invoice); // Fallback to default for now
   }
-
   Future<void> shareInvoice(Invoice invoice) async {
     final pdfFile = await generatePdfInvoice(invoice);
     await Share.shareXFiles([XFile(pdfFile.path)], text: 'Invoice ${invoice.invoiceNumber}');

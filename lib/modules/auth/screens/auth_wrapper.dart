@@ -4,13 +4,14 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
-import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../../core/overlay_manager.dart';
 import '../../../features/main_navigation/main_navigation_base.dart';
 import '../../../features/super_admin/super_admin_base.dart';
 import '../constants/auth_measurements.dart';
@@ -42,6 +43,9 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
   final StreamController<double> _progressStreamController =
   StreamController<double>.broadcast();
+
+  bool _offlineSnackbarShown = false;
+  bool _subscriptionWarningShown = false;
 
   @override
   void initState() {
@@ -689,58 +693,32 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
               if (!user.isActive) return const AccountDisabledScreen();
 
-              // Show offline mode snackbar
-              if (authProvider.isOfflineMode) {
+              // Show offline mode overlay only once when first entering offline mode
+              if (authProvider.isOfflineMode && !_offlineSnackbarShown) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Row(
-                        children: [
-                          Icon(Icons.wifi_off, color: Colors.orange[300]),
-                          const SizedBox(width: 8),
-                          const Expanded(
-                            child: Text(
-                              'Offline Mode - Limited functionality',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        ],
-                      ),
-                      backgroundColor: Colors.orange[800],
-                      duration: const Duration(seconds: 3),
-                    ),
-                  );
+                  _offlineSnackbarShown = true;
+                  // Use OverlayManager instead of Snackbar
+                  _showOfflineOverlay(context);
                 });
               }
 
-              // Show subscription warning if expiring soon
-              if (authProvider.showSubscriptionWarning && tenant != null) {
+              // Show subscription warning only once when first detected
+              if (authProvider.showSubscriptionWarning &&
+                  tenant != null &&
+                  !_subscriptionWarningShown) {
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Row(
-                        children: [
-                          Icon(Icons.warning, color: Colors.orange[300]),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Subscription expiring in ${tenant.daysUntilExpiry} days',
-                              style: TextStyle(fontWeight: FontWeight.w500),
-                            ),
-                          ),
-                        ],
-                      ),
-                      backgroundColor: Colors.orange[800],
-                      duration: const Duration(seconds: 5),
-                      action: SnackBarAction(
-                        label: 'Dismiss',
-                        onPressed: () {
-                          authProvider.dismissSubscriptionWarning();
-                        },
-                      ),
-                    ),
-                  );
+                  _subscriptionWarningShown = true;
+                  // Use OverlayManager instead of Snackbar
+                  _showSubscriptionWarningOverlay(context, tenant.daysUntilExpiry, authProvider);
                 });
+              }
+
+              // Reset flags when user logs out or mode changes
+              if (!authProvider.isOfflineMode) {
+                _offlineSnackbarShown = false;
+              }
+              if (!authProvider.showSubscriptionWarning) {
+                _subscriptionWarningShown = false;
               }
 
               // Check if app lock should be shown
@@ -765,11 +743,42 @@ class _AuthWrapperState extends State<AuthWrapper> {
               );
             }
 
-            // Not logged in
+            // Not logged in - reset flags
+            _offlineSnackbarShown = false;
+            _subscriptionWarningShown = false;
+
             return const LoginScreen();
           },
         );
       },
+    );
+  }
+
+  void _showOfflineOverlay(BuildContext context) {
+    OverlayManager.showWarningOverlay(
+      context: context,
+      message: 'Offline Mode - Limited functionality',
+      icon: const Icon(Icons.wifi_off),
+      backgroundColor: Colors.orange[800],
+      duration: const Duration(seconds: 4),
+    );
+  }
+
+  void _showSubscriptionWarningOverlay(BuildContext context, int daysUntilExpiry, MyAuthProvider authProvider) {
+    OverlayManager.showWarningOverlay(
+      context: context,
+      message: 'Subscription expiring in $daysUntilExpiry days',
+      icon: const Icon(Icons.warning),
+      backgroundColor: Colors.orange[800],
+      duration: const Duration(seconds: 6),
+      action: OverlayAction(
+        label: 'Dismiss',
+        onPressed: () {
+          authProvider.dismissSubscriptionWarning();
+        },
+        backgroundColor: Colors.white,
+        textColor: Colors.orange[800],
+      ),
     );
   }
 

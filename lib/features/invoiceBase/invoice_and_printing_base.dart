@@ -15,6 +15,7 @@ import '../barcode/barcode_base.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../customerBase/customer_base.dart';
 import '../orderBase/order_base.dart';
+import '../users/users_base.dart';
 
 class ScannerOverlay extends CustomPainter {
   @override
@@ -278,100 +279,106 @@ class UniversalScanningService {
     switch (purpose) {
       case 'search':
         title = 'Search Product by Barcode';
+        break;
       case 'restock':
         title = 'Restock Product by Barcode';
+        break;
       case 'add':
         title = 'Add Product Barcode';
+        break;
       default:
         title = 'Scan Barcode';
     }
 
     return Container(
       padding: EdgeInsets.all(16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            title,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          ),
-          SizedBox(height: 16),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 16),
 
-          // Default Option Toggle
-          _buildDefaultOptionToggle(context),
-          SizedBox(height: 8),
+              // Default Option Toggle
+              _buildDefaultOptionToggle(context),
+              SizedBox(height: 8),
 
-          Divider(),
-          SizedBox(height: 8),
+              Divider(),
+              SizedBox(height: 8),
 
-          // Recent Barcodes (if any)
-          _buildRecentBarcodesSection(context),
+              // Recent Barcodes (if any)
+              // _buildRecentBarcodesSection(context),
 
-          // Scanning Options
-          _buildUniversalBarcodeOption(
-            context,
-            icon: Icons.camera_alt,
-            title: 'Camera Scan',
-            subtitle: 'Use device camera',
-            onTap: () async {
-              final result = await _startCameraBarcodeScan(
+              // Scanning Options
+              _buildUniversalBarcodeOption(
                 context,
-                purpose: purpose,
-              );
-              Navigator.of(context).pop(result);
-              return null;
-            },
-            onSetDefault: () =>
-                _setDefaultScanningOption(context, ScanningOption.camera),
-          ),
-          _buildUniversalBarcodeOption(
-            context,
-            icon: Icons.keyboard_return,
-            title: 'Hardware Scanner',
-            subtitle: 'Use a connected barcode scanner',
-            onTap: () async {
-              final result = await _navigateToHardwareScannerScreen(
+                icon: Icons.camera_alt,
+                title: 'Camera Scan',
+                subtitle: 'Use device camera',
+                onTap: () async {
+                  final result = await _startCameraBarcodeScan(
+                    context,
+                    purpose: purpose,
+                  );
+                  Navigator.of(context).pop(result);
+                  return null;
+                },
+                onSetDefault: () =>
+                    _setDefaultScanningOption(context, ScanningOption.camera),
+              ),
+              _buildUniversalBarcodeOption(
                 context,
-                purpose: purpose,
-              );
-              Navigator.of(context).pop(result);
-              return null;
-            },
-            onSetDefault: () =>
-                _setDefaultScanningOption(context, ScanningOption.hardware),
-          ),
-          _buildUniversalBarcodeOption(
-            context,
-            icon: Icons.keyboard,
-            title: 'Manual Entry',
-            subtitle: 'Type barcode manually',
-            onTap: () async {
-              final result = await _showManualBarcodeInput(
+                icon: Icons.keyboard_return,
+                title: 'Hardware Scanner',
+                subtitle: 'Use a connected barcode scanner',
+                onTap: () async {
+                  final result = await _navigateToHardwareScannerScreen(
+                    context,
+                    purpose: purpose,
+                  );
+                  Navigator.of(context).pop(result);
+                  return null;
+                },
+                onSetDefault: () =>
+                    _setDefaultScanningOption(context, ScanningOption.hardware),
+              ),
+              _buildUniversalBarcodeOption(
                 context,
-                purpose: purpose,
-              );
-              Navigator.of(context).pop(result);
-              return null;
-            },
-            onSetDefault: () =>
-                _setDefaultScanningOption(context, ScanningOption.manual),
+                icon: Icons.keyboard,
+                title: 'Manual Entry',
+                subtitle: 'Type barcode manually',
+                onTap: () async {
+                  final result = await _showManualBarcodeInput(
+                    context,
+                    purpose: purpose,
+                  );
+                  Navigator.of(context).pop(result);
+                  return null;
+                },
+                onSetDefault: () =>
+                    _setDefaultScanningOption(context, ScanningOption.manual),
+              ),
+
+              SizedBox(height: 16),
+
+              // Reset Defaults Button
+              _buildResetDefaultsButton(context),
+              SizedBox(height: 8),
+
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('Cancel'),
+              ),
+            ],
           ),
-
-          SizedBox(height: 16),
-
-          // Reset Defaults Button
-          _buildResetDefaultsButton(context),
-          SizedBox(height: 8),
-
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('Cancel'),
-          ),
-        ],
+        ),
       ),
     );
   }
-
   // Camera Scanning
   static Future<String?> _startCameraBarcodeScan(
       BuildContext context, {
@@ -438,7 +445,7 @@ class UniversalScanningService {
     return FutureBuilder<bool>(
       future: ScanningPreferencesService.isDefaultEnabled(),
       builder: (context, snapshot) {
-        final isEnabled = snapshot.data ?? false;
+        bool isEnabled = snapshot.data ?? false;
         final defaultOption = snapshot.hasData
             ? ScanningPreferencesService.getDefaultScanningOption()
             : null;
@@ -464,8 +471,7 @@ class UniversalScanningService {
                       ),
                       if (isEnabled)
                         FutureBuilder<ScanningOption?>(
-                          future:
-                          ScanningPreferencesService.getDefaultScanningOption(),
+                          future: ScanningPreferencesService.getDefaultScanningOption(),
                           builder: (context, snapshot) {
                             final option = snapshot.data;
                             if (option != null && snapshot.hasData) {
@@ -483,60 +489,71 @@ class UniversalScanningService {
                     ],
                   ),
                 ),
-                Switch(
-                  value: isEnabled,
-                  onChanged: (value) async {
-                    await ScanningPreferencesService.setDefaultEnabled(value);
-                    if (context.mounted) {
-                      _showDefaultOptionStatus(context, value);
-                    }
+                StatefulBuilder(
+                  builder: (context, setState) {
+                    return Switch(
+                      value: isEnabled,
+                      onChanged: (value) async {
+                        await ScanningPreferencesService.setDefaultEnabled(value);
+
+                        // ✅ FIX: update isEnabled so the switch toggles visually
+                        setState(() {
+                          isEnabled = value;
+                        });
+
+                        if (context.mounted) {
+                          _showDefaultOptionStatus(context, value);
+                        }
+                      },
+                      activeThumbColor: Colors.blue,
+                    );
                   },
-                  activeThumbColor: Colors.blue,
                 ),
               ],
             ),
           ),
         );
-      },
-    );
+
+
+      });
   }
 
-  static Widget _buildRecentBarcodesSection(BuildContext context) {
-    return FutureBuilder<List<String>>(
-      future: ScanningPreferencesService.getRecentBarcodes(),
-      builder: (context, snapshot) {
-        final recentBarcodes = snapshot.data ?? [];
-        if (recentBarcodes.isEmpty) return SizedBox();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recent Barcodes:',
-              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-            ),
-            SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: recentBarcodes.map((barcode) {
-                return ActionChip(
-                  label: Text(barcode),
-                  onPressed: () {
-                    Navigator.of(context).pop(barcode);
-                  },
-                  avatar: Icon(Icons.history, size: 16),
-                );
-              }).toList(),
-            ),
-            SizedBox(height: 12),
-            Divider(),
-            SizedBox(height: 8),
-          ],
-        );
-      },
-    );
-  }
+  // static Widget _buildRecentBarcodesSection(BuildContext context) {
+  //   return FutureBuilder<List<String>>(
+  //     future: ScanningPreferencesService.getRecentBarcodes(),
+  //     builder: (context, snapshot) {
+  //       final recentBarcodes = snapshot.data ?? [];
+  //       if (recentBarcodes.isEmpty) return SizedBox();
+  //
+  //       return Column(
+  //         crossAxisAlignment: CrossAxisAlignment.start,
+  //         children: [
+  //           Text(
+  //             'Recent Barcodes:',
+  //             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+  //           ),
+  //           SizedBox(height: 8),
+  //           Wrap(
+  //             spacing: 8,
+  //             runSpacing: 4,
+  //             children: recentBarcodes.map((barcode) {
+  //               return ActionChip(
+  //                 label: Text(barcode),
+  //                 onPressed: () {
+  //                   Navigator.of(context).pop(barcode);
+  //                 },
+  //                 avatar: Icon(Icons.history, size: 16),
+  //               );
+  //             }).toList(),
+  //           ),
+  //           SizedBox(height: 12),
+  //           Divider(),
+  //           SizedBox(height: 8),
+  //         ],
+  //       );
+  //     },
+  //   );
+  // }
 
   static Widget _buildUniversalBarcodeOption(
       BuildContext context, {
@@ -1147,6 +1164,7 @@ class OfflineInvoiceBottomSheet extends StatefulWidget {
   final double finalTotal;
   final String paymentMethod;
   final Map<String, dynamic>? enhancedData;
+  final AppUser? currentUser; // Add currentUser parameter
 
   const OfflineInvoiceBottomSheet({
     super.key,
@@ -1157,6 +1175,7 @@ class OfflineInvoiceBottomSheet extends StatefulWidget {
     required this.finalTotal,
     required this.paymentMethod,
     this.enhancedData,
+    this.currentUser, // Add currentUser parameter
   });
 
   @override
@@ -1207,34 +1226,46 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
   }
 
   void _generateInvoice() async {
+    if (_isLoading) return; // Prevent double clicks
+
+    setState(() => _isLoading = true);
+
     try {
-      if (_isLoading || _pendingOrderData == null) {
+      if (_pendingOrderData == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Loading order data...'), backgroundColor: Colors.orange),
+          SnackBar(
+            content: Text('Loading order data...'),
+            backgroundColor: Colors.orange,
+          ),
         );
         return;
       }
 
-      // Create offline order with real data from local database
       final offlineOrder = await _createOfflineOrderFromPendingData();
-
-      // Use enhanced invoice creation with all discount data
       final invoice = _createInvoiceFromPendingOrder(offlineOrder);
 
-      // Generate PDF
-      final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
+      final pdfFile = await InvoiceService().generatePdfInvoice(
+        invoice,
+        currentUser: widget.currentUser,
+      );
 
-      // Auto print if enabled
       if (_autoPrint) {
-        await InvoiceService().printInvoice(invoice);
+        await InvoiceService().printInvoice(
+          invoice,
+          currentUser: widget.currentUser,
+        );
       }
 
-      // Show success dialog
-      _showSuccessDialog(invoice, pdfFile);
+      // _showSuccessDialog(invoice, pdfFile);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error generating invoice: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Error generating invoice: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
@@ -1286,6 +1317,7 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
       widget.invoiceSettings,
       templateType: _selectedTemplate,
       enhancedData: enhancedData,
+      printedBy: widget.currentUser?.formattedName, // Add user attribution
     );
   }
 
@@ -1327,49 +1359,89 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
       'tipAmount': pricingBreakdown?['tip_amount'] ?? 0.0,
       'paymentMethod': paymentData?['method'] ?? widget.paymentMethod,
       'discountSummary': discountSummary,
+      // Add user data for invoice attribution
+      'processedBy': widget.currentUser?.formattedName,
+      'processedByUserId': widget.currentUser?.uid,
+      'processedByRole': widget.currentUser?.role.toString(),
     };
   }
 
-  void _showSuccessDialog(Invoice invoice, File pdfFile) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Invoice Generated'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
-            SizedBox(height: 16),
-            _buildInvoiceSummary(invoice),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Close'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              InvoiceService().printInvoice(invoice);
-            },
-            child: Text('Print'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              InvoiceService().shareInvoice(invoice);
-            },
-            child: Text('Share/Export'),
-          ),
-        ],
-      ),
-    );
-  }
+  // void _showSuccessDialog(Invoice invoice, File pdfFile) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: Text('Invoice Generated'),
+  //       content: Column(
+  //         mainAxisSize: MainAxisSize.min,
+  //         children: [
+  //           Text('Invoice ${invoice.invoiceNumber} has been generated successfully.'),
+  //           SizedBox(height: 16),
+  //           _buildInvoiceSummary(invoice),
+  //           // Show user attribution in dialog
+  //           if (widget.currentUser != null) ...[
+  //             SizedBox(height: 12),
+  //             Container(
+  //               padding: EdgeInsets.all(8),
+  //               decoration: BoxDecoration(
+  //                 color: Colors.blue[50],
+  //                 borderRadius: BorderRadius.circular(8),
+  //               ),
+  //               child: Row(
+  //                 children: [
+  //                   Icon(Icons.person, size: 16, color: Colors.blue),
+  //                   SizedBox(width: 8),
+  //                   Expanded(
+  //                     child: Column(
+  //                       crossAxisAlignment: CrossAxisAlignment.start,
+  //                       children: [
+  //                         Text(
+  //                           'Processed by:',
+  //                           style: TextStyle(fontSize: 12, color: Colors.blue[800]),
+  //                         ),
+  //                         Text(
+  //                           widget.currentUser!.formattedName,
+  //                           style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+  //                         ),
+  //                       ],
+  //                     ),
+  //                   ),
+  //                 ],
+  //               ),
+  //             ),
+  //           ],
+  //         ],
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: Text('Close'),
+  //         ),
+  //         TextButton(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             InvoiceService().printInvoice(
+  //               invoice,
+  //               currentUser: widget.currentUser, // Pass currentUser for printing
+  //             );
+  //           },
+  //           child: Text('Print'),
+  //         ),
+  //         ElevatedButton(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             InvoiceService().shareInvoice(invoice);
+  //           },
+  //           child: Text('Share/Export'),
+  //         ),
+  //       ],
+  //     ),
+  //   ).then((_) {
+  //     // Close the bottom sheet after dialog is closed
+  //     Navigator.pop(context);
+  //   });
+  // }
 
   Widget _buildInvoiceSummary(Invoice invoice) {
-    final pricingBreakdown = DiscountCalculator.getCompletePricingBreakdown(invoice);
-
     return Container(
       padding: EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1381,17 +1453,17 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
         children: [
           Text('Invoice Summary', style: TextStyle(fontWeight: FontWeight.bold)),
           SizedBox(height: 8),
-          _buildSummaryRow('Gross Amount', pricingBreakdown['gross_amount']),
-          _buildSummaryRow('Total Savings', -pricingBreakdown['total_savings'], isDiscount: true),
-          _buildSummaryRow('Net Amount', pricingBreakdown['net_amount']),
-          if (pricingBreakdown['tax_amount'] > 0)
-            _buildSummaryRow('Tax', pricingBreakdown['tax_amount']),
-          if (pricingBreakdown['shipping_amount'] > 0)
-            _buildSummaryRow('Shipping', pricingBreakdown['shipping_amount']),
-          if (pricingBreakdown['tip_amount'] > 0)
-            _buildSummaryRow('Tip', pricingBreakdown['tip_amount']),
+          _buildSummaryRow('Subtotal', invoice.subtotal),
+          if (invoice.discountAmount > 0)
+            _buildSummaryRow('Discount', -invoice.discountAmount, isDiscount: true),
+          if (invoice.taxAmount > 0)
+            _buildSummaryRow('Tax', invoice.taxAmount),
+          if (invoice.hasEnhancedPricing && invoice.showShipping && invoice.shippingAmount > 0)
+            _buildSummaryRow('Shipping', invoice.shippingAmount),
+          if (invoice.hasEnhancedPricing && invoice.showTip && invoice.tipAmount > 0)
+            _buildSummaryRow('Tip', invoice.tipAmount),
           Divider(),
-          _buildSummaryRow('Final Total', pricingBreakdown['final_total'], isTotal: true),
+          _buildSummaryRow('Final Total', invoice.totalAmount, isTotal: true),
         ],
       ),
     );
@@ -1444,6 +1516,60 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
     );
   }
 
+  Widget _buildUserInfoCard() {
+    if (widget.currentUser == null) {
+      return SizedBox();
+    }
+
+    return Card(
+      color: Colors.blue[50],
+      child: Padding(
+        padding: EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.person, color: Colors.blue),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Processed by',
+                    style: TextStyle(fontSize: 12, color: Colors.blue[600]),
+                  ),
+                  Text(
+                    widget.currentUser!.formattedName,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                  if (widget.currentUser!.role != UserRole.cashier)
+                    Text(
+                      _getUserRoleDisplay(widget.currentUser!.role),
+                      style: TextStyle(fontSize: 11, color: Colors.blue[700]),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getUserRoleDisplay(UserRole role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return 'Super Administrator';
+      case UserRole.clientAdmin:
+        return 'Administrator';
+      case UserRole.cashier:
+        return 'Cashier';
+      case UserRole.salesInventoryManager:
+        return 'Sales Manager';
+      default:
+        return 'Staff';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -1461,9 +1587,19 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
             if (_isLoading)
               Padding(
                 padding: EdgeInsets.symmetric(vertical: 20),
-                child: CircularProgressIndicator(),
+                child: Column(
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Loading order data...'),
+                  ],
+                ),
               )
             else ...[
+              // User Information Card
+              _buildUserInfoCard(),
+              if (_buildUserInfoCard() != SizedBox()) SizedBox(height: 12),
+
               if (widget.enhancedData != null)
                 Card(
                   color: Colors.green[50],
@@ -1595,27 +1731,19 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
               ),
               SizedBox(height: 16),
 
-              // Action Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Skip'),
-                    ),
+              // Action Buttons - Removed Skip button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _generateInvoice,
+                  icon: Icon(Icons.receipt_long),
+                  label: Text('Generate Invoice'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(vertical: 16),
                   ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _generateInvoice,
-                      icon: Icon(Icons.receipt_long),
-                      label: Text('Generate Invoice'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
             SizedBox(height: 8),

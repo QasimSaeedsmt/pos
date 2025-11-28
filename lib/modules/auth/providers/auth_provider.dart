@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import '../../../features/users/users_base.dart';
 import '../models/activity_type.dart';
@@ -8,6 +11,8 @@ import '../services/biometric_service.dart';
 import '../services/offline_storage_service.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/user_activity_repository.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:http/http.dart' as http;
 
 class MyAuthProvider with ChangeNotifier {
   AppUser? _currentUser;
@@ -119,6 +124,47 @@ class MyAuthProvider with ChangeNotifier {
     // CRITICAL: Logout from Firebase but keep user info for display
     await AuthService.logout();
   }
+
+  // -------------------- Network Detection --------------------
+  bool _isNetworkError(dynamic e) {
+    final errorString = e.toString().toLowerCase();
+
+    // More precise network error detection
+    return e is SocketException ||
+        e is TimeoutException ||
+        e is HttpException ||
+        e is WebSocketException ||
+        (errorString.contains('network') && errorString.contains('error')) ||
+        (errorString.contains('connection') && errorString.contains('failed')) ||
+        (errorString.contains('socket') && errorString.contains('exception')) ||
+        errorString.contains('internet') ||
+        errorString.contains('unreachable') ||
+        errorString.contains('no route to host') ||
+        errorString.contains('failed host lookup') ||
+        errorString.contains('connection refused') ||
+        errorString.contains('connection reset') ||
+        errorString.contains('network is unreachable') ||
+        errorString.contains('software caused connection abort');
+  }
+
+  Future<bool> _isActuallyOnline() async {
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) {
+        return false;
+      }
+
+      // Additional verification - try to reach a reliable endpoint
+      final response = await http.get(
+        Uri.parse('https://www.gstatic.com/generate_204'),
+      ).timeout(const Duration(seconds: 5));
+
+      return response.statusCode == 204 || response.statusCode == 200;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // -------------------- Login --------------------
   Future<void> login(String email, String password,
       {bool fromBiometric = false}) async {
@@ -232,9 +278,17 @@ class MyAuthProvider with ChangeNotifier {
     } catch (e) {
       _error = e.toString();
 
-      if (_isNetworkError(e) &&
-          _storageService.offlineUserId != null &&
-          _storageService.isOfflineSessionValid()) {
+      // Enhanced offline mode detection
+      final isActuallyOffline = !await _isActuallyOnline();
+      final hasValidOfflineSession = _storageService.offlineUserId != null &&
+          _storageService.isOfflineSessionValid();
+
+      print("🔄 Login error: $e");
+      print("📶 Actual offline status: $isActuallyOffline");
+      print("💾 Valid offline session: $hasValidOfflineSession");
+
+      // Only go to offline mode if we're actually offline AND have valid session
+      if (isActuallyOffline && hasValidOfflineSession && _isNetworkError(e)) {
         _isOfflineMode = true;
         await _loadOfflineUserData();
 
@@ -249,16 +303,17 @@ class MyAuthProvider with ChangeNotifier {
           _error = 'Offline access blocked: ${_subscriptionState == SubscriptionState.expired ? 'subscription expired' : 'account inactive'}.';
           return;
         }
+
+        print("✅ Successfully fell back to offline mode");
+      } else {
+        // If we're online but login failed, don't show offline mode
+        _isOfflineMode = false;
+        print("❌ Not falling back to offline mode - either online or no valid session");
       }
     } finally {
       _isLoading = false;
       notifyListeners();
     }
-  }
-  bool _isNetworkError(dynamic e) {
-    return e.toString().toLowerCase().contains('network') ||
-        e.toString().toLowerCase().contains('socket') ||
-        e.toString().toLowerCase().contains('connection');
   }
 
   bool get isTenantSubscriptionActive {
@@ -323,6 +378,7 @@ class MyAuthProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
   Future<void> _loadOfflineUserData() async {
     final userData = _storageService.offlineUserData;
     final tenantData = _storageService.offlineTenantData;
@@ -388,7 +444,6 @@ class MyAuthProvider with ChangeNotifier {
   }
 
   // -------------------- Logout --------------------
-// -------------------- Logout --------------------
   Future<void> logout() async {
     try {
       // Store user data before clearing for logging
@@ -446,6 +501,7 @@ class MyAuthProvider with ChangeNotifier {
       notifyListeners();
     }
   }
+
   // -------------------- App Lock / Biometric --------------------
   Future<void> _updateLastUnlockTime() async {
     await _storageService.setLastUnlockTime(DateTime.now());

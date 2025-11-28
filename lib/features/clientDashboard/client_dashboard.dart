@@ -1100,11 +1100,32 @@ class FirestoreServices {
 
   Future<void> deleteProduct(String productId) async {
     try {
-      await productsRef.doc(productId).update({'status': 'trash'});
+      final snapshot = await productsRef.doc(productId).get();
+
+      if (!snapshot.exists) return;
+
+      final data = snapshot.data() as Map<String, dynamic>?;
+
+      if (data != null) {
+        await productsRef
+            .doc('trash')
+            .collection('deleted_products')
+            .doc(productId)
+            .set({
+          ...data,
+          'deletedAt': FieldValue.serverTimestamp(),
+          'originalId': productId,
+        });
+      }
+
+      await productsRef.doc(productId).delete();
+
     } catch (e) {
       throw Exception('Failed to delete product: $e');
     }
   }
+
+
 
   Future<void> restockProduct(
       String productId,

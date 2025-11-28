@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../features/invoiceBase/invoice_and_printing_base.dart';
+import '../../../features/scanning/smart_scanner_overlay.dart';
 import '../../../printing/printing_setting_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
@@ -367,15 +369,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+          Card(
+            margin: const EdgeInsets.symmetric(
+              horizontal: AuthMeasurements.innerPadding,
+              vertical: AuthMeasurements.spacingSmall,
+            ),
+            child: ListTile(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => NewInvoiceSettingsScreen(),
+                  ),
+                );
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(AuthMeasurements.spacingSmall),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(AuthMeasurements.borderRadiusMedium),
+                ),
+                child: Icon(
+                  Icons.receipt_long_rounded,
+                  color: theme.colorScheme.primary,
+                  size: AuthMeasurements.iconSizeMedium,
+                ),
+              ),
+              title: const Text(
+                "Invoicing Settings",
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+              subtitle: const Text(
+                "Configure invoice templates and printing options",
+                style: TextStyle(fontSize: 14),
+              ),
+              trailing: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: theme.colorScheme.primary,
+                  size: 16,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: AuthMeasurements.innerPadding,
+                vertical: AuthMeasurements.spacingSmall,
+              ),
+            ),
+          ),
           InkWell(
-            onTap: (){
+            onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => InvoiceSettingsScreen(),
+                  builder: (context) => const ScanningSettingsScreen(),
                 ),
               );
-
             },
             child: Card(
               margin: const EdgeInsets.symmetric(
@@ -387,7 +443,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => InvoiceSettingsScreen(),
+                      builder: (context) => const ScanningSettingsScreen(),
                     ),
                   );
                 },
@@ -395,23 +451,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   padding: const EdgeInsets.all(AuthMeasurements.spacingSmall),
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(AuthMeasurements.borderRadiusMedium),
+                    borderRadius:
+                    BorderRadius.circular(AuthMeasurements.borderRadiusMedium),
                   ),
                   child: Icon(
-                    Icons.receipt_long_rounded,
+                    Icons.qr_code_scanner_rounded,
                     color: theme.colorScheme.primary,
                     size: AuthMeasurements.iconSizeMedium,
                   ),
                 ),
                 title: const Text(
-                  "Invoicing Settings",
+                  "Scanning Settings",
                   style: TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 16,
                   ),
                 ),
                 subtitle: const Text(
-                  "Configure invoice templates and printing options",
+                  "Configure default scanning mode and behavior",
                   style: TextStyle(fontSize: 14),
                 ),
                 trailing: Container(

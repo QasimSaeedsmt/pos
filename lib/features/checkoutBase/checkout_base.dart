@@ -1,4 +1,6 @@
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -14,17 +16,21 @@ import '../customerBase/customer_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../orderBase/order_base.dart';
+import '../users/users_base.dart';
 
 
 
 class CheckoutScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
   final List<CartItem> cartItems;
+  final AppUser? currentUser;
 
   const CheckoutScreen({
     super.key,
     required this.cartManager,
     required this.cartItems,
+    this.currentUser, // Add this
+
   });
 
   @override
@@ -38,6 +44,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int? _pendingOrderId;
   String? _errorMessage;
   CustomerSelection _customerSelection = CustomerSelection(useDefault: true);
+  AppUser? _currentUser; // Add this
+
 
   // Settings data
   Map<String, dynamic> _invoiceSettings = {};
@@ -73,8 +81,72 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     super.initState();
     _loadSettings();
     _setupCartListeners();
+    _initializeCurrentUser(); // Add this
+
+  }
+  // Add this method to initialize current user
+  void _initializeCurrentUser() {
+    // Use the passed user or load from Firebase
+    if (widget.currentUser != null) {
+      setState(() {
+        _currentUser = widget.currentUser;
+      });
+    } else {
+      _loadCurrentUserFromFirebase();
+    }
   }
 
+  // Add this method to load user from Firebase if not provided
+  Future<void> _loadCurrentUserFromFirebase() async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(firebaseUser.uid)
+            .get();
+
+        if (userDoc.exists) {
+          setState(() {
+            _currentUser = AppUser.fromFirestore(userDoc);
+          });
+        } else {
+          // Create default user
+          setState(() {
+            _currentUser = AppUser(
+              uid: firebaseUser.uid,
+              email: firebaseUser.email ?? 'unknown@email.com',
+              displayName: firebaseUser.displayName ?? firebaseUser.email?.split('@').first ?? 'Cashier',
+              phoneNumber: firebaseUser.phoneNumber,
+              role: UserRole.cashier,
+              tenantId: 'default_tenant',
+              isActive: true,
+              createdAt: DateTime.now(),
+              createdBy: 'system',
+              profile: {},
+              permissions: [],
+            );
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading current user: $e');
+      // Create fallback user
+      setState(() {
+        _currentUser = AppUser(
+          uid: 'fallback_user',
+          email: 'cashier@store.com',
+          displayName: 'Cashier',
+          role: UserRole.cashier,
+          tenantId: 'default_tenant',
+          isActive: true,
+          createdAt: DateTime.now(),
+          createdBy: 'system',
+          profile: {},
+          permissions: [],
+        );
+      });
+    }}
   void _setupCartListeners() {
     widget.cartManager.totalStream.listen((total) {
       if (mounted) {
@@ -308,6 +380,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customer: _customerSelection.hasCustomer
             ? _customerSelection.customer
             : null,
+        currentUser: _currentUser, // Add this
+
         // businessInfo: _businessInfo,
         // invoiceSettings: _invoiceSettings,
       ),
@@ -316,7 +390,55 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _resetCheckoutScreen();
     });
   }
+  Widget _buildUserInfoSection() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.person, color: Colors.blue),
+            SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Processed by',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    _currentUser?.formattedName ?? 'Loading...',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (_currentUser?.role != null)
+                    Text(
+                      _getUserRoleDisplay(_currentUser!.role),
+                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  String _getUserRoleDisplay(UserRole role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return 'Super Administrator';
+      case UserRole.clientAdmin:
+        return 'Administrator';
+      case UserRole.cashier:
+        return 'Cashier';
+      case UserRole.salesInventoryManager:
+        return 'Sales Manager';
+      default:
+        return 'Staff';
+    }
+  }
   void _showOfflineInvoiceOptions(int pendingOrderId) {
     showModalBottomSheet(
       context: context,
@@ -326,6 +448,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         customer: _customerSelection.hasCustomer
             ? _customerSelection.customer
             : null,
+        currentUser: _currentUser, // Add this - you may need to update OfflineInvoiceBottomSheet to accept this parameter
+
         businessInfo: _businessInfo,
         invoiceSettings: _invoiceSettings,
         finalTotal: _finalTotal,
@@ -570,6 +694,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'paidAmount': _creditSaleData?.paidAmount,
         'previousBalance': _creditSaleData?.previousBalance,
         'newBalance': _creditSaleData?.newBalance,
+        // Add user data for invoice attribution
+        'processedBy': _currentUser?.formattedName,
+        'processedByUserId': _currentUser?.uid,
+        'processedByRole': _currentUser?.role.toString(),
       };
 
 // Update the enhanced invoice options call:
@@ -582,6 +710,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
             enhancedData: enhancedData,
             creditSaleData: _isCreditSale ? _creditSaleData : null,
+            currentUser: _currentUser, // Add this
+
           ),
         ).then((_) {
           _resetCheckoutScreen();
@@ -594,6 +724,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         additionalData: orderData,
         cartManager: widget.cartManager,
         creditSaleData: _isCreditSale ? _creditSaleData : null,
+
       );
 
       if (result.success) {
@@ -1107,6 +1238,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 padding: EdgeInsets.all(16),
                 child: Column(
                   children: [
+                    _buildUserInfoSection(),
+                    SizedBox(height: 16),
                     // Customer Section
                     _buildCustomerSection(),
                     SizedBox(height: 16),

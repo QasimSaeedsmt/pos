@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app.dart';
@@ -6,6 +7,7 @@ import '../constants.dart';
 import '../features/credit/credit_sale_model.dart';
 import '../features/customerBase/customer_base.dart';
 import '../features/orderBase/order_base.dart';
+import '../features/users/users_base.dart';
 import 'invoice_service.dart';
 
 class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
@@ -13,6 +15,7 @@ class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
   final Customer? customer;
   final Map<String, dynamic> businessInfo;
   final Map<String, dynamic> invoiceSettings;
+  final AppUser? currentUser;
 
   const InvoiceOptionsBottomSheetWithNoOptions({
     super.key,
@@ -20,6 +23,7 @@ class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
     this.customer,
     required this.businessInfo,
     required this.invoiceSettings,
+    this.currentUser,
   });
 
   @override
@@ -100,9 +104,10 @@ class InvoiceOptionsBottomSheetWithNoOptions extends StatelessWidget {
       businessInfo,
       invoiceSettings,
       templateType: invoiceSettings['defaultTemplate'] ?? 'traditional',
+      printedBy: currentUser?.formattedName,
     );
 
-    InvoiceService().printInvoice(invoice);
+    InvoiceService().printInvoice(invoice, currentUser: currentUser);
 
     ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Invoice sent to printer'))
@@ -116,12 +121,14 @@ class InvoiceOptionsBottomSheetWithOptions extends StatefulWidget {
   final AppOrder order;
   final Customer? customer;
   final Map<String, dynamic>? enhancedData;
+  final AppUser? currentUser;
 
   const InvoiceOptionsBottomSheetWithOptions({
     super.key,
     required this.order,
     this.customer,
     this.enhancedData,
+    this.currentUser,
   });
 
   @override
@@ -183,6 +190,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       invoiceSettings,
       templateType: _selectedTemplate,
       enhancedData: widget.enhancedData,
+      printedBy: widget.currentUser?.formattedName,
     )
         : Invoice.fromOrder(
       widget.order,
@@ -190,12 +198,15 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       businessInfo,
       invoiceSettings,
       templateType: _selectedTemplate,
+      printedBy: widget.currentUser?.formattedName,
+    );
+    final pdfFile = await InvoiceService().generatePdfInvoice(
+        invoice,
+        currentUser: widget.currentUser
     );
 
-    final pdfFile = await InvoiceService().generatePdfInvoice(invoice);
-
     if (_autoPrint) {
-      await InvoiceService().printInvoice(invoice);
+      await InvoiceService().printInvoice(invoice, currentUser: widget.currentUser);
     }
 
     _showSuccessDialog(invoice, pdfFile);
@@ -215,7 +226,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              InvoiceService().printInvoice(invoice);
+              InvoiceService().printInvoice(invoice, currentUser: widget.currentUser);
             },
             child: Text('Print'),
           ),
@@ -258,6 +269,43 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
                         child: Text(
                           'Enhanced pricing data available',
                           style: TextStyle(color: Colors.green[800], fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+            // User attribution info
+            if (widget.currentUser != null)
+              Card(
+                color: Colors.blue[50],
+                child: Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(Icons.person, color: Colors.blue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Processed by: ${widget.currentUser!.formattedName}',
+                              style: TextStyle(
+                                color: Colors.blue[800],
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            if (widget.currentUser!.role != UserRole.cashier)
+                              Text(
+                                _getUserRoleDisplay(widget.currentUser!.role),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue[600],
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ],
@@ -351,9 +399,22 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
       ),
     );
   }
+
+  String _getUserRoleDisplay(UserRole role) {
+    switch (role) {
+      case UserRole.superAdmin:
+        return 'Super Administrator';
+      case UserRole.clientAdmin:
+        return 'Administrator';
+      case UserRole.cashier:
+        return 'Cashier';
+      case UserRole.salesInventoryManager:
+        return 'Sales Manager';
+      default:
+        return 'Staff';
+    }
+  }
 }
-
-
 
 class Invoice {
   final String id;
@@ -386,6 +447,10 @@ class Invoice {
   final double? newBalance;
   final CreditSaleData? creditSaleData;
 
+  // User attribution properties
+  final String? printedBy;
+  final DateTime? printedAt;
+
   // Getters
   String? get logoPath => businessInfo['logoPath'] as String?;
   bool get includeLogo => invoiceSettings['includeLogo'] as bool? ?? true;
@@ -404,6 +469,9 @@ class Invoice {
   int get daysOverdue => creditDueDate != null && isOverdueCredit
       ? DateTime.now().difference(creditDueDate!).inDays
       : 0;
+
+  // User attribution getters
+  bool get showPrintedBy => printedBy != null && printedBy!.isNotEmpty;
 
   double get totalItemDiscounts {
     if (hasEnhancedPricing) {
@@ -493,6 +561,8 @@ class Invoice {
     this.previousBalance,
     this.newBalance,
     this.creditSaleData,
+    this.printedBy,
+    this.printedAt,
   });
 
   factory Invoice.fromEnhancedOrder(
@@ -503,6 +573,7 @@ class Invoice {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
         CreditSaleData? creditSaleData,
+        String? printedBy,
       }) {
     final enhancedItems = _createEnhancedItems(order.lineItems, enhancedData ?? {});
 
@@ -557,6 +628,8 @@ class Invoice {
       previousBalance: previousBalance,
       newBalance: newBalance,
       creditSaleData: creditSaleData,
+      printedBy: printedBy,
+      printedAt: DateTime.now(),
     );
   }
 
@@ -597,6 +670,7 @@ class Invoice {
         String templateType = 'traditional',
         Map<String, dynamic>? enhancedData,
         CreditSaleData? creditSaleData,
+        String? printedBy,
       }) {
     final hasEnhancedData = enhancedData != null ||
         (order.lineItems.isNotEmpty && order.lineItems[0].containsKey('base_price'));
@@ -610,6 +684,7 @@ class Invoice {
         templateType: templateType,
         enhancedData: enhancedData,
         creditSaleData: creditSaleData,
+        printedBy: printedBy,
       );
     }
 
@@ -667,6 +742,8 @@ class Invoice {
       previousBalance: previousBalance,
       newBalance: newBalance,
       creditSaleData: creditSaleData,
+      printedBy: printedBy,
+      printedAt: DateTime.now(),
     );
   }
 
@@ -696,6 +773,8 @@ class Invoice {
       'creditTerms': creditTerms,
       'previousBalance': previousBalance,
       'newBalance': newBalance,
+      'printedBy': printedBy,
+      'printedAt': printedAt?.toIso8601String(),
     };
 
     if (hasEnhancedPricing && enhancedData != null) {
@@ -742,6 +821,8 @@ class Invoice {
       newBalance: (data['newBalance'] as num?)?.toDouble(),
       creditSaleData: data['creditSaleData'] != null ?
       CreditSaleData.fromMap(Map<String, dynamic>.from(data['creditSaleData'])) : null,
+      printedBy: data['printedBy'],
+      printedAt: data['printedAt'] != null ? DateTime.parse(data['printedAt']) : null,
     );
   }
 
@@ -773,6 +854,8 @@ class Invoice {
     double? previousBalance,
     double? newBalance,
     CreditSaleData? creditSaleData,
+    String? printedBy,
+    DateTime? printedAt,
   }) {
     return Invoice(
       id: id ?? this.id,
@@ -802,6 +885,8 @@ class Invoice {
       previousBalance: previousBalance ?? this.previousBalance,
       newBalance: newBalance ?? this.newBalance,
       creditSaleData: creditSaleData ?? this.creditSaleData,
+      printedBy: printedBy ?? this.printedBy,
+      printedAt: printedAt ?? this.printedAt,
     );
   }
 }

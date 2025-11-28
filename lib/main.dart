@@ -202,7 +202,7 @@ class _SmartSliderBackPressHandlerState extends State<SmartSliderBackPressHandle
             now.difference(_lastBackPressTime!) < const Duration(seconds: 2);
 
         if (shouldExit) {
-          SystemNavigator.pop();
+          // SystemNavigator.pop();
         } else {
           _lastBackPressTime = now;
           _showSmartSlider();
