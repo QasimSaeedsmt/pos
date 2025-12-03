@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../app.dart';
+import '../features/customerBase/customer_base.dart';
+import '../features/orderBase/order_base.dart';
 import 'invoice_model.dart';
 import 'invoice_preview_screen.dart';
 import 'invoice_service.dart';
@@ -92,7 +94,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
 
   void _testPrint() async {
     // Create a test invoice
-    final testOrder = Order(
+    final testOrder = AppOrder(
       id: 'test',
       number: 'TEST-001',
       dateCreated: DateTime.now(),
@@ -133,7 +135,7 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
   }
 
   void _previewInvoice() async {
-    final testOrder = Order(
+    final testOrder = AppOrder(
       id: 'test',
       number: 'TEST-001',
       dateCreated: DateTime.now(),
@@ -200,33 +202,35 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Business Information Section
-            _buildSectionHeader('Business Information', Icons.business),
-            _buildBusinessInfoSection(),
-            SizedBox(height: 24),
-
-            // Invoice Settings Section
-            _buildSectionHeader('Invoice Settings', Icons.receipt),
-            _buildInvoiceSettingsSection(),
-            SizedBox(height: 24),
-
-            // Printer Settings Section
-            _buildSectionHeader('Printing Settings', Icons.print),
-            _buildPrinterSettingsSection(),
-            SizedBox(height: 24),
-
-            // Preview and Test Section
-            _buildSectionHeader('Preview & Test', Icons.visibility),
-            _buildPreviewSection(),
-            SizedBox(height: 32),
-
-            // Save Button
-            _buildSaveButton(),
-          ],
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.all(16),
+          child: Column(
+            children: [
+              // Business Information Section
+              _buildSectionHeader('Business Information', Icons.business),
+              _buildBusinessInfoSection(),
+              SizedBox(height: 24),
+        
+              // Invoice Settings Section
+              _buildSectionHeader('Invoice Settings', Icons.receipt),
+              _buildInvoiceSettingsSection(),
+              SizedBox(height: 24),
+        
+              // Printer Settings Section
+              _buildSectionHeader('Printing Settings', Icons.print),
+              _buildPrinterSettingsSection(),
+              SizedBox(height: 24),
+        
+              // Preview and Test Section
+              _buildSectionHeader('Preview & Test', Icons.visibility),
+              _buildPreviewSection(),
+              SizedBox(height: 32),
+        
+              // Save Button
+              _buildSaveButton(),
+            ],
+          ),
         ),
       ),
     );
@@ -580,4 +584,6 @@ class _InvoiceSettingsScreenState extends State<InvoiceSettingsScreen> {
       ),
     );
   }
+
 }
+

@@ -1,12 +1,18 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
 import '../app.dart';
 import '../constants.dart';
+import '../features/auth/auth_base.dart';
+import '../features/clientDashboard/client_dashboard.dart';
+import '../features/main_navigation/main_navigation_base.dart';
 import '../main.dart';
+import '../modules/auth/providers/auth_provider.dart';
 
 // Sale Model
 class Sale {
@@ -200,7 +206,7 @@ class SalesManagementScreen extends StatefulWidget {
 class _SalesManagementScreenState extends State<SalesManagementScreen>
     with SingleTickerProviderStateMixin {
   final EnhancedPOSService _posService = EnhancedPOSService();
-  final MyAuthProvider _authProvider = MyAuthProvider();
+  MyAuthProvider get _authProvider => Provider.of<MyAuthProvider>(context, listen: false);
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   late AnimationController _animationController;

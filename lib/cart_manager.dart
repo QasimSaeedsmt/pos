@@ -1,14 +1,31 @@
-import 'package:flutter/foundation.dart';
+import 'dart:io';
 
-import 'app.dart';
+import 'package:intl/intl.dart';
 
-class POSServiceProvider extends ChangeNotifier {
-  final EnhancedPOSService _posService = EnhancedPOSService();
+class AppUtils {
+  static String formatCurrency(double amount, String currency) {
+    return '$currency ${amount.toStringAsFixed(2)}';
+  }
 
-  EnhancedPOSService get posService => _posService;
+  static String formatDate(DateTime date) {
+    return DateFormat('MMM dd, yyyy').format(date);
+  }
 
-  void setTenantContext(String tenantId) {
-    _posService.setTenantContext(tenantId);
-    notifyListeners();
+  static String formatDateTime(DateTime date) {
+    return DateFormat('MMM dd, yyyy HH:mm').format(date);
+  }
+
+  static bool isEmailValid(String email) {
+    final regex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    return regex.hasMatch(email);
+  }
+
+  static Future<bool> checkConnectivity() async {
+    try {
+      final result = await InternetAddress.lookup('google.com');
+      return result.isNotEmpty && result[0].rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    }
   }
 }

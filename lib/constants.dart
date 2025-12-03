@@ -1,7 +1,7 @@
 
 class Constants{
-  static String CURRENCY_NAME ="R";
-  static String DEFAULT_CURRENCY ="R";
+  // static String CURRENCY_NAME ="Rs ";
+  static String CURRENCY_NAME ="Rs ";
 
   // static String get DEFAULT_CURRENCY => CurrencyService().currency;
   static const List<String> CURRENCY_OPTIONS = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'INR', 'R'];
