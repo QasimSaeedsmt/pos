@@ -233,8 +233,7 @@ class _ScanningSettingsScreenState extends State<ScanningSettingsScreen> {
                       ),
                       Switch(
                         value: _isDefaultEnabled,
-                        onChanged: _toggleDefaultScanning,
-                        activeColor: Colors.blue,
+                        onChanged: _toggleDefaultScanning,activeThumbColor: Colors.blue,
                       ),
                     ],
                   ),
@@ -250,7 +249,7 @@ class _ScanningSettingsScreenState extends State<ScanningSettingsScreen> {
                   ),
                   SizedBox(height: 8),
 
-                  ...ScanningOption.values.map(_buildScanningOptionCard).toList(),
+                  ...ScanningOption.values.map(_buildScanningOptionCard),
 
                   if (!_isDefaultEnabled && _currentDefaultOption != null)
                     Container(

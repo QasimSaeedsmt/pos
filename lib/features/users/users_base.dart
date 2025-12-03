@@ -496,7 +496,7 @@ class TenantUsersService {
         'module': UserActivity._getModuleFromAction(action.toString().split('.').last),
       });
     } catch (e) {
-      print('Failed to log activity: $e');
+     debugPrint('Failed to log activity: $e');
     }
   }
 
@@ -696,7 +696,7 @@ class _EnhancedAddUserDialogState extends State<EnhancedAddUserDialog> {
               ),
               SizedBox(height: 16),
               DropdownButtonFormField(
-                value: _selectedRole,
+                initialValue: _selectedRole,
                 items: [
                   DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
                   DropdownMenuItem(
@@ -866,7 +866,7 @@ class _EditUserDialogState extends State<EditUserDialog> {
               ),
               SizedBox(height: 16),
               DropdownButtonFormField(
-                value: _selectedRole,
+                initialValue: _selectedRole,
                 items: [
                   DropdownMenuItem(value: 'cashier', child: Text('Cashier')),
                   DropdownMenuItem(
@@ -1039,8 +1039,8 @@ class EnhancedUsersScreen extends StatelessWidget {
         body: TabBarView(children: [_UsersListTab(), _ActivityLogTab()]),
         floatingActionButton: FloatingActionButton(
           onPressed: () => _showAddUserDialog(context),
-          child: Icon(Icons.person_add),
           tooltip: 'Add New User',
+          child: Icon(Icons.person_add),
         ),
       ),
     );
@@ -1813,7 +1813,7 @@ class _UserActivityScreenState extends State<UserActivityScreen> {
                         Text(
                           _selectedFilter == 'all'
                               ? 'This user has no activities yet'
-                              : 'No ${_selectedFilter} activities found',
+                              : 'No $_selectedFilter activities found',
                           style: TextStyle(color: Colors.grey),
                         ),
                       ],

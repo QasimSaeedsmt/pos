@@ -1,17 +1,12 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../app.dart';
 import '../constants.dart';
-import '../features/auth/auth_base.dart';
-import '../features/clientDashboard/client_dashboard.dart';
 import '../features/main_navigation/main_navigation_base.dart';
-import '../main.dart';
 import '../modules/auth/providers/auth_provider.dart';
 
 // Sale Model
@@ -283,7 +278,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
         .listen((snapshot) {
       _processSalesSnapshot(snapshot);
     }, onError: (error) {
-      print('Error fetching sales: $error');
+     debugPrint('Error fetching sales: $error');
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -307,7 +302,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
         _applyFilters();
       }
     } catch (e) {
-      print('Error processing sales data: $e');
+     debugPrint('Error processing sales data: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -333,7 +328,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
 
       _processSalesSnapshot(snapshot);
     } catch (e) {
-      print('Failed to fetch sales data: $e');
+     debugPrint('Failed to fetch sales data: $e');
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -706,7 +701,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
                             Row(
                               children: [
                                 _QuickStatItem(
-                                  value: '${_totalSales}',
+                                  value: '$_totalSales',
                                   label: 'Total Sales',
                                   icon: Icons.receipt_long,
                                 ),
@@ -752,7 +747,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
                             _StatCard(
                               title: 'This Week',
                               value: '${Constants.CURRENCY_NAME}${_totalRevenue.toStringAsFixed(0)}',
-                              subtitle: '${_totalSales} transactions',
+                              subtitle: '$_totalSales transactions',
                               icon: Icons.calendar_view_week,
                               color: Colors.blue,
                               trend: 8.3,
@@ -968,7 +963,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
 
   SliverToBoxAdapter _buildLoadingState() {
     return SliverToBoxAdapter(
-      child: Container(
+      child: SizedBox(
         height: 200,
         child: Center(
           child: Column(
@@ -1000,7 +995,7 @@ class _SalesManagementScreenState extends State<SalesManagementScreen>
 
   SliverToBoxAdapter _buildEmptyState() {
     return SliverToBoxAdapter(
-      child: Container(
+      child: SizedBox(
         height: 300,
         child: Center(
           child: Column(

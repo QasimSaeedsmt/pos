@@ -60,7 +60,7 @@ class ThemeUtils {
       borderRadius: BorderRadius.circular(radius(context)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.1),
+          color: Colors.black.withValues(alpha: 0.1),
           blurRadius: cardElevation(context) * 2,
           offset: Offset(0, cardElevation(context)),
         ),
@@ -78,7 +78,7 @@ class ThemeUtils {
       borderRadius: BorderRadius.circular(radius(context)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(0.2),
+          color: Colors.black.withValues(alpha: 0.2),
           blurRadius: buttonElevation(context),
           offset: Offset(0, buttonElevation(context) / 2),
         ),

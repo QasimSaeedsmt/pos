@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/cupertino.dart';
 
 import 'credit_models.dart';
-import 'credit_recovery_screen.dart';
 
 class CreditService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -32,9 +30,9 @@ class CreditService {
   Future<void> recordCreditTransaction(CreditTransaction transaction) async {
     try {
       await _creditTransactionsRef.doc(transaction.id).set(transaction.toMap());
-      print('✅ Credit transaction recorded: ${transaction.id}');
+      debugPrint('✅ Credit transaction recorded: ${transaction.id}');
     } catch (e) {
-      print('❌ Error recording credit transaction: $e');
+      debugPrint('❌ Error recording credit transaction: $e');
       throw Exception('Failed to record credit transaction: $e');
     }
   }
@@ -51,10 +49,10 @@ class CreditService {
         return CreditTransaction.fromMap(doc.data() as Map<String, dynamic>);
       }).toList();
 
-      print('✅ Retrieved ${transactions.length} transactions for customer: $customerId');
+      debugPrint('✅ Retrieved ${transactions.length} transactions for customer: $customerId');
       return transactions;
     } catch (e) {
-      print('❌ Error getting customer transactions: $e');
+      debugPrint('❌ Error getting customer transactions: $e');
       throw Exception('Failed to get customer transactions: $e');
     }
   }
@@ -70,7 +68,7 @@ class CreditService {
         return CreditTransaction.fromMap(doc.data() as Map<String, dynamic>);
       }).toList();
     } catch (e) {
-      print('❌ Error getting all transactions: $e');
+      debugPrint('❌ Error getting all transactions: $e');
       return [];
     }
   }
@@ -123,10 +121,10 @@ class CreditService {
         summaries.add(summary);
       }
 
-      print('✅ Generated credit summaries for ${summaries.length} customers');
+      debugPrint('✅ Generated credit summaries for ${summaries.length} customers');
       return summaries;
     } catch (e) {
-      print('❌ Error getting credit customers: $e');
+      debugPrint('❌ Error getting credit customers: $e');
       throw Exception('Failed to get credit customers: $e');
     }
   }
@@ -179,9 +177,9 @@ class CreditService {
         'dateModified': DateTime.now().toIso8601String(),
       });
 
-      print('✅ Payment recorded for customer: $customerId, amount: $amount');
+      debugPrint('✅ Payment recorded for customer: $customerId, amount: $amount');
     } catch (e) {
-      print('❌ Error recording payment: $e');
+      debugPrint('❌ Error recording payment: $e');
       throw Exception('Failed to record payment: $e');
     }
   }
@@ -216,10 +214,10 @@ class CreditService {
         'monthlyTrends': monthlyTrends,
       };
 
-      print('✅ Generated comprehensive credit analytics');
+      debugPrint('✅ Generated comprehensive credit analytics');
       return analytics;
     } catch (e) {
-      print('❌ Error getting credit analytics: $e');
+      debugPrint('❌ Error getting credit analytics: $e');
       throw Exception('Failed to get credit analytics: $e');
     }
   }
@@ -243,7 +241,7 @@ class CreditService {
 
       return analytics;
     } catch (e) {
-      print('❌ Error getting payment method analytics: $e');
+      debugPrint('❌ Error getting payment method analytics: $e');
       return {};
     }
   }
@@ -282,7 +280,7 @@ class CreditService {
         'lastMonthTransactions': lastMonthTransactions.length,
       };
     } catch (e) {
-      print('❌ Error getting monthly trends: $e');
+      debugPrint('❌ Error getting monthly trends: $e');
       return {};
     }
   }
@@ -306,10 +304,10 @@ class CreditService {
         return bDays.compareTo(aDays);
       });
 
-      print('✅ Found ${overdueTransactions.length} overdue transactions');
+      debugPrint('✅ Found ${overdueTransactions.length} overdue transactions');
       return overdueTransactions;
     } catch (e) {
-      print('❌ Error getting overdue transactions: $e');
+      debugPrint('❌ Error getting overdue transactions: $e');
       throw Exception('Failed to get overdue transactions: $e');
     }
   }
@@ -341,9 +339,9 @@ class CreditService {
         'contactedBy': contactedBy,
       });
 
-      print('✅ Customer contact recorded: $contactId');
+      debugPrint('✅ Customer contact recorded: $contactId');
     } catch (e) {
-      print('❌ Error recording customer contact: $e');
+      debugPrint('❌ Error recording customer contact: $e');
       throw Exception('Failed to record customer contact: $e');
     }
   }
@@ -372,7 +370,7 @@ class CreditService {
 //       );
 //     }).toList();
 //   } catch (e) {
-//     print('❌ Error getting customer contacts: $e');
+//     debugPrint('❌ Error getting customer contacts: $e');
 //     return [];
 //   }
 // }
@@ -399,7 +397,7 @@ class CreditService {
 //       );
 //     }).toList();
 //   } catch (e) {
-//     print('❌ Error getting customer contacts: $e');
+//     debugPrint('❌ Error getting customer contacts: $e');
 //     return [];
 //   }
 // }
@@ -426,7 +424,7 @@ class CreditService {
 //       'successRate': 65.0, // placeholder - would track actual payments after contact
 //     };
 //   } catch (e) {
-//     print('❌ Error getting recovery performance: $e');
+//     debugPrint('❌ Error getting recovery performance: $e');
 //     return {};
 //   }
 // }

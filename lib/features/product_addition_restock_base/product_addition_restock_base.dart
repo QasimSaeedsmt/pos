@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -10,30 +11,21 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:printing/printing.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../constants.dart';
+import '../../core/models/category_model.dart';
+import '../../core/models/product_model.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import 'package:csv/csv.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import '../product_selling/product_selling_base.dart';
 // bulk_scan_service.dart
 import 'dart:async';
-import 'package:flutter/material.dart';
-import '../connectivityBase/local_db_base.dart';
-import '../product_selling/product_selling_base.dart';
 
 // export_screen.dart
-import 'package:flutter/material.dart';
 
-import '../connectivityBase/local_db_base.dart';
-import '../product_selling/product_selling_base.dart';
 // export_screen.dart
-import 'package:flutter/material.dart';
 
-import '../connectivityBase/local_db_base.dart';
-import '../product_selling/product_selling_base.dart';
 
 
 
@@ -222,7 +214,7 @@ class ExportService {
 
       // Add product rows
       for (final product in products) {
-        final categories = product.categories?.map((c) => c.name).join('; ') ?? '';
+        final categories = product.categories.map((c) => c.name).join('; ') ?? '';
 
         csvData.add([
           product.id,
@@ -274,7 +266,7 @@ class ExportService {
           'purchasePrice': product.purchasePrice,
           'stockQuantity': product.stockQuantity,
           'description': product.description,
-          'categories': product.categories?.map((c) => c.toFirestore()).toList(),
+          'categories': product.categories.map((c) => c.toFirestore()).toList(),
           'imageUrl': product.imageUrl,
           'status': product.status,
           'inStock': product.inStock,
@@ -844,62 +836,6 @@ class _BulkScanScreenState extends State<BulkScanScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-class Category {
-  final String id;
-  final String name;
-  final String slug;
-  final String? description;
-  final int count;
-  final String? imageUrl;
-
-  Category({
-    required this.id,
-    required this.name,
-    required this.slug,
-    this.description,
-    required this.count,
-    this.imageUrl,
-  });
-
-  factory Category.fromFirestore(Map<String, dynamic> data, String id) {
-    return Category(
-      id: id,
-      name: data['name']?.toString() ?? '',
-      slug: data['slug']?.toString() ?? '',
-      description: data['description']?.toString(),
-      count: data['count'] ?? 0,
-      imageUrl: data['imageUrl']?.toString(),
-    );
-  }
-
-  Map<String, dynamic> toFirestore() {
-    return {
-      'name': name,
-      'slug': slug,
-      'description': description,
-      'count': count,
-      'imageUrl': imageUrl,
-    };
-  }
-
-  Category copyWith({
-    String? id,
-    String? name,
-    String? slug,
-    String? description,
-    int? count,
-    String? imageUrl,
-  }) {
-    return Category(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      slug: slug ?? this.slug,
-      description: description ?? this.description,
-      count: count ?? this.count,
-      imageUrl: imageUrl ?? this.imageUrl,
     );
   }
 }
@@ -3324,7 +3260,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
         _categories.addAll(categories);
       });
     } catch (e) {
-      print('Failed to load categories: $e');
+      debugPrint('Failed to load categories: $e');
     } finally {
       setState(() => _isLoadingCategories = false);
     }
@@ -3347,7 +3283,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       final localProduct = await localDb.getProductBySku(barcode);
       return localProduct != null;
     } catch (e) {
-      print('Error checking barcode duplicate: $e');
+      debugPrint('Error checking barcode duplicate: $e');
       return false;
     } finally {
       if (mounted) {
@@ -3798,10 +3734,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
                 validator: (value) {
                   if (value?.isEmpty ?? true) return 'Please enter price';
-                  if (double.tryParse(value!) == null)
+                  if (double.tryParse(value!) == null) {
                     return 'Please enter valid price';
-                  if (double.parse(value) <= 0)
+                  }
+                  if (double.parse(value) <= 0) {
                     return 'Price must be greater than 0';
+                  }
                   return null;
                 },
               ),
@@ -3815,10 +3753,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value?.isEmpty ?? true)
+                  if (value?.isEmpty ?? true) {
                     return 'Please enter stock quantity';
-                  if (int.tryParse(value!) == null)
+                  }
+                  if (int.tryParse(value!) == null) {
                     return 'Please enter valid quantity';
+                  }
                   if (int.parse(value) < 0) return 'Stock cannot be negative';
                   return null;
                 },
@@ -3901,10 +3841,8 @@ class _EditProductScreenState extends State<EditProductScreen> {
     _existingImageUrls.addAll(product.imageUrls ?? []);
 
     // Initialize selected categories
-    if (product.categories != null) {
-      _selectedCategoryIds.addAll(product.categories!.map((cat) => cat.id).toList());
+    _selectedCategoryIds.addAll(product.categories.map((cat) => cat.id).toList());
     }
-  }
 
   Future<void> _loadCategories() async {
     setState(() => _isLoadingCategories = true);
@@ -3915,7 +3853,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
         _categories.addAll(categories);
       });
     } catch (e) {
-      print('Failed to load categories: $e');
+      debugPrint('Failed to load categories: $e');
     } finally {
       setState(() => _isLoadingCategories = false);
     }
@@ -3939,7 +3877,7 @@ class _EditProductScreenState extends State<EditProductScreen> {
       final localProduct = await localDb.getProductBySku(barcode);
       return localProduct != null && localProduct.id != widget.product.id;
     } catch (e) {
-      print('Error checking barcode duplicate: $e');
+      debugPrint('Error checking barcode duplicate: $e');
       return false;
     } finally {
       if (mounted) {
@@ -4394,10 +4332,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
                 keyboardType: TextInputType.numberWithOptions(decimal: true),
                 validator: (value) {
                   if (value?.isEmpty ?? true) return 'Please enter price';
-                  if (double.tryParse(value!) == null)
+                  if (double.tryParse(value!) == null) {
                     return 'Please enter valid price';
-                  if (double.parse(value) <= 0)
+                  }
+                  if (double.parse(value) <= 0) {
                     return 'Price must be greater than 0';
+                  }
                   return null;
                 },
               ),
@@ -4411,10 +4351,12 @@ class _EditProductScreenState extends State<EditProductScreen> {
                 ),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  if (value?.isEmpty ?? true)
+                  if (value?.isEmpty ?? true) {
                     return 'Please enter stock quantity';
-                  if (int.tryParse(value!) == null)
+                  }
+                  if (int.tryParse(value!) == null) {
                     return 'Please enter valid quantity';
+                  }
                   if (int.parse(value) < 0) return 'Stock cannot be negative';
                   return null;
                 },
@@ -4514,7 +4456,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
         _allProducts.addAll(products);
       });
     } catch (e) {
-      print('Failed to load products: $e');
+      debugPrint('Failed to load products: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load products: $e'),
@@ -4557,7 +4499,7 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       List<Product> products = await _posService.searchProductsBySKU(barcode);
 
       if (products.isEmpty) {
-        print('Primary search failed, trying local search...');
+        debugPrint('Primary search failed, trying local search...');
         products = _allProducts.where((p) => p.sku == barcode).toList();
       }
 
@@ -4919,84 +4861,84 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
               ],
             ),
             SizedBox(height: 12),
-      DropdownButtonFormField<Product>(
-        value: _selectedProduct,
-        isExpanded: true,
+            DropdownButtonFormField<Product>(
+              initialValue: _selectedProduct,
+              isExpanded: true,
 
-        decoration: InputDecoration(
-          labelText: "Choose Product",
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-        ),
-
-        /// 🔥 FIX: compact view for selected item
-        selectedItemBuilder: (context) {
-          return _allProducts.map((product) {
-            return Text(
-              product.name,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+              decoration: InputDecoration(
+                labelText: "Choose Product",
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               ),
-            );
-          }).toList();
-        },
 
-        /// Full detailed view inside dropdown menu
-        items: _allProducts.map((product) {
-          return DropdownMenuItem<Product>(
-            value: product,
-            child: SizedBox(
-              width: double.infinity,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
+              /// 🔥 FIX: compact view for selected item
+              selectedItemBuilder: (context) {
+                return _allProducts.map((product) {
+                  return Text(
                     product.name,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    "SKU: ${product.sku}   •   Stock: ${product.stockQuantity}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                  ),
-                  if (product.purchasePrice != null) ...[
-                    SizedBox(height: 2),
-                    Text(
-                      "WAC: ${Constants.CURRENCY_NAME}${product.purchasePrice!.toStringAsFixed(2)}",
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.green[700],
-                        fontWeight: FontWeight.w500,
-                      ),
+                  );
+                }).toList();
+              },
+
+              /// Full detailed view inside dropdown menu
+              items: _allProducts.map((product) {
+                return DropdownMenuItem<Product>(
+                  value: product,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          product.name,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          "SKU: ${product.sku}   •   Stock: ${product.stockQuantity}",
+                          style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                        ),
+                        if (product.purchasePrice != null) ...[
+                          SizedBox(height: 2),
+                          Text(
+                            "WAC: ${Constants.CURRENCY_NAME}${product.purchasePrice!.toStringAsFixed(2)}",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green[700],
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                ],
-              ),
-            ),
-          );
-        }).toList(),
+                  ),
+                );
+              }).toList(),
 
-        onChanged: (product) {
-          setState(() {
-            _selectedProduct = product;
+              onChanged: (product) {
+                setState(() {
+                  _selectedProduct = product;
 
-            if (product != null) {
-              _barcodeController.text = product.sku;
-              _quantityController.text = "1";
-              _purchasePriceController.text =
-                  product.purchasePrice?.toStringAsFixed(2) ?? "";
-              FocusScope.of(context).requestFocus(_quantityFocusNode);
-            }
-          });
-        },
-      )],
+                  if (product != null) {
+                    _barcodeController.text = product.sku;
+                    _quantityController.text = "1";
+                    _purchasePriceController.text =
+                        product.purchasePrice?.toStringAsFixed(2) ?? "";
+                    FocusScope.of(context).requestFocus(_quantityFocusNode);
+                  }
+                });
+              },
+            )],
         ),
       ),
     );
@@ -5404,8 +5346,8 @@ class InventorySummary {
   Map<String, int> get categoryDistribution {
     final distribution = <String, int>{};
     for (final product in products) {
-      if (product.categories != null && product.categories!.isNotEmpty) {
-        for (final category in product.categories!) {
+      if (product.categories.isNotEmpty) {
+        for (final category in product.categories) {
           distribution[category.name] = (distribution[category.name] ?? 0) + product.stockQuantity;
         }
       } else {
@@ -5532,19 +5474,78 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
+        maxPages: 100, // Limit pages
         build: (context) => [
           _buildPdfHeader(font, fontBold),
           _buildPdfStatistics(summary, font, fontBold),
           _buildPdfCategoryBreakdown(summary, font, fontBold),
           _buildPdfLowStockItems(summary, font, fontBold),
-          _buildPdfProductList(summary, font, fontBold),
+          // Don't include complete product list for large datasets
         ],
       ),
     );
 
+    // Create separate pages for product list with pagination
+    final int batchSize = 30; // Products per page
+    final int totalBatches = (summary.products.length / batchSize).ceil();
+
+    for (int batch = 0; batch < totalBatches; batch++) {
+      final start = batch * batchSize;
+      final end = min(start + batchSize, summary.products.length);
+      final batchProducts = summary.products.sublist(start, end);
+
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (context) => _buildPdfProductListBatch(
+            batchProducts,
+            batch + 1,
+            totalBatches,
+            font,
+            fontBold,
+          ),
+        ),
+      );
+    }
+
     return pdf;
   }
 
+  pw.Widget _buildPdfProductListBatch(
+      List<Product> products,
+      int page,
+      int totalPages,
+      pw.Font font,
+      pw.Font fontBold,
+      ) {
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Text(
+          'Product List - Page $page/$totalPages',
+          style: pw.TextStyle(font: fontBold, fontSize: 16),
+        ),
+        pw.SizedBox(height: 12),
+        pw.Table.fromTextArray(
+          border: pw.TableBorder.all(color: PdfColors.grey300),
+          headerStyle: pw.TextStyle(font: fontBold, fontSize: 10),
+          cellStyle: pw.TextStyle(font: font, fontSize: 8),
+          headerDecoration: pw.BoxDecoration(color: PdfColors.grey200),
+          rowDecoration: pw.BoxDecoration(
+              border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))
+          ),
+          headers: ['Product', 'SKU', 'Price', 'Stock', 'Value'],
+          data: products.map((product) => [
+            product.name,
+            product.sku,
+            '${Constants.CURRENCY_NAME}${product.price.toStringAsFixed(0)}',
+            product.stockQuantity.toString(),
+            '${Constants.CURRENCY_NAME}${(product.price * product.stockQuantity).toStringAsFixed(0)}',
+          ]).toList(),
+        ),
+      ],
+    );
+  }
   pw.Widget _buildPdfHeader(pw.Font font, pw.Font fontBold) {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -5659,7 +5660,7 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
                 ),
               ],
             ),
-          )).toList(),
+          )),
         ],
       ),
     );
@@ -5729,7 +5730,7 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
                     ),
                   ),
                 ],
-              )).toList(),
+              )),
             ],
           ),
         ],
@@ -5781,7 +5782,7 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
                     child: pw.Text('${Constants.CURRENCY_NAME}${(product.price * product.stockQuantity).toStringAsFixed(0)}', style: pw.TextStyle(font: font, fontSize: 8)),
                   ),
                 ],
-              )).toList(),
+              )),
             ],
           ),
           if (summary.products.length > 100)
@@ -5930,7 +5931,7 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
                   ),
                 ],
               ),
-            )).toList(),
+            )),
           ],
         ),
       ),
@@ -5989,7 +5990,7 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
                 ),
                 backgroundColor: product.stockQuantity == 0 ? Colors.red[50] : Colors.orange[50],
               ),
-            )).toList(),
+            )),
             if (lowStockItems.length > 5)
               Text(
                 '... and ${lowStockItems.length - 5} more items',
@@ -6054,3 +6055,6 @@ class _InventorySummaryScreenState extends State<InventorySummaryScreen> {
     );
   }
 }
+// i just provided the whole code but my concern is only one part of the code and that is inventory summary section
+// it give sumary of the products and generates pdfs in a professional way but when the products increase, it then stucks and dont export any pdf
+// it only work with lesser data

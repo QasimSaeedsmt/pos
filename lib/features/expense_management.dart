@@ -33,16 +33,16 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
     }
 
     try {
-      print('🔄 [ExpenseManagement] Loading expenses for period: ${_selectedPeriod.label}');
-      print('📅 [ExpenseManagement] Period range: ${_selectedPeriod.startDate} to ${_selectedPeriod.endDate}');
+     debugPrint('🔄 [ExpenseManagement] Loading expenses for period: ${_selectedPeriod.label}');
+     debugPrint('📅 [ExpenseManagement] Period range: ${_selectedPeriod.startDate} to ${_selectedPeriod.endDate}');
 
       final expenses = await widget.analyticsService.getBusinessExpenses(_selectedPeriod);
 
-      print('📊 [ExpenseManagement] Raw expenses loaded: ${expenses.length}');
+     debugPrint('📊 [ExpenseManagement] Raw expenses loaded: ${expenses.length}');
 
       // Debug each expense
       for (var expense in expenses) {
-        print('   💰 Expense: ${expense.description} - ${Constants.CURRENCY_NAME}${expense.amount} - ${expense.date} - Category: ${expense.category}');
+       debugPrint('   💰 Expense: ${expense.description} - ${Constants.CURRENCY_NAME}${expense.amount} - ${expense.date} - Category: ${expense.category}');
       }
 
       if (mounted) {
@@ -52,12 +52,12 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
         });
       }
 
-      print('💰 [ExpenseManagement] Final _expenses list length: ${_expenses.length}');
-      print('💰 [ExpenseManagement] Total expenses: ${Constants.CURRENCY_NAME}$_totalExpenses');
+     debugPrint('💰 [ExpenseManagement] Final _expenses list length: ${_expenses.length}');
+     debugPrint('💰 [ExpenseManagement] Total expenses: ${Constants.CURRENCY_NAME}$_totalExpenses');
 
     } catch (e) {
-      print('❌ [ExpenseManagement] Error loading expenses: $e');
-      print('❌ [ExpenseManagement] Error stack: ${e.toString()}');
+     debugPrint('❌ [ExpenseManagement] Error loading expenses: $e');
+     debugPrint('❌ [ExpenseManagement] Error stack: ${e.toString()}');
       if (mounted) {
         _showErrorSnackBar('Failed to load expenses: $e');
       }
@@ -71,10 +71,10 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
   Future<bool> _checkExpensesCollection() async {
     try {
       final snapshot = await widget.analyticsService.expensesRef.limit(1).get();
-      print('📁 [ExpenseManagement] Expenses collection exists: ${snapshot.docs.isNotEmpty}');
+     debugPrint('📁 [ExpenseManagement] Expenses collection exists: ${snapshot.docs.isNotEmpty}');
       return snapshot.docs.isNotEmpty;
     } catch (e) {
-      print('❌ [ExpenseManagement] Error checking expenses collection: $e');
+     debugPrint('❌ [ExpenseManagement] Error checking expenses collection: $e');
       return false;
     }
   }
@@ -140,7 +140,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                             child: Padding(
                               padding: EdgeInsets.symmetric(horizontal: 16),
                               child: DropdownButtonFormField<String>(
-                                value: categoryController.text,
+                                initialValue: categoryController.text,
                                 items: expenseCategories.map((category) {
                                   return DropdownMenuItem(
                                     value: category,
@@ -178,7 +178,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 labelText: 'Description',
                                 labelStyle: ThemeUtils.bodyMedium(context),
                                 hintText: 'e.g., Office rent, Marketing ads, etc.',
-                                hintStyle: ThemeUtils.bodyMedium(context)?.copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6)),
+                                hintStyle: ThemeUtils.bodyMedium(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6)),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -197,7 +197,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 labelText: 'Amount',
                                 labelStyle: ThemeUtils.bodyMedium(context),
                                 prefixText: Constants.CURRENCY_NAME,
-                                prefixStyle: ThemeUtils.bodyLarge(context)?.copyWith(fontWeight: FontWeight.bold),
+                                prefixStyle: ThemeUtils.bodyLarge(context).copyWith(fontWeight: FontWeight.bold),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -274,7 +274,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                 labelText: 'Notes (Optional)',
                                 labelStyle: ThemeUtils.bodyMedium(context),
                                 hintText: 'Additional details...',
-                                hintStyle: ThemeUtils.bodyMedium(context)?.copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6)),
+                                hintStyle: ThemeUtils.bodyMedium(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6)),
                                 border: InputBorder.none,
                                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                                 floatingLabelBehavior: FloatingLabelBehavior.always,
@@ -294,7 +294,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                       if (isEditing)
                         Expanded(
                           child: OutlinedButton(
-                            onPressed: () => _deleteExpense(existingExpense!),
+                            onPressed: () => _deleteExpense(existingExpense),
                             style: OutlinedButton.styleFrom(
                               padding: EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(
@@ -304,7 +304,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                             ),
                             child: Text(
                               'Delete',
-                              style: ThemeUtils.buttonText(context)?.copyWith(color: ThemeUtils.error(context)),
+                              style: ThemeUtils.buttonText(context).copyWith(color: ThemeUtils.error(context)),
                             ),
                           ),
                         ),
@@ -333,7 +333,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                               }
               
                               final expense = BusinessExpense(
-                                id: isEditing ? existingExpense!.id : DateTime.now().millisecondsSinceEpoch.toString(),
+                                id: isEditing ? existingExpense.id : DateTime.now().millisecondsSinceEpoch.toString(),
                                 category: categoryController.text,
                                 description: descriptionController.text,
                                 amount: amount,
@@ -403,7 +403,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text(
               'Cancel',
-              style: ThemeUtils.bodyLarge(context)?.copyWith(color: ThemeUtils.textSecondary(context)),
+              style: ThemeUtils.bodyLarge(context).copyWith(color: ThemeUtils.textSecondary(context)),
             ),
           ),
           Container(
@@ -543,7 +543,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                     children: [
                       Text(
                         expense.description,
-                        style: ThemeUtils.bodyLarge(context)?.copyWith(fontWeight: FontWeight.w600),
+                        style: ThemeUtils.bodyLarge(context).copyWith(fontWeight: FontWeight.w600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -558,7 +558,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                             ),
                             child: Text(
                               expense.category,
-                              style: ThemeUtils.bodySmall(context)?.copyWith(
+                              style: ThemeUtils.bodySmall(context).copyWith(
                                 color: _getCategoryColor(expense.category),
                                 fontWeight: FontWeight.w500,
                               ),
@@ -567,7 +567,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                           SizedBox(width: 8),
                           Text(
                             DateFormat('MMM dd, yyyy').format(expense.date),
-                            style: ThemeUtils.bodySmall(context)?.copyWith(
+                            style: ThemeUtils.bodySmall(context).copyWith(
                               color: ThemeUtils.textSecondary(context).withOpacity(0.7),
                             ),
                           ),
@@ -577,7 +577,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                         SizedBox(height: 4),
                         Text(
                           expense.notes!,
-                          style: ThemeUtils.bodySmall(context)?.copyWith(
+                          style: ThemeUtils.bodySmall(context).copyWith(
                             color: ThemeUtils.textSecondary(context).withOpacity(0.8),
                             fontStyle: FontStyle.italic,
                           ),
@@ -595,7 +595,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                   children: [
                     Text(
                       '${Constants.CURRENCY_NAME}${expense.amount.toStringAsFixed(0)}',
-                      style: ThemeUtils.headlineMedium(context)?.copyWith(
+                      style: ThemeUtils.headlineMedium(context).copyWith(
                         color: ThemeUtils.error(context),
                         fontWeight: FontWeight.bold,
                       ),
@@ -609,7 +609,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                       ),
                       child: Text(
                         _getPeriodLabel(expense.date),
-                        style: ThemeUtils.bodySmall(context)?.copyWith(
+                        style: ThemeUtils.bodySmall(context).copyWith(
                           color: ThemeUtils.textSecondary(context).withOpacity(0.7),
                         ),
                       ),
@@ -745,16 +745,16 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                     children: [
                       Text(
                         'Expense Management',
-                        style: ThemeUtils.headlineLarge(context)?.copyWith(color: ThemeUtils.textOnPrimary(context)),
+                        style: ThemeUtils.headlineLarge(context).copyWith(color: ThemeUtils.textOnPrimary(context)),
                       ),
                       Row(
                         children: [
                           IconButton(
                             icon: Icon(Icons.bug_report, color: ThemeUtils.textOnPrimary(context)),
                             onPressed: () {
-                              print('🐛 [DEBUG] Testing all periods...');
+                             debugPrint('🐛 [DEBUG] Testing all periods...');
                               for (var period in TimePeriods.allPeriods) {
-                                print('   📅 ${period.label}: ${period.startDate} to ${period.endDate}');
+                               debugPrint('   📅 ${period.label}: ${period.startDate} to ${period.endDate}');
                               }
                               _checkExpensesCollection();
                             },
@@ -786,14 +786,14 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                           children: [
                             Text(
                               'Total Expenses',
-                              style: ThemeUtils.bodyMedium(context)?.copyWith(
+                              style: ThemeUtils.bodyMedium(context).copyWith(
                                 color: ThemeUtils.textOnPrimary(context).withOpacity(0.8),
                               ),
                             ),
                             SizedBox(height: 4),
                             Text(
                               '${Constants.CURRENCY_NAME}${_totalExpenses.toStringAsFixed(0)}',
-                              style: ThemeUtils.headlineLarge(context)?.copyWith(
+                              style: ThemeUtils.headlineLarge(context).copyWith(
                                 color: ThemeUtils.textOnPrimary(context),
                                 fontWeight: FontWeight.bold,
                               ),
@@ -805,7 +805,7 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                           children: [
                             Text(
                               '${_expenses.length} ${_expenses.length == 1 ? 'Expense' : 'Expenses'}',
-                              style: ThemeUtils.bodyMedium(context)?.copyWith(
+                              style: ThemeUtils.bodyMedium(context).copyWith(
                                 color: ThemeUtils.textOnPrimary(context).withOpacity(0.8),
                               ),
                             ),
@@ -823,19 +823,19 @@ class _ExpenseManagementScreenState extends State<ExpenseManagementScreen> {
                                     value: period,
                                     child: Text(
                                       period.label,
-                                      style: ThemeUtils.bodySmall(context)?.copyWith(color: Colors.white),
+                                      style: ThemeUtils.bodySmall(context).copyWith(color: Colors.white),
                                     ),
                                   );
                                 }).toList(),
                                 onChanged: (period) {
-                                  print('🔄 [ExpenseManagement] Period changed to: ${period?.label}');
+                                 debugPrint('🔄 [ExpenseManagement] Period changed to: ${period?.label}');
                                   setState(() => _selectedPeriod = period!);
                                   _loadExpenses();
                                 },
                                 dropdownColor: ThemeUtils.primary(context),
                                 underline: SizedBox(),
                                 icon: Icon(Icons.arrow_drop_down, color: Colors.white),
-                                style: ThemeUtils.bodySmall(context)?.copyWith(color: Colors.white),
+                                style: ThemeUtils.bodySmall(context).copyWith(color: Colors.white),
                               ),
                             ),
                           ],

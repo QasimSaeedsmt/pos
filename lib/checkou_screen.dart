@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import 'main.dart';
 import 'modules/auth/models/tenant_model.dart';
 //
 // enum ActivityType {

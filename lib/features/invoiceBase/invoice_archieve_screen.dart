@@ -10,11 +10,11 @@ import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/customer_model.dart';
 import '../../modules/auth/providers/auth_provider.dart';
-import '../cartBase/cart_base.dart';
-import '../customerBase/customer_base.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../orderBase/order_base.dart';
 
 class OrdersManagementScreen extends StatefulWidget {
   const OrdersManagementScreen({super.key});
@@ -109,7 +109,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
         .toSet()
         .toList();
 
-    print('🔄 Pre-loading customer data for ${customerIds.length} customers');
+    debugPrint('🔄 Pre-loading customer data for ${customerIds.length} customers');
 
     for (final customerId in customerIds) {
       if (!_customerCache.containsKey(customerId)) {
@@ -117,10 +117,10 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
           final customer = await _posService.getCustomerById(customerId);
           if (customer != null) {
             _customerCache[customerId] = customer;
-            print('✅ Loaded customer: ${customer.fullName} ($customerId)');
+            debugPrint('✅ Loaded customer: ${customer.fullName} ($customerId)');
           }
         } catch (e) {
-          print('❌ Failed to load customer $customerId: $e');
+          debugPrint('❌ Failed to load customer $customerId: $e');
         }
       }
     }
@@ -346,7 +346,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
           itemData['total'].toStringAsFixed(2),
         ]);
       } catch (e) {
-        print('Error processing line item: $e');
+        debugPrint('Error processing line item: $e');
         // Safe fallback
         data.add(['Unknown Item', '1', '0.00', '0.00', '0.00']);
       }
@@ -378,7 +378,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
       final itemMap = Map<String, dynamic>.from(item as Map);
       return _extractFromFirestoreMap(itemMap);
     } catch (e) {
-      print('Failed to extract item data: $e');
+      debugPrint('Failed to extract item data: $e');
       return {'name': 'Unknown Item', 'quantity': 1, 'price': 0.0, 'discount': 0.0, 'total': 0.0};
     }
   }
@@ -659,7 +659,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                             if (detailedInfo != 'Walk-in Customer' && detailedInfo.contains('\n'))
                               ...detailedInfo.split('\n').map((line) =>
                                   Text(line, style: TextStyle(fontSize: 14, color: Colors.grey[600]))
-                              ).toList(),
+                              ),
                           ],
                         ],
                       ),
@@ -1080,7 +1080,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
@@ -1126,7 +1126,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
         SizedBox(width: 16),
 
         // Total Amount & Quick Actions
-        Container(
+        SizedBox(
           width: 120,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -1431,7 +1431,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
         SizedBox(height: 12),
 
         // Order Details - Horizontal Scroll for small screens
-        Container(
+        SizedBox(
           height: 60,
           child: ListView(
             scrollDirection: Axis.horizontal,
@@ -1441,7 +1441,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 margin: EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
@@ -1457,7 +1457,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 margin: EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
@@ -1473,7 +1473,7 @@ class _OrdersManagementScreenState extends State<OrdersManagementScreen> {
                 padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 margin: EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                     color: Theme.of(context).colorScheme.outline.withOpacity(0.1),

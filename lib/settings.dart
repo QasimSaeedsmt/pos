@@ -1,11 +1,9 @@
 // settings.dart
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:mpcm/products/currency_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'app.dart';
 import 'features/invoiceBase/invoice_and_printing_base.dart';
 // ADD THESE AT THE TOP OF YOUR SETTINGS CLASS
 // Theme Settings
@@ -1509,37 +1507,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'Enable Customer Analytics',
             subtitle: 'Show customer insights and reporting',
             value: true,
-            onChanged: (value) => print('Customer Analytics: $value'),
+            onChanged: (value) =>debugPrint('Customer Analytics: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Segmentation',
             subtitle: 'Automatically categorize customers by value',
             value: true,
-            onChanged: (value) => print('Customer Segmentation: $value'),
+            onChanged: (value) =>debugPrint('Customer Segmentation: $value'),
           ),
           _buildSwitchSetting(
             title: 'Lifetime Value Tracking',
             subtitle: 'Track customer lifetime spending',
             value: true,
-            onChanged: (value) => print('Lifetime Value: $value'),
+            onChanged: (value) =>debugPrint('Lifetime Value: $value'),
           ),
           _buildSwitchSetting(
             title: 'Purchase History',
             subtitle: 'Show complete customer purchase history',
             value: true,
-            onChanged: (value) => print('Purchase History: $value'),
+            onChanged: (value) =>debugPrint('Purchase History: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Retention Alerts',
             subtitle: 'Notify when customers become inactive',
             value: false,
-            onChanged: (value) => print('Retention Alerts: $value'),
+            onChanged: (value) =>debugPrint('Retention Alerts: $value'),
           ),
           _buildSwitchSetting(
             title: 'High-Value Customer Alerts',
             subtitle: 'Highlight VIP customers',
             value: true,
-            onChanged: (value) => print('High-Value Alerts: $value'),
+            onChanged: (value) =>debugPrint('High-Value Alerts: $value'),
           ),
           _buildSliderSetting(
             title: 'Retention Alert Days',
@@ -1548,13 +1546,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             min: 30,
             max: 365,
             divisions: 11,
-            onChanged: (value) => print('Retention Days: $value'),
+            onChanged: (value) =>debugPrint('Retention Days: $value'),
           ),
           _buildTextInputSetting(
             title: 'VIP Spending Threshold',
             subtitle: 'Minimum spending to qualify as VIP',
             value: '1000',
-            onChanged: (value) => print('VIP Threshold: $value'),
+            onChanged: (value) =>debugPrint('VIP Threshold: $value'),
             keyboardType: TextInputType.number,
           ),
           _buildDropdownSetting(
@@ -1562,62 +1560,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: 'How to categorize customers',
             value: 'Spending-Based',
             options: ['Spending-Based', 'Frequency-Based', 'Manual', 'Hybrid'],
-            onChanged: (value) => print('Tier System: $value'),
+            onChanged: (value) =>debugPrint('Tier System: $value'),
           ),
           _buildSwitchSetting(
             title: 'Auto Customer Tier Assignment',
             subtitle: 'Automatically update customer tiers',
             value: true,
-            onChanged: (value) => print('Auto Tier: $value'),
+            onChanged: (value) =>debugPrint('Auto Tier: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Activity Tracking',
             subtitle: 'Track customer engagement metrics',
             value: true,
-            onChanged: (value) => print('Activity Tracking: $value'),
+            onChanged: (value) =>debugPrint('Activity Tracking: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Notes',
             subtitle: 'Allow adding notes to customer profiles',
             value: true,
-            onChanged: (value) => print('Customer Notes: $value'),
+            onChanged: (value) =>debugPrint('Customer Notes: $value'),
           ),
           _buildSwitchSetting(
             title: 'Duplicate Detection',
             subtitle: 'Warn about potential duplicate customers',
             value: true,
-            onChanged: (value) => print('Duplicate Detection: $value'),
+            onChanged: (value) =>debugPrint('Duplicate Detection: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Export',
             subtitle: 'Allow exporting customer data',
             value: true,
-            onChanged: (value) => print('Customer Export: $value'),
+            onChanged: (value) =>debugPrint('Customer Export: $value'),
           ),
           _buildSwitchSetting(
             title: 'Customer Import',
             subtitle: 'Allow importing customer data',
             value: false,
-            onChanged: (value) => print('Customer Import: $value'),
+            onChanged: (value) =>debugPrint('Customer Import: $value'),
           ),
           _buildDropdownSetting(
             title: 'Data Retention Period',
             subtitle: 'How long to keep customer data',
             value: '3 Years',
             options: ['1 Year', '2 Years', '3 Years', '5 Years', 'Indefinitely'],
-            onChanged: (value) => print('Data Retention: $value'),
+            onChanged: (value) =>debugPrint('Data Retention: $value'),
           ),
           _buildSwitchSetting(
             title: 'GDPR Compliance',
             subtitle: 'Enable data protection features',
             value: false,
-            onChanged: (value) => print('GDPR: $value'),
+            onChanged: (value) =>debugPrint('GDPR: $value'),
           ),
           _buildSwitchSetting(
             title: 'Auto-anonymize Inactive Customers',
             subtitle: 'Remove personal data after inactivity',
             value: false,
-            onChanged: (value) => print('Auto-anonymize: $value'),
+            onChanged: (value) =>debugPrint('Auto-anonymize: $value'),
           ),
           // Action Buttons
           _buildActionButtons(),

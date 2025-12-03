@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../features/invoiceBase/invoice_and_printing_base.dart';
 import '../../../features/scanning/smart_scanner_overlay.dart';
-import '../../../printing/printing_setting_screen.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
 import '../constants/auth_strings.dart';

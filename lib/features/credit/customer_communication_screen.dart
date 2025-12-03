@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
-import '../customerBase/customer_base.dart';
+import '../../core/models/customer_model.dart';
 import '../main_navigation/main_navigation_base.dart';
 import 'credit_models.dart';
 import 'credit_service.dart';
@@ -276,7 +276,7 @@ class _CustomerCommunicationScreenState extends State<CustomerCommunicationScree
         contactedBy: 'User',
       );
     } catch (e) {
-      print('Failed to record communication: $e');
+      debugPrint('Failed to record communication: $e');
     }
   }
 
@@ -460,7 +460,7 @@ class _CustomerCommunicationScreenState extends State<CustomerCommunicationScree
               color: Colors.white,
             ),
             child: DropdownButtonFormField<Customer>(
-              value: _selectedCustomer,
+              initialValue: _selectedCustomer,
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: 'Choose a customer',
@@ -730,7 +730,7 @@ class _CustomerCommunicationScreenState extends State<CustomerCommunicationScree
               border: Border.all(color: Colors.grey[300]!),
             ),
             child: DropdownButtonFormField<MessageTemplate>(
-              value: _selectedTemplate,
+              initialValue: _selectedTemplate,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -757,7 +757,7 @@ class _CustomerCommunicationScreenState extends State<CustomerCommunicationScree
               Switch(
                 value: _showCustomMessageField,
                 onChanged: (value) => setState(() => _showCustomMessageField = value),
-                activeColor: Colors.blueAccent,
+                activeThumbColor: Colors.blueAccent,
               ),
               SizedBox(width: 8),
               Text(

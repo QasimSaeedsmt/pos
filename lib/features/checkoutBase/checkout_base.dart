@@ -4,18 +4,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import '../../app.dart';
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
 import '../../printing/bottom_sheet.dart';
 import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
-import '../clientDashboard/client_dashboard.dart';
 import '../credit/credit_sale_modal.dart';
 import '../credit/credit_sale_model.dart';
 import '../customerBase/customer_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../orderBase/order_base.dart';
 import '../users/users_base.dart';
 
 
@@ -74,7 +73,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _tipAmount = 0.0;
 
   // Track if we should reset the screen
-  bool _shouldResetScreen = false;
+  final bool _shouldResetScreen = false;
 
   @override
   void initState() {
@@ -130,7 +129,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
     } catch (e) {
-      print('Error loading current user: $e');
+      // print('Error loading current user: $e');
       // Create fallback user
       setState(() {
         _currentUser = AppUser(
@@ -701,7 +700,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       };
 
 // Update the enhanced invoice options call:
-      void _showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
+      void showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
         showModalBottomSheet(
           context: context,
           isScrollControlled: true,
@@ -747,7 +746,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (result.pendingOrderId != null) {
             _showOfflineInvoiceOptions(result.pendingOrderId!);
           } else if (result.order != null) {
-            _showEnhancedInvoiceOptions(result.order!, orderData);
+            showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
             _resetCheckoutScreen();
           }
@@ -764,7 +763,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
           // Show enhanced invoice for online order
           if (result.order != null) {
-            _showEnhancedInvoiceOptions(result.order!, orderData);
+            showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
             _resetCheckoutScreen();
           }

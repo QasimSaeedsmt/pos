@@ -35,14 +35,12 @@ class ThemeProvider with ChangeNotifier {
       try {
         _currentTheme = AppTheme.fromJson(jsonDecode(themeJson));
       } catch (e) {
-        print('Error loading saved theme: $e');
+       debugPrint('Error loading saved theme: $e');
       }
     }
 
     // If no theme saved or error, use default
-    if (_currentTheme == null) {
-      _currentTheme = _isDarkMode ? ThemeManager.darkThemes.first : ThemeManager.lightThemes.first;
-    }
+    _currentTheme ??= _isDarkMode ? ThemeManager.darkThemes.first : ThemeManager.lightThemes.first;
 
     notifyListeners();
   }
@@ -148,7 +146,7 @@ class ThemeProvider with ChangeNotifier {
         final List<dynamic> themesList = jsonDecode(themesJson);
         return themesList.map((themeJson) => AppTheme.fromJson(themeJson)).toList();
       } catch (e) {
-        print('Error parsing custom themes: $e');
+       debugPrint('Error parsing custom themes: $e');
       }
     }
 

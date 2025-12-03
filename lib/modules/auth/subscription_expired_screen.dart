@@ -20,7 +20,7 @@ class SubscriptionExpiredScreen extends StatelessWidget {
             '• Business: ${tenant?.businessName}\n'
             '• User: ${user?.displayName}\n'
             '• Email: ${user?.email}\n'
-            '• Subscription Expired: ${tenant?.subscriptionExpiry?.toString()?.split(' ')[0] ?? "Unknown"}\n\n'
+            '• Subscription Expired: ${tenant?.subscriptionExpiry.toString().split(' ')[0] ?? "Unknown"}\n\n'
             'Please let me know the renewal process.\n\n'
             'Thank you.'
     );

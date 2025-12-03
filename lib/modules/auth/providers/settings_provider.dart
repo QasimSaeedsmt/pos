@@ -22,7 +22,7 @@ class SettingsProvider with ChangeNotifier {
       notifyListeners();
     } catch (e) {
       if (kDebugMode) {
-        print('Error checking available biometrics: $e');
+       debugPrint('Error checking available biometrics: $e');
       }
     }
   }

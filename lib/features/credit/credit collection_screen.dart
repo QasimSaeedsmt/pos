@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
-import '../customerBase/customer_base.dart';
+import '../../core/models/customer_model.dart';
 import 'credit_models.dart';
 import 'credit_service.dart';
 
@@ -371,7 +371,7 @@ class _CreditCollectionScreenState extends State<CreditCollectionScreen> {
         ),
         SizedBox(height: 8),
         DropdownButtonFormField<String>(
-          value: _selectedPaymentMethod,
+          initialValue: _selectedPaymentMethod,
           decoration: InputDecoration(
             labelText: 'Select payment method',
             border: OutlineInputBorder(),
@@ -836,7 +836,7 @@ class _CreditCollectionScreenState extends State<CreditCollectionScreen> {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('${_getPaymentMethodName(payment.paymentMethod ?? 'cash')}'),
+            Text(_getPaymentMethodName(payment.paymentMethod ?? 'cash')),
             Text(
               DateFormat('MMM dd, yyyy - HH:mm').format(payment.transactionDate),
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),

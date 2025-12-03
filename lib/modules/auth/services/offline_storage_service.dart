@@ -49,7 +49,7 @@ class OfflineStorageService {
         return Map<String, dynamic>.from(json.decode(dataString));
       } catch (e) {
         if (kDebugMode) {
-          print('Error parsing offline user data: $e');
+         debugPrint('Error parsing offline user data: $e');
         }
       }
     }
@@ -63,7 +63,7 @@ class OfflineStorageService {
         return Map<String, dynamic>.from(json.decode(dataString));
       } catch (e) {
         if (kDebugMode) {
-          print('Error parsing offline tenant data: $e');
+         debugPrint('Error parsing offline tenant data: $e');
         }
       }
     }

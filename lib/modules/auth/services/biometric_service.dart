@@ -10,7 +10,7 @@ class BiometricService {
       return await _auth.isDeviceSupported();
     } on PlatformException catch (e) {
       if (kDebugMode) {
-        print('Error checking biometric support: ${e.message}');
+       debugPrint('Error checking biometric support: ${e.message}');
       }
       return false;
     }
@@ -21,7 +21,7 @@ class BiometricService {
       return await _auth.canCheckBiometrics;
     } on PlatformException catch (e) {
       if (kDebugMode) {
-        print('Error checking biometric availability: ${e.message}');
+       debugPrint('Error checking biometric availability: ${e.message}');
       }
       return false;
     }
@@ -32,7 +32,7 @@ class BiometricService {
       return await _auth.getAvailableBiometrics();
     } on PlatformException catch (e) {
       if (kDebugMode) {
-        print('Error getting available biometrics: ${e.message}');
+       debugPrint('Error getting available biometrics: ${e.message}');
       }
       return [];
     }
@@ -47,7 +47,7 @@ class BiometricService {
       );
     } on PlatformException catch (e) {
       if (kDebugMode) {
-        print('Biometric authentication failed: ${e.message}');
+       debugPrint('Biometric authentication failed: ${e.message}');
       }
       return false;
     }
@@ -64,7 +64,7 @@ class BiometricService {
       return await authenticate(reason: 'Test your biometric authentication');
     } catch (e) {
       if (kDebugMode) {
-        print('Biometric test error: $e');
+       debugPrint('Biometric test error: $e');
       }
       return false;
     }

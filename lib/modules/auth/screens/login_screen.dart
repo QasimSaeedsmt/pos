@@ -5,7 +5,6 @@ import '../../../features/tenantBase/tenant_base.dart';
 import '../../../theme_provider.dart';
 import '../../../theme_selector_bottom_sheet.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/keep_me_logged_in_checkbox.dart';
 import '../constants/auth_strings.dart';
 import '../constants/auth_measurements.dart';
 import '../constants/auth_constants.dart';

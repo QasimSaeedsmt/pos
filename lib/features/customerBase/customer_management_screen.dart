@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../app.dart';
 import '../../constants.dart';
+import '../../core/models/customer_model.dart';
 import '../../theme_utils.dart';
-import '../clientDashboard/client_dashboard.dart';
-import '../connectivityBase/local_db_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import 'customer_base.dart';
 
@@ -60,7 +57,7 @@ class _ModernCustomerManagementScreenState
         });
       }
     } catch (e) {
-      print('Failed to load customers: $e');
+      debugPrint('Failed to load customers: $e');
       _showErrorSnackbar('Failed to load customers');
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -1015,8 +1012,9 @@ class _CustomerEditSheetState extends State<CustomerEditSheet> {
         maxLines: maxLines,
         validator: required
             ? (value) {
-                if (value == null || value.trim().isEmpty)
+                if (value == null || value.trim().isEmpty) {
                   return '$label is required';
+                }
                 return null;
               }
             : null,
@@ -1053,7 +1051,9 @@ class _CustomerEditSheetState extends State<CustomerEditSheet> {
 
   @override
   void dispose() {
-    _controllers.values.forEach((controller) => controller.dispose());
+    for (var controller in _controllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 }

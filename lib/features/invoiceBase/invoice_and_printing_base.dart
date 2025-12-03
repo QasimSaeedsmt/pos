@@ -1,20 +1,18 @@
 // Scanner Overlay
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants.dart';
-import '../../printing/discount_calculator.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/customer_model.dart';
 import '../../printing/invoice_model.dart';
 import '../../printing/invoice_service.dart';
 import '../barcode/barcode_base.dart';
 import '../connectivityBase/local_db_base.dart';
-import '../customerBase/customer_base.dart';
-import '../orderBase/order_base.dart';
 import '../users/users_base.dart';
 
 class ScannerOverlay extends CustomPainter {
@@ -1219,7 +1217,7 @@ class _OfflineInvoiceBottomSheetState extends State<OfflineInvoiceBottomSheet> {
         });
       }
     } catch (e) {
-      print('Error loading pending order: $e');
+      debugPrint('Error loading pending order: $e');
     } finally {
       setState(() => _isLoading = false);
     }

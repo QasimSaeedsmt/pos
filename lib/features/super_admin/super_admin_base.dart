@@ -14,11 +14,9 @@ import '../../modules/auth/models/activity_type.dart';
 import '../../modules/auth/models/tenant_model.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../modules/auth/providers/settings_provider.dart';
-import '../../modules/auth/screens/settings_screen.dart';
 import '../../theme_provider.dart';
 import '../../theme_utils.dart';
 import '../ticketing/ticketing.dart';
-import '../users/users_base.dart';
 
 class SuperAdminDashboard extends StatefulWidget {
   const SuperAdminDashboard({super.key});
@@ -253,7 +251,7 @@ class _SuperAdminSettingsScreenState extends State<SuperAdminSettingsScreen> {
             ),
           ],
         ),
-      )).toList(),
+      )),
     ];
   }
 
@@ -372,7 +370,7 @@ class _SuperAdminSettingsScreenState extends State<SuperAdminSettingsScreen> {
           onChanged: (value) async {
             await themeProvider.setDarkMode(value);
           },
-          activeColor: ThemeUtils.accentColor(context),
+          activeThumbColor: ThemeUtils.accentColor(context),
           activeTrackColor: ThemeUtils.accentColor(context).withOpacity(0.5),
         ),
       ],
@@ -404,7 +402,7 @@ class _SuperAdminSettingsScreenState extends State<SuperAdminSettingsScreen> {
           onChanged: (value) async {
             await themeProvider.setUseSystemTheme(value);
           },
-          activeColor: ThemeUtils.accentColor(context),
+          activeThumbColor: ThemeUtils.accentColor(context),
           activeTrackColor: ThemeUtils.accentColor(context).withOpacity(0.5),
         ),
       ],
@@ -784,7 +782,7 @@ class TenantsManagementScreen extends StatelessWidget {
 class TenantManagementCard extends StatefulWidget {
   final Tenant tenant;
 
-  const TenantManagementCard({Key? key, required this.tenant}) : super(key: key);
+  const TenantManagementCard({super.key, required this.tenant});
 
   @override
   _TenantManagementCardState createState() => _TenantManagementCardState();
@@ -872,7 +870,7 @@ class _TenantManagementCardState extends State<TenantManagementCard> {
                     child: Switch(
                       value: widget.tenant.isActive,
                       onChanged: (value) => _updateTenantStatus(value),
-                      activeColor: ThemeUtils.success(context),
+                      activeThumbColor: ThemeUtils.success(context),
                       inactiveThumbColor: ThemeUtils.error(context),
                     ),
                   ),
@@ -1209,7 +1207,7 @@ class RenewSubscriptionDialog extends StatefulWidget {
   final Tenant tenant;
   final Function(String plan, DateTime expiry) onRenew;
 
-  const RenewSubscriptionDialog({Key? key, required this.tenant, required this.onRenew}) : super(key: key);
+  const RenewSubscriptionDialog({super.key, required this.tenant, required this.onRenew});
 
   @override
   _RenewSubscriptionDialogState createState() => _RenewSubscriptionDialogState();
@@ -1247,7 +1245,7 @@ class _RenewSubscriptionDialogState extends State<RenewSubscriptionDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           DropdownButtonFormField<String>(
-            value: _selectedPlan,
+            initialValue: _selectedPlan,
             decoration: InputDecoration(
               labelText: 'Subscription Plan',
               labelStyle: ThemeUtils.bodyMedium(context),
@@ -1680,7 +1678,7 @@ class _CreateTenantDialogState extends State<CreateTenantDialog> {
                       ),
                       SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _selectedPlan,
+                        initialValue: _selectedPlan,
                         isExpanded: true,
                         decoration: InputDecoration(
                           labelText: 'Subscription Plan *',
@@ -2213,7 +2211,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
   // Performance optimization variables
   double _loadingProgress = 0.0;
   int _completedTenants = 0;
-  Map<String, dynamic> _analyticsCache = {};
+  final Map<String, dynamic> _analyticsCache = {};
   DateTime _lastFetchTime = DateTime.now();
   final Duration _cacheDuration = Duration(minutes: 5);
 
@@ -2306,7 +2304,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
         });
       }
     } catch (e) {
-      print('Error loading super admin analytics: $e');
+     debugPrint('Error loading super admin analytics: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -2315,7 +2313,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
 
   void _trackPerformance(String operation, Duration duration) {
     if (duration.inMilliseconds > 1000) {
-      print('Performance: $operation took ${duration.inMilliseconds}ms');
+     debugPrint('Performance: $operation took ${duration.inMilliseconds}ms');
     }
   }
 
@@ -2421,7 +2419,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
         startDate: startDate,
       );
     } catch (e) {
-      print('Error fetching overall analytics: $e');
+     debugPrint('Error fetching overall analytics: $e');
       return OverallAnalytics.empty();
     }
   }
@@ -2497,7 +2495,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
       analyticsList.sort((a, b) => b.revenue.compareTo(a.revenue));
       return analyticsList;
     } catch (e) {
-      print('Error fetching tenants analytics: $e');
+     debugPrint('Error fetching tenants analytics: $e');
       return [];
     }
   }
@@ -2606,7 +2604,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
           SizedBox(height: 8),
           if (_tenantsAnalytics.isNotEmpty)
             Text(
-              'Processing ${_completedTenants}/${_tenantsAnalytics.length} tenants',
+              'Processing $_completedTenants/${_tenantsAnalytics.length} tenants',
               style: TextStyle(fontSize: 12, color: Colors.grey[500]),
             ),
           SizedBox(height: 8),
@@ -2859,7 +2857,7 @@ class _SuperAdminAnalyticsScreenState extends State<SuperAdminAnalyticsScreen>
               final tenant = entry.value;
               final globalIndex = startIndex + index + 1;
               return _buildTenantCard(tenant, globalIndex);
-            }).toList(),
+            }),
 
             if (totalPages > 1) _buildPaginationControls(totalPages),
           ],
@@ -3110,8 +3108,7 @@ class _ActionCard extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
 
-  const _ActionCard(this.title, this.icon, this.color, this.onTap, {Key? key})
-      : super(key: key);
+  const _ActionCard(this.title, this.icon, this.color, this.onTap);
 
   @override
   Widget build(BuildContext context) {
@@ -3457,7 +3454,7 @@ class SuperAdminService{
         'userAgent': userAgent,
       });
     } catch (e) {
-      print('Failed to log activity: $e');
+     debugPrint('Failed to log activity: $e');
       // Don't throw error for failed activity logging
     }
   }
@@ -3911,7 +3908,7 @@ class _SuperAdminManagementScreenState extends State<SuperAdminManagementScreen>
             Switch(
               value: isActive,
               onChanged: isCurrentUser ? null : (value) => _toggleAdminStatus(admin, value),
-              activeColor: ThemeUtils.success(context),
+              activeThumbColor: ThemeUtils.success(context),
             ),
           ],
         ),
@@ -4518,14 +4515,14 @@ class SuperAdminSetup {
     required String lastName,
   }) async {
     try {
-      print('Starting super admin creation...');
+     debugPrint('Starting super admin creation...');
 
       // Create user in Firebase Auth
       final UserCredential userCredential = await _auth
           .createUserWithEmailAndPassword(email: email, password: password);
 
       final User user = userCredential.user!;
-      print('Firebase Auth user created: ${user.uid}');
+     debugPrint('Firebase Auth user created: ${user.uid}');
 
       // Create super admin document
       await _firestore.collection('super_admins').doc(user.uid).set({
@@ -4544,13 +4541,13 @@ class SuperAdminSetup {
         },
       });
 
-      print('Super admin document created successfully!');
-      print('Super Admin Details:');
-      print('- Email: $email');
-      print('- UID: ${user.uid}');
-      print('- Name: $firstName $lastName');
+     debugPrint('Super admin document created successfully!');
+     debugPrint('Super Admin Details:');
+     debugPrint('- Email: $email');
+     debugPrint('- UID: ${user.uid}');
+     debugPrint('- Name: $firstName $lastName');
     } catch (e) {
-      print('Error creating super admin: $e');
+     debugPrint('Error creating super admin: $e');
       rethrow;
     }
   }
@@ -4564,7 +4561,7 @@ class SuperAdminSetup {
           .get();
       return snapshot.docs.isNotEmpty;
     } catch (e) {
-      print('Error checking super admin: $e');
+     debugPrint('Error checking super admin: $e');
       return false;
     }
   }
@@ -4575,7 +4572,7 @@ class SuperAdminSetup {
       final snapshot = await _firestore.collection('super_admins').get();
       return snapshot.docs.map((doc) => doc.data()).toList();
     } catch (e) {
-      print('Error getting super admins: $e');
+     debugPrint('Error getting super admins: $e');
       return [];
     }
   }
@@ -4591,8 +4588,7 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  const _StatCard(this.title, this.value, this.icon, this.color, {Key? key})
-      : super(key: key);
+  const _StatCard(this.title, this.value, this.icon, this.color);
 
   @override
   Widget build(BuildContext context) {

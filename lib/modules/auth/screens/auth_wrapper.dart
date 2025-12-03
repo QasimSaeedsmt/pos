@@ -14,7 +14,6 @@ import 'package:firebase_auth/firebase_auth.dart' hide AuthProvider;
 import '../../../core/overlay_manager.dart';
 import '../../../features/main_navigation/main_navigation_base.dart';
 import '../../../features/super_admin/super_admin_base.dart';
-import '../constants/auth_measurements.dart';
 import '../models/tenant_model.dart';
 import '../providers/auth_provider.dart';
 import '../repositories/auth_repository.dart';
@@ -142,8 +141,12 @@ class _AuthWrapperState extends State<AuthWrapper> {
       final serverParts = cleanServerVersion.split('.').map(int.parse).toList();
       final localParts = cleanLocalVersion.split('.').map(int.parse).toList();
 
-      while (serverParts.length < 3) serverParts.add(0);
-      while (localParts.length < 3) localParts.add(0);
+      while (serverParts.length < 3) {
+        serverParts.add(0);
+      }
+      while (localParts.length < 3) {
+        localParts.add(0);
+      }
 
       for (int i = 0; i < 3; i++) {
         if (serverParts[i] > localParts[i]) return true;

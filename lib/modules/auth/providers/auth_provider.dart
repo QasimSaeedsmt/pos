@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../../../features/users/users_base.dart';
 import '../models/activity_type.dart';
-import '../models/user_model.dart';
 import '../models/tenant_model.dart';
 import '../services/auth_service.dart';
 import '../services/biometric_service.dart';
@@ -117,7 +116,7 @@ class MyAuthProvider with ChangeNotifier {
           },
         );
       } catch (e) {
-        print('Failed to log subscription expiry: $e');
+       debugPrint('Failed to log subscription expiry: $e');
       }
     }
 
@@ -283,9 +282,9 @@ class MyAuthProvider with ChangeNotifier {
       final hasValidOfflineSession = _storageService.offlineUserId != null &&
           _storageService.isOfflineSessionValid();
 
-      print("🔄 Login error: $e");
-      print("📶 Actual offline status: $isActuallyOffline");
-      print("💾 Valid offline session: $hasValidOfflineSession");
+     debugPrint("🔄 Login error: $e");
+     debugPrint("📶 Actual offline status: $isActuallyOffline");
+     debugPrint("💾 Valid offline session: $hasValidOfflineSession");
 
       // Only go to offline mode if we're actually offline AND have valid session
       if (isActuallyOffline && hasValidOfflineSession && _isNetworkError(e)) {
@@ -304,11 +303,11 @@ class MyAuthProvider with ChangeNotifier {
           return;
         }
 
-        print("✅ Successfully fell back to offline mode");
+       debugPrint("✅ Successfully fell back to offline mode");
       } else {
         // If we're online but login failed, don't show offline mode
         _isOfflineMode = false;
-        print("❌ Not falling back to offline mode - either online or no valid session");
+       debugPrint("❌ Not falling back to offline mode - either online or no valid session");
       }
     } finally {
       _isLoading = false;
@@ -433,7 +432,7 @@ class MyAuthProvider with ChangeNotifier {
             '${_subscriptionState == SubscriptionState.expired ? "subscription expired" : "account inactive"}.';
       }
     } catch (e) {
-      print('Error loading offline user data: $e');
+     debugPrint('Error loading offline user data: $e');
       await _storageService.clearOfflineSession();
       _currentUser = null;
       _currentTenant = null;
@@ -468,7 +467,7 @@ class MyAuthProvider with ChangeNotifier {
             description: 'User logged out',
           );
         } catch (e) {
-          print('Failed to log logout activity: $e');
+         debugPrint('Failed to log logout activity: $e');
           // Don't rethrow - logging failure shouldn't prevent logout
         }
       }
@@ -485,7 +484,7 @@ class MyAuthProvider with ChangeNotifier {
       await _storageService.setLastUnlockTime(DateTime.now());
 
     } catch (e) {
-      print('Error during logout: $e');
+     debugPrint('Error during logout: $e');
       // Ensure state is cleared even if there's an error
       _currentUser = null;
       _currentTenant = null;

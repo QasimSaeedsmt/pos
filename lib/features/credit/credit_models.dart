@@ -1,5 +1,4 @@
 // New file: credit_models.dart
-import 'package:intl/intl.dart';
 class ProductDetail {
   final String productId;
   final String productName;

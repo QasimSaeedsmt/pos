@@ -9,11 +9,10 @@ import 'package:mpcm/theme_utils.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:provider/provider.dart';
 import 'constants.dart';
-import 'features/customerBase/customer_base.dart';
-import 'features/expense_management.dart';
-import 'features/orderBase/order_base.dart';
-import 'features/product_addition_restock_base/product_addition_restock_base.dart';
-import 'features/product_selling/product_selling_base.dart';
+import 'core/models/app_order_model.dart';
+import 'core/models/category_model.dart';
+import 'core/models/customer_model.dart';
+import 'core/models/product_model.dart';
 import 'modules/auth/providers/auth_provider.dart';
 
 // Enhanced Analytics Data Models
@@ -463,9 +462,9 @@ class AnalyticsService {
   Future<void> deleteExpense(String expenseId) async {
     try {
       await expensesRef.doc(expenseId).delete();
-      print('✅ Expense deleted: $expenseId');
+     debugPrint('✅ Expense deleted: $expenseId');
     } catch (e) {
-      print('❌ Error deleting expense: $e');
+     debugPrint('❌ Error deleting expense: $e');
       throw Exception('Failed to delete expense: $e');
     }
   }
@@ -473,8 +472,8 @@ class AnalyticsService {
   // REAL METHOD: Get all expenses for a period
   Future<List<BusinessExpense>> getBusinessExpenses(TimePeriod period) async {
     try {
-      print('🔄 [EXPENSES] Fetching expenses for period: ${period.label}');
-      print('📅 [EXPENSES] Date range: ${period.startDate} to ${period.endDate}');
+     debugPrint('🔄 [EXPENSES] Fetching expenses for period: ${period.label}');
+     debugPrint('📅 [EXPENSES] Date range: ${period.startDate} to ${period.endDate}');
 
       final expensesSnapshot = await expensesRef
           .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(period.startDate))
@@ -482,39 +481,39 @@ class AnalyticsService {
           .orderBy('date', descending: true)
           .get();
 
-      print('📄 [EXPENSES] Firestore documents found: ${expensesSnapshot.docs.length}');
+     debugPrint('📄 [EXPENSES] Firestore documents found: ${expensesSnapshot.docs.length}');
 
       final expenses = <BusinessExpense>[];
 
       for (final doc in expensesSnapshot.docs) {
         try {
           final data = doc.data() as Map<String, dynamic>;
-          print('📋 [EXPENSES] Processing doc ${doc.id}: $data');
+         debugPrint('📋 [EXPENSES] Processing doc ${doc.id}: $data');
 
           final expense = BusinessExpense.fromFirestore(data, doc.id);
 
           // Validate date is within period
           if (expense.date.isBefore(period.startDate) ||
               expense.date.isAfter(period.endDate)) {
-            print('⚠️ [EXPENSES] Date out of range: ${expense.date}');
+           debugPrint('⚠️ [EXPENSES] Date out of range: ${expense.date}');
             continue;
           }
 
           expenses.add(expense);
-          print('✅ [EXPENSES] Added expense: ${expense.description} - ${expense.amount}');
+         debugPrint('✅ [EXPENSES] Added expense: ${expense.description} - ${expense.amount}');
 
         } catch (e) {
-          print('❌ [EXPENSES] Error parsing expense doc ${doc.id}: $e');
-          print('❌ [EXPENSES] Problematic data: ${doc.data()}');
+         debugPrint('❌ [EXPENSES] Error parsing expense doc ${doc.id}: $e');
+         debugPrint('❌ [EXPENSES] Problematic data: ${doc.data()}');
         }
       }
 
-      print('✅ [EXPENSES] Successfully loaded ${expenses.length} expenses');
+     debugPrint('✅ [EXPENSES] Successfully loaded ${expenses.length} expenses');
       return expenses;
 
     } catch (e) {
-      print('❌ [EXPENSES] Error getting expenses: $e');
-      print('❌ [EXPENSES] Stack trace: ${e.toString()}');
+     debugPrint('❌ [EXPENSES] Error getting expenses: $e');
+     debugPrint('❌ [EXPENSES] Stack trace: ${e.toString()}');
       return [];
     }
   }
@@ -529,10 +528,10 @@ class AnalyticsService {
         totalExpenses += expense.amount;
       }
 
-      print('💰 [EXPENSES] Total operating expenses: $totalExpenses from ${expenses.length} expense records');
+     debugPrint('💰 [EXPENSES] Total operating expenses: $totalExpenses from ${expenses.length} expense records');
       return totalExpenses;
     } catch (e) {
-      print('❌ [EXPENSES] Error calculating operating expenses: $e');
+     debugPrint('❌ [EXPENSES] Error calculating operating expenses: $e');
       return 0.0;
     }
   }
@@ -548,10 +547,10 @@ class AnalyticsService {
         expensesByCategory[category] = (expensesByCategory[category] ?? 0.0) + expense.amount;
       }
 
-      print('📊 [EXPENSES] Expenses by category: $expensesByCategory');
+     debugPrint('📊 [EXPENSES] Expenses by category: $expensesByCategory');
       return expensesByCategory;
     } catch (e) {
-      print('❌ [EXPENSES] Error getting expenses by category: $e');
+     debugPrint('❌ [EXPENSES] Error getting expenses by category: $e');
       return {};
     }
   }
@@ -568,9 +567,9 @@ class AnalyticsService {
         'notes': expense.notes,
       });
 
-      print('✅ Expense added: ${expense.description} - ${Constants.CURRENCY_NAME}${expense.amount}');
+     debugPrint('✅ Expense added: ${expense.description} - ${Constants.CURRENCY_NAME}${expense.amount}');
     } catch (e) {
-      print('❌ Error adding expense: $e');
+     debugPrint('❌ Error adding expense: $e');
       throw Exception('Failed to add expense: $e');
     }
   }
@@ -582,7 +581,7 @@ class AnalyticsService {
         throw Exception('Tenant ID not set');
       }
 
-      print('🔄 [P&L] Fetching Profit & Loss analytics for period: ${period.label}');
+     debugPrint('🔄 [P&L] Fetching Profit & Loss analytics for period: ${period.label}');
 
       // Get orders for the period
       final ordersSnapshot = await ordersRef
@@ -595,10 +594,10 @@ class AnalyticsService {
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
 
-      print('✅ [P&L] Found ${orders.length} orders for analysis');
+     debugPrint('✅ [P&L] Found ${orders.length} orders for analysis');
 
       if (orders.isEmpty) {
-        print('⚠️ [P&L] No orders found for the selected period');
+       debugPrint('⚠️ [P&L] No orders found for the selected period');
 
         // Get REAL expenses even if no orders
         final expenses = await getBusinessExpenses(period);
@@ -652,7 +651,7 @@ class AnalyticsService {
 
       // Process each order to extract REAL financial data
       for (final order in orders) {
-        print('🔄 [P&L] Processing order: ${order.id}');
+       debugPrint('🔄 [P&L] Processing order: ${order.id}');
 
         // Get the ACTUAL order data structure
         final orderData = order.toFirestore();
@@ -680,7 +679,7 @@ class AnalyticsService {
         // METHOD 1: Extract from enhancedData if available (MOST RELIABLE)
         final enhancedData = orderData['enhancedData'] as Map<String, dynamic>?;
         if (enhancedData != null) {
-          print('📊 [P&L] Found enhanced data for order ${order.id}');
+         debugPrint('📊 [P&L] Found enhanced data for order ${order.id}');
 
           // Extract REAL additional charges/discounts from enhancedData
           orderAdditionalDiscounts = (enhancedData['additionalDiscount'] as num?)?.toDouble() ?? 0.0;
@@ -690,7 +689,7 @@ class AnalyticsService {
           // Extract REAL cart data with discounts
           final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
           if (cartData != null) {
-            print('📊 [P&L] Found cart data for order ${order.id}');
+           debugPrint('📊 [P&L] Found cart data for order ${order.id}');
 
             // Extract REAL cart-level discounts
             orderCartDiscounts = (cartData['cartDiscount'] as num?)?.toDouble() ?? 0.0;
@@ -782,17 +781,17 @@ class AnalyticsService {
         profitByDay[dayName] = (profitByDay[dayName] ?? 0) + orderProfit;
 
         // REAL order logging
-        print('📊 [P&L] Order #${order.number} REAL Discount Breakdown:');
-        print('📊 [P&L] - Gross Revenue: ${Constants.CURRENCY_NAME}$orderGrossRevenue');
-        print('📊 [P&L] - Net Revenue: ${Constants.CURRENCY_NAME}$orderNetRevenue');
-        print('📊 [P&L] - Item Discounts: ${Constants.CURRENCY_NAME}$orderItemDiscounts');
-        print('📊 [P&L] - Cart Discounts: ${Constants.CURRENCY_NAME}$orderCartDiscounts');
-        print('📊 [P&L] - Additional Discounts: ${Constants.CURRENCY_NAME}$orderAdditionalDiscounts');
-        print('📊 [P&L] - Shipping: ${Constants.CURRENCY_NAME}$orderShippingAmount');
-        print('📊 [P&L] - Tip: ${Constants.CURRENCY_NAME}$orderTipAmount');
-        print('📊 [P&L] - Tax: ${Constants.CURRENCY_NAME}$orderTaxAmount');
-        print('📊 [P&L] - COGS: ${Constants.CURRENCY_NAME}$orderCOGS');
-        print('📊 [P&L] - Profit: ${Constants.CURRENCY_NAME}$orderProfit');
+       debugPrint('📊 [P&L] Order #${order.number} REAL Discount Breakdown:');
+       debugPrint('📊 [P&L] - Gross Revenue: ${Constants.CURRENCY_NAME}$orderGrossRevenue');
+       debugPrint('📊 [P&L] - Net Revenue: ${Constants.CURRENCY_NAME}$orderNetRevenue');
+       debugPrint('📊 [P&L] - Item Discounts: ${Constants.CURRENCY_NAME}$orderItemDiscounts');
+       debugPrint('📊 [P&L] - Cart Discounts: ${Constants.CURRENCY_NAME}$orderCartDiscounts');
+       debugPrint('📊 [P&L] - Additional Discounts: ${Constants.CURRENCY_NAME}$orderAdditionalDiscounts');
+       debugPrint('📊 [P&L] - Shipping: ${Constants.CURRENCY_NAME}$orderShippingAmount');
+       debugPrint('📊 [P&L] - Tip: ${Constants.CURRENCY_NAME}$orderTipAmount');
+       debugPrint('📊 [P&L] - Tax: ${Constants.CURRENCY_NAME}$orderTaxAmount');
+       debugPrint('📊 [P&L] - COGS: ${Constants.CURRENCY_NAME}$orderCOGS');
+       debugPrint('📊 [P&L] - Profit: ${Constants.CURRENCY_NAME}$orderProfit');
       }
 
       // Calculate total REAL discounts
@@ -814,27 +813,27 @@ class AnalyticsService {
       final topProfitableCategories = await _getTopProfitableCategories(orders);
 
       // REAL comprehensive logging
-      print('✅ [P&L] COMPREHENSIVE Profit & Loss Summary:');
-      print('💰 REVENUE:');
-      print('💰 - Gross Revenue: ${Constants.CURRENCY_NAME}$totalGrossRevenue');
-      print('💰 - Total Discounts: ${Constants.CURRENCY_NAME}$totalAllDiscounts');
-      print('💰 -- Item Discounts: ${Constants.CURRENCY_NAME}$totalItemDiscounts');
-      print('💰 -- Cart Discounts: ${Constants.CURRENCY_NAME}$totalCartDiscounts');
-      print('💰 -- Additional Discounts: ${Constants.CURRENCY_NAME}$totalAdditionalDiscounts');
-      print('💰 - Net Revenue: ${Constants.CURRENCY_NAME}$totalNetRevenue');
-      print('💰 - Shipping: ${Constants.CURRENCY_NAME}$totalShippingAmount');
-      print('💰 - Tips: ${Constants.CURRENCY_NAME}$totalTipAmount');
-      print('💰 - Tax: ${Constants.CURRENCY_NAME}$totalTaxAmount');
-      print('📦 COSTS:');
-      print('📦 - COGS: ${Constants.CURRENCY_NAME}$totalCostOfGoodsSold');
-      print('📦 - Gross Profit: ${Constants.CURRENCY_NAME}$grossProfit');
-      print('📦 - Gross Margin: ${grossProfitMargin.toStringAsFixed(2)}%');
-      print('💼 EXPENSES:');
-      print('💼 - Operating Expenses: ${Constants.CURRENCY_NAME}$totalExpenses');
-      print('💼 - Number of Expense Records: ${expenses.length}');
-      print('💼 - Expense Categories: $expensesByCategory');
-      print('💼 - Net Profit: ${Constants.CURRENCY_NAME}$netProfit');
-      print('💼 - Net Margin: ${netProfitMargin.toStringAsFixed(2)}%');
+     debugPrint('✅ [P&L] COMPREHENSIVE Profit & Loss Summary:');
+     debugPrint('💰 REVENUE:');
+     debugPrint('💰 - Gross Revenue: ${Constants.CURRENCY_NAME}$totalGrossRevenue');
+     debugPrint('💰 - Total Discounts: ${Constants.CURRENCY_NAME}$totalAllDiscounts');
+     debugPrint('💰 -- Item Discounts: ${Constants.CURRENCY_NAME}$totalItemDiscounts');
+     debugPrint('💰 -- Cart Discounts: ${Constants.CURRENCY_NAME}$totalCartDiscounts');
+     debugPrint('💰 -- Additional Discounts: ${Constants.CURRENCY_NAME}$totalAdditionalDiscounts');
+     debugPrint('💰 - Net Revenue: ${Constants.CURRENCY_NAME}$totalNetRevenue');
+     debugPrint('💰 - Shipping: ${Constants.CURRENCY_NAME}$totalShippingAmount');
+     debugPrint('💰 - Tips: ${Constants.CURRENCY_NAME}$totalTipAmount');
+     debugPrint('💰 - Tax: ${Constants.CURRENCY_NAME}$totalTaxAmount');
+     debugPrint('📦 COSTS:');
+     debugPrint('📦 - COGS: ${Constants.CURRENCY_NAME}$totalCostOfGoodsSold');
+     debugPrint('📦 - Gross Profit: ${Constants.CURRENCY_NAME}$grossProfit');
+     debugPrint('📦 - Gross Margin: ${grossProfitMargin.toStringAsFixed(2)}%');
+     debugPrint('💼 EXPENSES:');
+     debugPrint('💼 - Operating Expenses: ${Constants.CURRENCY_NAME}$totalExpenses');
+     debugPrint('💼 - Number of Expense Records: ${expenses.length}');
+     debugPrint('💼 - Expense Categories: $expensesByCategory');
+     debugPrint('💼 - Net Profit: ${Constants.CURRENCY_NAME}$netProfit');
+     debugPrint('💼 - Net Margin: ${netProfitMargin.toStringAsFixed(2)}%');
 
       return ProfitLossAnalytics(
         totalRevenue: totalNetRevenue,
@@ -861,7 +860,7 @@ class AnalyticsService {
         totalExpenses: totalExpenses,
       );
     } catch (e) {
-      print('❌ [P&L] Error: $e');
+     debugPrint('❌ [P&L] Error: $e');
       rethrow;
     }
   }
@@ -1025,7 +1024,7 @@ class AnalyticsService {
         throw Exception('Tenant ID not set');
       }
 
-      print('Fetching orders for period: ${period.label}');
+     debugPrint('Fetching orders for period: ${period.label}');
 
       final ordersSnapshot = await ordersRef
           .where('dateCreated', isGreaterThanOrEqualTo: period.startDate)
@@ -1037,7 +1036,7 @@ class AnalyticsService {
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
 
-      print('Found ${orders.length} orders for analytics');
+     debugPrint('Found ${orders.length} orders for analytics');
 
       // Initialize financial metrics
       double subtotalAmount = 0.0;
@@ -1189,13 +1188,13 @@ class AnalyticsService {
       // Get top categories
       final topCategories = await _getTopCategories(orders);
 
-      print('Analytics calculation completed:');
-      print('- Total Sales: $totalSales');
-      print('- Total Orders: $totalOrders');
-      print('- Total Discounts: $totalDiscounts');
-      print('- Item Discounts: $itemDiscounts');
-      print('- Cart Discounts: $cartDiscounts');
-      print('- Additional Discounts: $additionalDiscounts');
+     debugPrint('Analytics calculation completed:');
+     debugPrint('- Total Sales: $totalSales');
+     debugPrint('- Total Orders: $totalOrders');
+     debugPrint('- Total Discounts: $totalDiscounts');
+     debugPrint('- Item Discounts: $itemDiscounts');
+     debugPrint('- Cart Discounts: $cartDiscounts');
+     debugPrint('- Additional Discounts: $additionalDiscounts');
 
       return SalesAnalytics(
         totalSales: totalSales,
@@ -1219,8 +1218,8 @@ class AnalyticsService {
         paymentMethodDistribution: paymentMethodDistribution,
       );
     } catch (e) {
-      print('Error in getSalesAnalytics: $e');
-      print('Stack trace: ${e.toString()}');
+     debugPrint('Error in getSalesAnalytics: $e');
+     debugPrint('Stack trace: ${e.toString()}');
       throw Exception('Failed to fetch analytics: $e');
     }
   }
@@ -1480,8 +1479,8 @@ class AnalyticsService {
         highestDiscountOrders: highestDiscountOrders,
       );
     } catch (e, stack) {
-      print('Error in getDiscountAnalytics: $e');
-      print(stack);
+     debugPrint('Error in getDiscountAnalytics: $e');
+     print(stack);
       throw Exception('Failed to fetch discount analytics: $e');
     }
   }
@@ -1611,7 +1610,7 @@ class AnalyticsService {
         locationData: locationData,
       );
     } catch (e) {
-      print('Error in getCustomerAnalytics: $e');
+     debugPrint('Error in getCustomerAnalytics: $e');
       throw Exception('Failed to fetch customer analytics: $e');
     }
   }
@@ -1703,7 +1702,7 @@ class AnalyticsService {
         );
       }).toList();
     } catch (e) {
-      print('Error in _getTopCustomers: $e');
+     debugPrint('Error in _getTopCustomers: $e');
       return [];
     }
   }
@@ -1729,7 +1728,7 @@ class AnalyticsService {
 
       return acquisitionData;
     } catch (e) {
-      print('Error in _getAcquisitionData: $e');
+     debugPrint('Error in _getAcquisitionData: $e');
       return [];
     }
   }
@@ -1744,7 +1743,7 @@ class AnalyticsService {
         averageLifetimeValue: 180.0,
       );
     } catch (e) {
-      print('Error in _calculateRetentionMetrics: $e');
+     debugPrint('Error in _calculateRetentionMetrics: $e');
       return null;
     }
   }
@@ -1780,7 +1779,7 @@ class AnalyticsService {
       return locationMap.values.toList()
         ..sort((a, b) => b.customerCount.compareTo(a.customerCount));
     } catch (e) {
-      print('Error in _getLocationData: $e');
+     debugPrint('Error in _getLocationData: $e');
       return [];
     }
   }
@@ -1791,7 +1790,7 @@ class AnalyticsService {
       final analytics = await getSalesAnalytics(period);
       return analytics.averageOrderValue;
     } catch (e) {
-      print('Error in _calculateAverageOrderValue: $e');
+     debugPrint('Error in _calculateAverageOrderValue: $e');
       return null;
     }
   }
@@ -1809,7 +1808,7 @@ class AnalyticsService {
 
       return totalCustomers > 0 ? (repeatCustomers / totalCustomers) * 100 : 0;
     } catch (e) {
-      print('Error in _calculateRepeatCustomerRate: $e');
+     debugPrint('Error in _calculateRepeatCustomerRate: $e');
       return null;
     }
   }
@@ -1852,7 +1851,7 @@ class AnalyticsService {
           ? ((currentCustomers - previousCustomers) / previousCustomers) * 100
           : 0;
     } catch (e) {
-      print('Error in _calculateCustomerGrowth: $e');
+     debugPrint('Error in _calculateCustomerGrowth: $e');
       return 0.0;
     }
   }
@@ -1871,7 +1870,7 @@ class AnalyticsService {
       }
       return null;
     } catch (e) {
-      print('Error getting product $productId: $e');
+     debugPrint('Error getting product $productId: $e');
       return null;
     }
   }
@@ -1888,7 +1887,7 @@ class AnalyticsService {
       }
       return 'Unknown Category';
     } catch (e) {
-      print('Error getting category $categoryId: $e');
+     debugPrint('Error getting category $categoryId: $e');
       return 'Unknown Category';
     }
   }
@@ -1906,7 +1905,7 @@ class AnalyticsService {
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
     } catch (e) {
-      print('Error in getRecentOrders: $e');
+     debugPrint('Error in getRecentOrders: $e');
       return [];
     }
   }
@@ -1928,7 +1927,7 @@ class AnalyticsService {
         'tips': financial.tips,
       };
     } catch (e) {
-      print('Error in getCashSummary: $e');
+     debugPrint('Error in getCashSummary: $e');
       return {};
     }
   }
@@ -2024,7 +2023,7 @@ class BusinessExpense {
     } else {
       // Fallback to current date if unknown format
       expenseDate = DateTime.now();
-      print('⚠️ Unknown date format in Firestore, using current date');
+     debugPrint('⚠️ Unknown date format in Firestore, using current date');
     }
 
     return BusinessExpense(
@@ -2257,7 +2256,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen>
                           ],
                         ),
                       );
-                    }).toList(),
+                    }),
                     SizedBox(height: 8),
 
                   ],
@@ -3914,7 +3913,7 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen>
                 SizedBox(width: 12),
                 _buildEfficiencyMetric(
                   'Items per Order',
-                  '${((_analytics?.totalOrders ?? 0) > 0 ? (_analytics!.totalItemsSold / _analytics!.totalOrders).toStringAsFixed(1) : '0')}',
+                  ((_analytics?.totalOrders ?? 0) > 0 ? (_analytics!.totalItemsSold / _analytics!.totalOrders).toStringAsFixed(1) : '0'),
                   Colors.teal,
                 ),
               ],

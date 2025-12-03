@@ -25,7 +25,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
   String _searchQuery = '';
   String _statusFilter = 'all';
   String _priorityFilter = 'all';
-  String _categoryFilter = 'all';
+  final String _categoryFilter = 'all';
   bool _showStatistics = true;
 
   @override
@@ -99,8 +99,8 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
         onPressed: _showCreateTicketDialog,
         backgroundColor: ThemeUtils.primary(context),
         foregroundColor: ThemeUtils.textOnPrimary(context),
-        child: Icon(Icons.add),
         tooltip: 'Create New Ticket',
+        child: Icon(Icons.add),
       ),
     );
   }
@@ -126,7 +126,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
           try {
             return Ticket.fromFirestore(doc);
           } catch (e) {
-            print('Error parsing ticket: $e');
+           debugPrint('Error parsing ticket: $e');
             return null;
           }
         }).where((ticket) => ticket != null).cast<Ticket>().toList();
@@ -257,7 +257,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
       stream: _getTicketsQuery(status: status, priority: priority).snapshots(),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          print('Error loading tickets: ${snapshot.error}');
+         debugPrint('Error loading tickets: ${snapshot.error}');
           return _buildErrorState('Error loading tickets: ${snapshot.error}');
         }
 
@@ -273,7 +273,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
           try {
             return Ticket.fromFirestore(doc);
           } catch (e) {
-            print('Error parsing ticket ${doc.id}: $e');
+           debugPrint('Error parsing ticket ${doc.id}: $e');
             return null;
           }
         }).where((ticket) => ticket != null).cast<Ticket>().toList();
@@ -564,11 +564,11 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
           SizedBox(height: 16),
           ElevatedButton(
             onPressed: _showCreateTicketDialog,
-            child: Text('Create First Ticket'),
             style: ElevatedButton.styleFrom(
               backgroundColor: ThemeUtils.primary(context),
               foregroundColor: ThemeUtils.textOnPrimary(context),
             ),
+            child: Text('Create First Ticket'),
           ),
         ],
       ),
@@ -715,7 +715,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
 
     String? tenantId = currentUser.tenantId;
 
-    if (tenantId == null || tenantId.isEmpty) {
+    if (tenantId.isEmpty) {
       _showTenantSelectionDialog();
       return;
     }
@@ -738,7 +738,7 @@ class _SuperAdminTicketsScreenState extends State<SuperAdminTicketsScreen> with 
               return Text('Error loading tenants');
             }
             final tenants = snapshot.data!.docs;
-            return Container(
+            return SizedBox(
               width: double.maxFinite,
               child: ListView.builder(
                 shrinkWrap: true,
@@ -1089,7 +1089,7 @@ class TicketService {
         'metadata': metadata,
       });
     } catch (e) {
-      print('Failed to log ticket activity: $e');
+     debugPrint('Failed to log ticket activity: $e');
     }
   }
 
@@ -1217,7 +1217,7 @@ class Ticket {
         }).toList();
       }
     } catch (e) {
-      print('Error parsing replies: $e');
+     debugPrint('Error parsing replies: $e');
       replies = [];
     }
 
@@ -2004,8 +2004,8 @@ class _AdvancedTicketDetailsDialogState extends State<AdvancedTicketDetailsDialo
             onPressed: _replyController.text.trim().isEmpty ? null : () => _submitReply(ticketId),
             backgroundColor: ThemeUtils.primary(context),
             foregroundColor: ThemeUtils.textOnPrimary(context),
-            child: Icon(Icons.send),
             mini: true,
+            child: Icon(Icons.send),
           ),
         ],
       ),
@@ -2057,8 +2057,8 @@ class _AdvancedTicketDetailsDialogState extends State<AdvancedTicketDetailsDialo
             onPressed: _internalNoteController.text.trim().isEmpty ? null : () => _submitInternalNote(ticketId),
             backgroundColor: Colors.orange,
             foregroundColor: Colors.white,
-            child: Icon(Icons.note_add),
             mini: true,
+            child: Icon(Icons.note_add),
           ),
         ],
       ),
@@ -2477,7 +2477,7 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
   late TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String _statusFilter = 'all';
+  final String _statusFilter = 'all';
   bool _showStatistics = true;
 
   @override
@@ -2550,8 +2550,8 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
         onPressed: () => _showCreateTicketDialog(),
         backgroundColor: ThemeUtils.primary(context),
         foregroundColor: ThemeUtils.textOnPrimary(context),
-        child: Icon(Icons.add),
         tooltip: 'Create New Ticket',
+        child: Icon(Icons.add),
       ),
     );
   }
@@ -2639,7 +2639,7 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
       stream: TicketService.getTicketsForTenant(tenantId, status: status == 'all' ? null : status),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          print('Error loading tickets: ${snapshot.error}');
+         debugPrint('Error loading tickets: ${snapshot.error}');
           return _buildErrorState('Error loading tickets: ${snapshot.error}');
         }
         if (snapshot.connectionState == ConnectionState.waiting) return _buildLoadingState();
@@ -2778,24 +2778,24 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
                     ),
                   ],
                 ),
-                if (ticket.createdAt != null) ...[
-                  SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(child: Text('Created ${_formatTimestamp(ticket.createdAt)}', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6), fontSize: 10))),
-                      if (ticket.replies.isNotEmpty)
-                        Text('${ticket.replies.length} ${ticket.replies.length == 1 ? 'reply' : 'replies'}', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6), fontSize: 10)),
-                      if (ticket.assignedToEmail != null) ...[
-                        SizedBox(width: 8),
-                        Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: ThemeUtils.primary(context).withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                          child: Text('Assigned', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.primary(context), fontSize: 10)),
-                        ),
-                      ],
+                ...[
+                SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(child: Text('Created ${_formatTimestamp(ticket.createdAt)}', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6), fontSize: 10))),
+                    if (ticket.replies.isNotEmpty)
+                      Text('${ticket.replies.length} ${ticket.replies.length == 1 ? 'reply' : 'replies'}', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.textSecondary(context).withOpacity(0.6), fontSize: 10)),
+                    if (ticket.assignedToEmail != null) ...[
+                      SizedBox(width: 8),
+                      Container(
+                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: ThemeUtils.primary(context).withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                        child: Text('Assigned', style: ThemeUtils.bodySmall(context).copyWith(color: ThemeUtils.primary(context), fontSize: 10)),
+                      ),
                     ],
-                  ),
-                ],
+                  ],
+                ),
+              ],
               ],
             ),
           ),
@@ -2834,11 +2834,11 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
           SizedBox(height: 16),
           ElevatedButton(
             onPressed: () => _showCreateTicketDialog(),
-            child: Text('Create Your First Ticket'),
             style: ElevatedButton.styleFrom(
               backgroundColor: ThemeUtils.primary(context),
               foregroundColor: ThemeUtils.textOnPrimary(context),
             ),
+            child: Text('Create Your First Ticket'),
           ),
         ],
       ),
@@ -2957,7 +2957,7 @@ class _ClientTicketsScreenState extends State<ClientTicketsScreen> with SingleTi
 
     String? tenantId = currentUser.tenantId;
 
-    if (tenantId == null || tenantId.isEmpty) {
+    if (tenantId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Unable to determine tenant information'), backgroundColor: ThemeUtils.error(context)));
       return;
     }
@@ -2984,7 +2984,7 @@ class _CreateTicketDialogState extends State<CreateTicketDialog> {
   TicketCategory _selectedCategory = TicketCategory.general;
   TicketPriority _selectedPriority = TicketPriority.medium;
 
-  List<File> _attachments = [];
+  final List<File> _attachments = [];
   bool _isSubmitting = false;
 
   final ImagePicker _imagePicker = ImagePicker();

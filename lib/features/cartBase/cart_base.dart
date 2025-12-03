@@ -7,9 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // import '../../app.dart';
 import '../../constants.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/product_model.dart';
 import '../checkoutBase/checkout_base.dart';
 import '../connectivityBase/local_db_base.dart';
-import '../product_selling/product_selling_base.dart';
 
 class CartScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
@@ -673,36 +674,6 @@ class EnhancedCartManager {
   }
 }
 
-class CartItem {
-  final Product product;
-  int quantity;
-  double? manualDiscount; // Manual discount amount for this specific item
-  double?
-  manualDiscountPercent; // Manual discount percentage for this specific item
-
-  CartItem({
-    required this.product,
-    required this.quantity,
-    this.manualDiscount,
-    this.manualDiscountPercent,
-  });
-
-  double get baseSubtotal => product.price * quantity;
-
-  double get discountAmount {
-    if (manualDiscount != null) {
-      return manualDiscount! * quantity;
-    } else if (manualDiscountPercent != null) {
-      return (product.price * manualDiscountPercent! / 100) * quantity;
-    }
-    return 0.0;
-  }
-
-  double get subtotal => baseSubtotal - discountAmount;
-
-  bool get hasManualDiscount =>
-      manualDiscount != null || manualDiscountPercent != null;
-}
 
 class CartItemCard extends StatelessWidget {
   final CartItem item;

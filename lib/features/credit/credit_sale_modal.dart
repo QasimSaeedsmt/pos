@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
-import '../customerBase/customer_base.dart';
+import '../../core/models/customer_model.dart';
 import 'credit_sale_model.dart';
 
 class CreditSaleModal extends StatefulWidget {

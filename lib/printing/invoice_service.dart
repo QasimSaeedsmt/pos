@@ -1,9 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -11,85 +9,14 @@ import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
+import '../core/models/customer_model.dart';
 import '../features/users/users_base.dart';
 import 'invoice_model.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
-import 'invoice_model.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
-import 'invoice_model.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
-import 'invoice_model.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
-import 'invoice_model.dart';
 
-import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:intl/intl.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
-import '../constants.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/invoiceBase/invoice_and_printing_base.dart';
-import 'invoice_model.dart';
 
 class InvoiceService {
   static final InvoiceService _instance = InvoiceService._internal();
@@ -113,7 +40,7 @@ class InvoiceService {
 
       return file;
     } catch (e) {
-      print('Error generating PDF: $e');
+     debugPrint('Error generating PDF: $e');
       rethrow;
     }
   }
@@ -1689,7 +1616,7 @@ class InvoiceService {
   Future<void> _printToSpecificPrinter(Invoice invoice, String printerName) async {
     // Implement specific printer logic here
     // This depends on your printing plugin capabilities
-    print('Printing to: $printerName');
+   debugPrint('Printing to: $printerName');
     await printInvoice(invoice); // Fallback to default for now
   }
   Future<void> shareInvoice(Invoice invoice) async {
@@ -1706,7 +1633,7 @@ class InvoiceService {
   }
 
   Future<void> _printThermalInvoice(Invoice invoice) async {
-    print('Printing thermal invoice: ${invoice.invoiceNumber}');
+   debugPrint('Printing thermal invoice: ${invoice.invoiceNumber}');
     if (invoice.hasEnhancedPricing) {
       await _printEnhancedThermalInvoice(invoice);
     } else {
@@ -1715,7 +1642,7 @@ class InvoiceService {
   }
 
   Future<void> _printTraditionalInvoice(Invoice invoice) async {
-    print('Printing traditional invoice: ${invoice.invoiceNumber}');
+   debugPrint('Printing traditional invoice: ${invoice.invoiceNumber}');
     if (invoice.hasEnhancedPricing) {
       await _printEnhancedTraditionalInvoice(invoice);
     } else {
@@ -1724,22 +1651,22 @@ class InvoiceService {
   }
 
   Future<void> _printEnhancedThermalInvoice(Invoice invoice) async {
-    print('Enhanced thermal invoice with credit support: ${invoice.invoiceNumber}');
+   debugPrint('Enhanced thermal invoice with credit support: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 
   Future<void> _printBasicThermalInvoice(Invoice invoice) async {
-    print('Basic thermal invoice: ${invoice.invoiceNumber}');
+   debugPrint('Basic thermal invoice: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 
   Future<void> _printEnhancedTraditionalInvoice(Invoice invoice) async {
-    print('Enhanced traditional invoice with credit details: ${invoice.invoiceNumber}');
+   debugPrint('Enhanced traditional invoice with credit details: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 
   Future<void> _printBasicTraditionalInvoice(Invoice invoice) async {
-    print('Basic traditional invoice: ${invoice.invoiceNumber}');
+   debugPrint('Basic traditional invoice: ${invoice.invoiceNumber}');
     await printInvoice(invoice);
   }
 }
@@ -1763,7 +1690,9 @@ class InvoiceService {
 
 
 extension on PdfColor {
-  PdfColor? operator [](int other) {}
+  PdfColor? operator [](int other) {
+    return null;
+  }
 }
 
 class OrderQRData {

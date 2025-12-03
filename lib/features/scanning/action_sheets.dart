@@ -1,27 +1,18 @@
 // Enhanced QR Scanning Service for Dashboard
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
-
-// Your existing imports
 import '../../constants.dart';
 import '../../printing/invoice_service.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
-import '../orderBase/order_base.dart';
 import '../barcode/barcode_base.dart'; //
-import 'dart:convert';
-import 'dart:io';
-import 'dart:ui';
 
 class SmartQRScanService {
   static final SmartQRScanService _instance = SmartQRScanService._internal();
@@ -61,7 +52,7 @@ class SmartQRScanService {
         return QRScanData.fromOrderQR(orderQR);
       }
     } catch (e) {
-      print('Failed to parse as OrderQRData: $e');
+      debugPrint('Failed to parse as OrderQRData: $e');
     }
 
     // Priority 2: Legacy InvoiceQRData format
@@ -71,7 +62,7 @@ class SmartQRScanService {
         return QRScanData.fromInvoiceQR(invoiceQR);
       }
     } catch (e) {
-      print('Failed to parse as InvoiceQRData: $e');
+      debugPrint('Failed to parse as InvoiceQRData: $e');
     }
 
     // Priority 3: JSON with type detection
@@ -79,7 +70,7 @@ class SmartQRScanService {
       final jsonData = jsonDecode(qrData);
       return QRScanData.fromJson(jsonData);
     } catch (e) {
-      print('Failed to parse as JSON: $e');
+      debugPrint('Failed to parse as JSON: $e');
     }
 
     // Priority 4: Plain text analysis
@@ -135,7 +126,7 @@ class SmartQRScanService {
         return QRScanData.fromFirestore(invoiceData, 'invoice');
       }
     } catch (e) {
-      print('Database lookup failed: $e');
+      debugPrint('Database lookup failed: $e');
     }
 
     return null;
@@ -162,7 +153,7 @@ class SmartQRScanService {
           enriched['relatedDocuments'] = await _getRelatedDocuments(scanData);
         }
       } catch (e) {
-        print('Data enrichment failed: $e');
+        debugPrint('Data enrichment failed: $e');
       }
     }
 
@@ -256,7 +247,7 @@ class SmartQRScanService {
         });
       }
     } catch (e) {
-      print('Error fetching related documents: $e');
+      debugPrint('Error fetching related documents: $e');
     }
 
     return related;

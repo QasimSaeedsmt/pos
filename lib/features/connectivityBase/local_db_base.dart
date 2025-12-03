@@ -1,14 +1,16 @@
 import 'dart:convert';
 
+import 'package:flutter/cupertino.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../constants.dart';
-import '../cartBase/cart_base.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/category_model.dart';
+import '../../core/models/customer_model.dart';
+import '../../core/models/product_model.dart';
 import '../clientDashboard/client_dashboard.dart';
 import '../customerBase/customer_base.dart';
-import '../orderBase/order_base.dart';
-import '../product_addition_restock_base/product_addition_restock_base.dart';
-import '../product_selling/product_selling_base.dart';
 import '../returnBase/return_base.dart';
 
 class LocalDatabase {
@@ -38,7 +40,7 @@ class LocalDatabase {
         return Category.fromFirestore(data, id);
       }).toList();
     } catch (e) {
-      print('Error getting local categories: $e');
+      debugPrint('Error getting local categories: $e');
       return [];
     }
   }
@@ -76,7 +78,7 @@ class LocalDatabase {
 
       return category.id;
     } catch (e) {
-      print('Error saving category locally: $e');
+      debugPrint('Error saving category locally: $e');
       throw Exception('Failed to save category locally: $e');
     }
   }
@@ -104,7 +106,7 @@ class LocalDatabase {
         DateTime.now().millisecondsSinceEpoch,
       );
     } catch (e) {
-      print('Error deleting category locally: $e');
+      debugPrint('Error deleting category locally: $e');
       throw Exception('Failed to delete category locally: $e');
     }
   }
@@ -140,9 +142,9 @@ class LocalDatabase {
         DateTime.now().millisecondsSinceEpoch,
       );
 
-      print('Saved ${categories.length} categories to local storage');
+      debugPrint('Saved ${categories.length} categories to local storage');
     } catch (e) {
-      print('Error saving categories locally: $e');
+      debugPrint('Error saving categories locally: $e');
       throw Exception('Failed to save categories locally: $e');
     }
   }
@@ -183,7 +185,7 @@ class LocalDatabase {
       }
       return null;
     } catch (e) {
-      print('Error loading cached dashboard data: $e');
+      debugPrint('Error loading cached dashboard data: $e');
       return null;
     }
   }
@@ -310,7 +312,7 @@ class LocalDatabase {
               final product = await getProductById(productId);
               imageUrl = product?.imageUrl;
             } catch (e) {
-              print('Error getting product image: $e');
+              debugPrint('Error getting product image: $e');
             }
 
             productSales[productId] = TopSellingProduct(
@@ -451,7 +453,7 @@ class LocalDatabase {
           .map((ret) => Map<String, dynamic>.from(ret))
           .toList();
     } catch (e) {
-      print('Error loading pending returns: $e');
+      debugPrint('Error loading pending returns: $e');
       return [];
     }
   }
@@ -479,7 +481,7 @@ class LocalDatabase {
       }
       await prefs.setString(_pendingReturnsKey, json.encode(pendingReturns));
     } catch (e) {
-      print('Error updating pending return: $e');
+      debugPrint('Error updating pending return: $e');
     }
   }
 
@@ -494,7 +496,7 @@ class LocalDatabase {
       pendingReturns.removeWhere((ret) => ret['local_id'] == returnId);
       await prefs.setString(_pendingReturnsKey, json.encode(pendingReturns));
     } catch (e) {
-      print('Error deleting pending return: $e');
+      debugPrint('Error deleting pending return: $e');
     }
   }
 
@@ -527,7 +529,7 @@ class LocalDatabase {
       )
           .toList();
     } catch (e) {
-      print('Error loading synced returns: $e');
+      debugPrint('Error loading synced returns: $e');
       return [];
     }
   }
@@ -569,7 +571,7 @@ class LocalDatabase {
         return Customer.fromFirestore(json, id);
       }).toList();
     } catch (e) {
-      print('Error loading cached customers: $e');
+      debugPrint('Error loading cached customers: $e');
       return [];
     }
   }
@@ -720,7 +722,7 @@ class LocalDatabase {
     pendingOrders.add(orderData);
     await prefs.setString(_pendingOrdersKey, json.encode(pendingOrders));
 
-    print(
+    debugPrint(
       'Saved enhanced pending order #$orderId with total: ${Constants.CURRENCY_NAME}$finalTotal',
     );
 
@@ -730,7 +732,7 @@ class LocalDatabase {
   // In LocalDatabase class - REPLACE the saveProducts method
   Future<void> saveProducts(List<Product> products) async {
     final prefs = await _prefs;
-    print('💾 Saving ${products.length} products to local storage');
+    debugPrint('💾 Saving ${products.length} products to local storage');
 
     // Get existing products first
     final existingProductsJson = prefs.getString(productsKey);
@@ -745,9 +747,9 @@ class LocalDatabase {
             existingProductsMap[id] = Product.fromFirestore(json, id);
           }
         }
-        print('📁 Found ${existingProductsMap.length} existing products in cache');
+        debugPrint('📁 Found ${existingProductsMap.length} existing products in cache');
       } catch (e) {
-        print('❌ Error loading existing products for merge: $e');
+        debugPrint('❌ Error loading existing products for merge: $e');
       }
     }
 
@@ -765,7 +767,7 @@ class LocalDatabase {
       }
     }
 
-    print('🔄 Merge result: $addedCount added, $updatedCount updated');
+    debugPrint('🔄 Merge result: $addedCount added, $updatedCount updated');
 
     // Convert back to list and save
     final mergedProducts = existingProductsMap.values.toList();
@@ -781,7 +783,7 @@ class LocalDatabase {
       DateTime.now().millisecondsSinceEpoch,
     );
 
-    print('✅ Successfully saved ${mergedProducts.length} products to local storage');
+    debugPrint('✅ Successfully saved ${mergedProducts.length} products to local storage');
   }
   // In LocalDatabase class - ADD this method
   Future<List<Product>> getAllProducts() async {
@@ -797,7 +799,7 @@ class LocalDatabase {
         return Product.fromFirestore(json, id);
       }).toList();
     } catch (e) {
-      print('Error loading all cached products: $e');
+      debugPrint('Error loading all cached products: $e');
       return [];
     }
   }
@@ -857,7 +859,7 @@ class LocalDatabase {
 
       return products.sublist(start, end);
     } catch (e) {
-      print('Error loading cached products: $e');
+      debugPrint('Error loading cached products: $e');
       return [];
     }
   }
@@ -906,7 +908,7 @@ class LocalDatabase {
         return CartItem(product: product, quantity: json['quantity']);
       }).toList();
     } catch (e) {
-      print('Error loading cart: $e');
+      debugPrint('Error loading cart: $e');
       return [];
     }
   }
@@ -966,7 +968,7 @@ class LocalDatabase {
           .map((order) => Map<String, dynamic>.from(order))
           .toList();
     } catch (e) {
-      print('Error loading pending orders: $e');
+      debugPrint('Error loading pending orders: $e');
       return [];
     }
   }
@@ -994,7 +996,7 @@ class LocalDatabase {
       }
       await prefs.setString(_pendingOrdersKey, json.encode(pendingOrders));
     } catch (e) {
-      print('Error updating pending order: $e');
+      debugPrint('Error updating pending order: $e');
     }
   }
 
@@ -1009,7 +1011,7 @@ class LocalDatabase {
       pendingOrders.removeWhere((order) => order['id'] == orderId);
       await prefs.setString(_pendingOrdersKey, json.encode(pendingOrders));
     } catch (e) {
-      print('Error deleting pending order: $e');
+      debugPrint('Error deleting pending order: $e');
     }
   }
 
@@ -1056,7 +1058,7 @@ class LocalDatabase {
           .map((restock) => Map<String, dynamic>.from(restock))
           .toList();
     } catch (e) {
-      print('Error loading pending restocks: $e');
+      debugPrint('Error loading pending restocks: $e');
       return [];
     }
   }
@@ -1084,7 +1086,7 @@ class LocalDatabase {
       }
       await prefs.setString(_pendingRestocksKey, json.encode(pendingRestocks));
     } catch (e) {
-      print('Error updating pending restock: $e');
+      debugPrint('Error updating pending restock: $e');
     }
   }
 
@@ -1099,7 +1101,7 @@ class LocalDatabase {
       pendingRestocks.removeWhere((restock) => restock['id'] == restockId);
       await prefs.setString(_pendingRestocksKey, json.encode(pendingRestocks));
     } catch (e) {
-      print('Error deleting pending restock: $e');
+      debugPrint('Error deleting pending restock: $e');
     }
   }
 }

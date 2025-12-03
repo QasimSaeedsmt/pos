@@ -1,14 +1,12 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:mpcm/core/overlay_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../app.dart';
 import '../constants.dart';
+import '../core/models/app_order_model.dart';
+import '../core/models/customer_model.dart';
 import '../features/credit/credit_sale_model.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/orderBase/order_base.dart';
 import '../features/users/users_base.dart';
 import 'invoice_model.dart';
 import 'invoice_service.dart';

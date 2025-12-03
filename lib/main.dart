@@ -12,16 +12,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:hive/hive.dart';
 import 'checkou_screen.dart';
+import 'features/main_navigation/main_navigation_base.dart';
 import 'firebase_options.dart';
 import 'modules/auth/providers/auth_provider.dart';
 import 'modules/auth/providers/settings_provider.dart';
 import 'modules/auth/screens/auth_wrapper.dart';
 import 'modules/auth/services/offline_storage_service.dart';
-import 'modules/auth/widgets/app_lifecycle_wrapper.dart';
 import 'theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // setupLocator();
 
   // Run app immediately with a loading screen
   runApp(const LoadingApp());
@@ -65,7 +66,12 @@ Future<void> _initializeApp() async {
     runApp(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => SettingsProvider()),
+          ChangeNotifierProvider(create: (_) => ScreenSelectionProvider()),
+          // ChangeNotifierProvider(
+          //   create: (_) => AnalyticsController(),
+          //   lazy: false, // Initialize immediately if needed
+          // ),
+  ChangeNotifierProvider(create: (_) => SettingsProvider()),
           ChangeNotifierProvider(
             create: (_) => MyAuthProvider(offlineStorageService),
           ),
@@ -528,7 +534,7 @@ class _ModernSliderContentState extends State<_SliderContent>
           child: ElevatedButton(
             onPressed: widget.onCancel,
             style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.surfaceVariant,
+              backgroundColor: theme.colorScheme.surfaceContainerHighest,
               foregroundColor: theme.colorScheme.onSurfaceVariant,
               elevation: 0,
               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -740,3 +746,22 @@ class ErrorApp extends StatelessWidget {
 //     );
 //   }
 // }
+// In main.dart or a service locator file
+
+// final GetIt locator = GetIt.instance;
+
+// void setupLocator() {
+//   // Analytics services
+//   locator.registerLazySingleton(() => AnalyticsService());
+//   locator.registerLazySingleton(() => ReportGenerator());
+//   locator.registerLazySingleton(() => DataProcessor());
+//   locator.registerLazySingleton(() => ExportService());
+//
+//   // Analytics storage
+//   locator.registerLazySingleton(() => AnalyticsStorage());
+//
+//   // Analytics controllers (dispose in widgets)
+//   locator.registerFactory(() => AnalyticsController());
+//   locator.registerFactory(() => ReportController());
+// }
+

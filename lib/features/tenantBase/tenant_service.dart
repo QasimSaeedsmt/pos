@@ -1,11 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
 import 'package:mpcm/features/tenantBase/tenant_base.dart';
 
-import '../../modules/auth/models/activity_type.dart';
-import '../users/users_base.dart';
 
 class ClientSignupScreen extends StatefulWidget {
   const ClientSignupScreen({super.key});
@@ -110,7 +105,7 @@ class _ClientSignupScreenState extends State<ClientSignupScreen> {
 
       Navigator.pop(context);
     } catch (e) {
-      print(e.toString());
+     debugPrint(e.toString());
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Error creating tenant: $e'),

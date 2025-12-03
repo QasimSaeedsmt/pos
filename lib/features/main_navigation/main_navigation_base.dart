@@ -1,25 +1,25 @@
 import 'dart:async';
 import 'dart:math';
-
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:mpcm/features/customerBase/customer_management_screen.dart';
-import 'package:mpcm/features/invoiceBase/invoice_and_printing_base.dart';
 import 'package:mpcm/features/scanning/smart_scan_models.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synchronized/synchronized.dart';
-
 import '../../analytics_screen.dart';
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/category_model.dart';
+import '../../core/models/customer_model.dart';
+import '../../core/models/product_model.dart';
 import '../../core/overlay_manager.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../modules/auth/screens/settings_screen.dart';
-import '../../printing/printing_setting_screen.dart';
-import '../../sales/sales_management_screen.dart';
 import '../../theme_utils.dart';
 import '../cartBase/cart_base.dart';
 import '../clientDashboard/client_dashboard.dart';
@@ -27,20 +27,16 @@ import '../connectivityBase/local_db_base.dart';
 import '../credit/credit collection_screen.dart';
 import '../credit/credit_analytics_screen.dart';
 import '../credit/customer_communication_screen.dart';
-import '../credit/credit_management_screen.dart';
-import '../credit/credit_recovery_screen.dart';
 import '../credit/credit_sale_model.dart';
 import '../credit/credit_service.dart';
 import '../customerBase/customer_base.dart';
 import '../expense_management.dart';
 import '../invoiceBase/invoice_archieve_screen.dart';
-import '../orderBase/order_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../product_selling/product_selling_base.dart';
 import '../profile.dart';
 import '../returnBase/return_base.dart';
 import '../scanning/action_sheets.dart';
-import '../scanning/smart_scanner_overlay.dart';
 import '../ticketing/ticketing.dart';
 import '../users/users_base.dart';
 
@@ -212,15 +208,15 @@ class EnhancedPOSService {
           .doc(purchaseRecord.id)
           .set(purchaseRecord.toFirestore());
 
-      print('✅ WAC Updated: ${currentProduct.name}');
-      print('📦 Old Stock: ${currentProduct.stockQuantity}');
-      print('📦 New Stock: ${updatedProduct.stockQuantity}');
-      print('💰 Old Cost: ${currentProduct.purchasePrice?.toStringAsFixed(2)}');
-      print('💰 New WAC: ${newWeightedAverageCost.toStringAsFixed(2)}');
-      print('💵 Total Cost Value: ${newTotalCostValue.toStringAsFixed(2)}');
+      debugPrint('✅ WAC Updated: ${currentProduct.name}');
+      debugPrint('📦 Old Stock: ${currentProduct.stockQuantity}');
+      debugPrint('📦 New Stock: ${updatedProduct.stockQuantity}');
+      debugPrint('💰 Old Cost: ${currentProduct.purchasePrice?.toStringAsFixed(2)}');
+      debugPrint('💰 New WAC: ${newWeightedAverageCost.toStringAsFixed(2)}');
+      debugPrint('💵 Total Cost Value: ${newTotalCostValue.toStringAsFixed(2)}');
 
     } catch (e) {
-      print('❌ Error in restockProductWithWAC: $e');
+      debugPrint('❌ Error in restockProductWithWAC: $e');
       throw Exception('Failed to restock product: $e');
     }
   }
@@ -291,13 +287,13 @@ class EnhancedPOSService {
         'dateModified': DateTime.now(),
       });
 
-      print('📦 Stock updated: ${currentProduct.name}');
-      print('🛒 Sold: $quantitySold');
-      print('📊 New Stock: $newStock');
-      print('💰 Cost Price remains: ${currentProduct.purchasePrice}');
+      debugPrint('📦 Stock updated: ${currentProduct.name}');
+      debugPrint('🛒 Sold: $quantitySold');
+      debugPrint('📊 New Stock: $newStock');
+      debugPrint('💰 Cost Price remains: ${currentProduct.purchasePrice}');
 
     } catch (e) {
-      print('❌ Error updating stock after sale: $e');
+      debugPrint('❌ Error updating stock after sale: $e');
       throw Exception('Failed to update stock: $e');
     }
   }
@@ -332,7 +328,7 @@ class EnhancedPOSService {
         );
       }).toList();
     } catch (e) {
-      print('Error getting purchase history: $e');
+      debugPrint('Error getting purchase history: $e');
       return [];
     }
   }
@@ -377,7 +373,7 @@ class EnhancedPOSService {
         'generatedAt': DateTime.now(),
       };
     } catch (e) {
-      print('Error getting inventory valuation: $e');
+      debugPrint('Error getting inventory valuation: $e');
       throw Exception('Failed to generate inventory valuation: $e');
     }
   }
@@ -388,29 +384,29 @@ class EnhancedPOSService {
       List<Category> categories;
 
       if (_isOnline) {
-        print('🔄 Fetching categories from Firestore...');
+        debugPrint('🔄 Fetching categories from Firestore...');
         categories = await _firestore.getCategories();
 
         // Always sync Firestore categories to local database for offline access
         await _localDb.saveCategories(categories);
-        print('✅ Synced ${categories.length} categories to local storage');
+        debugPrint('✅ Synced ${categories.length} categories to local storage');
       } else {
-        print('📱 Fetching categories from local database (offline mode)...');
+        debugPrint('📱 Fetching categories from local database (offline mode)...');
         categories = await _localDb.getAllCategories();
-        print('✅ Found ${categories.length} categories in local storage');
+        debugPrint('✅ Found ${categories.length} categories in local storage');
       }
 
       return categories;
     } catch (e) {
-      print('❌ Error in getCategories: $e');
+      debugPrint('❌ Error in getCategories: $e');
 
       // Comprehensive fallback strategy
       try {
         final localCategories = await _localDb.getAllCategories();
-        print('🔄 Using fallback local categories: ${localCategories.length} found');
+        debugPrint('🔄 Using fallback local categories: ${localCategories.length} found');
         return localCategories;
       } catch (fallbackError) {
-        print('❌ Fallback also failed: $fallbackError');
+        debugPrint('❌ Fallback also failed: $fallbackError');
         return [];
       }
     }
@@ -421,7 +417,7 @@ class EnhancedPOSService {
       String categoryId;
 
       if (_isOnline) {
-        print('🔄 Adding category to Firestore: ${category.name}');
+        debugPrint('🔄 Adding category to Firestore: ${category.name}');
         categoryId = await _firestore.addCategory(category);
 
         // Update the category with the Firestore ID
@@ -429,7 +425,7 @@ class EnhancedPOSService {
 
         // Save to local database for offline access
         await _localDb.saveCategory(updatedCategory);
-        print('✅ Category added to Firestore with ID: $categoryId and saved locally');
+        debugPrint('✅ Category added to Firestore with ID: $categoryId and saved locally');
 
         return categoryId;
       } else {
@@ -439,22 +435,22 @@ class EnhancedPOSService {
 
         // Save to local database only
         await _localDb.saveCategory(localCategory);
-        print('✅ Category saved locally with ID: $categoryId (offline mode)');
+        debugPrint('✅ Category saved locally with ID: $categoryId (offline mode)');
 
         return categoryId;
       }
     } catch (e) {
-      print('❌ Error adding category: $e');
+      debugPrint('❌ Error adding category: $e');
 
       // Robust fallback: always try to save locally
       try {
         final localId = 'local_fallback_${DateTime.now().millisecondsSinceEpoch}';
         final localCategory = category.copyWith(id: localId);
         await _localDb.saveCategory(localCategory);
-        print('✅ Category saved locally as fallback with ID: $localId');
+        debugPrint('✅ Category saved locally as fallback with ID: $localId');
         return localId;
       } catch (localError) {
-        print('❌ Local save also failed: $localError');
+        debugPrint('❌ Local save also failed: $localError');
         rethrow;
       }
     }
@@ -463,23 +459,23 @@ class EnhancedPOSService {
   Future<void> updateCategory(Category category) async {
     try {
       if (_isOnline) {
-        print('🔄 Updating category in Firestore: ${category.name} (${category.id})');
+        debugPrint('🔄 Updating category in Firestore: ${category.name} (${category.id})');
         await _firestore.updateCategory(category);
       }
 
       // Always update local database for consistency (online or offline)
       await _localDb.saveCategory(category);
-      print('✅ Category updated locally: ${category.name}');
+      debugPrint('✅ Category updated locally: ${category.name}');
 
     } catch (e) {
-      print('❌ Error updating category: $e');
+      debugPrint('❌ Error updating category: $e');
 
       // Fallback: update local database even if online fails
       try {
         await _localDb.saveCategory(category);
-        print('✅ Category updated locally as fallback: ${category.name}');
+        debugPrint('✅ Category updated locally as fallback: ${category.name}');
       } catch (localError) {
-        print('❌ Local update also failed: $localError');
+        debugPrint('❌ Local update also failed: $localError');
         rethrow;
       }
     }
@@ -488,23 +484,23 @@ class EnhancedPOSService {
   Future<void> deleteCategory(String categoryId) async {
     try {
       if (_isOnline) {
-        print('🔄 Deleting category from Firestore: $categoryId');
+        debugPrint('🔄 Deleting category from Firestore: $categoryId');
         await _firestore.deleteCategory(categoryId);
       }
 
       // Always update local database for consistency
       await _localDb.deleteCategory(categoryId);
-      print('✅ Category deleted locally: $categoryId');
+      debugPrint('✅ Category deleted locally: $categoryId');
 
     } catch (e) {
-      print('❌ Error deleting category: $e');
+      debugPrint('❌ Error deleting category: $e');
 
       // Fallback: delete from local database even if online fails
       try {
         await _localDb.deleteCategory(categoryId);
-        print('✅ Category deleted locally as fallback: $categoryId');
+        debugPrint('✅ Category deleted locally as fallback: $categoryId');
       } catch (localError) {
-        print('❌ Local delete also failed: $localError');
+        debugPrint('❌ Local delete also failed: $localError');
         rethrow;
       }
     }
@@ -517,7 +513,7 @@ class EnhancedPOSService {
         await _localDb.saveCategories(categories);
         return categories;
       }).handleError((error) {
-        print('❌ Categories stream error: $error');
+        debugPrint('❌ Categories stream error: $error');
         // Fallback to local data when stream fails
         return _localDb.getAllCategories();
       });
@@ -529,7 +525,7 @@ class EnhancedPOSService {
   // Enhanced sync method for categories
   Future<void> _syncPendingCategories() async {
     if (!_isOnline) {
-      print('📱 Skipping category sync - offline');
+      debugPrint('📱 Skipping category sync - offline');
       return;
     }
 
@@ -538,11 +534,11 @@ class EnhancedPOSService {
       final localOnlyCategories = localCategories.where((cat) => cat.id.startsWith('local_')).toList();
 
       if (localOnlyCategories.isEmpty) {
-        print('✅ No local-only categories to sync');
+        debugPrint('✅ No local-only categories to sync');
         return;
       }
 
-      print('🔄 Syncing ${localOnlyCategories.length} local categories to Firestore...');
+      debugPrint('🔄 Syncing ${localOnlyCategories.length} local categories to Firestore...');
 
       for (final localCategory in localOnlyCategories) {
         try {
@@ -553,14 +549,14 @@ class EnhancedPOSService {
           final updatedCategory = localCategory.copyWith(id: firestoreId);
           await _localDb.saveCategory(updatedCategory);
 
-          print('✅ Synced local category "${localCategory.name}" to Firestore with ID: $firestoreId');
+          debugPrint('✅ Synced local category "${localCategory.name}" to Firestore with ID: $firestoreId');
         } catch (e) {
-          print('❌ Failed to sync local category "${localCategory.name}": $e');
+          debugPrint('❌ Failed to sync local category "${localCategory.name}": $e');
           // Continue with other categories even if one fails
         }
       }
     } catch (e) {
-      print('❌ Error syncing pending categories: $e');
+      debugPrint('❌ Error syncing pending categories: $e');
     }
   }
 
@@ -703,7 +699,7 @@ class EnhancedPOSService {
         );
       }
     } catch (e) {
-      print('Enhanced order creation failed: $e');
+      debugPrint('Enhanced order creation failed: $e');
       return OrderCreationResult.error('Failed to create order: $e');
     }
   }
@@ -722,7 +718,7 @@ class EnhancedPOSService {
 
       await updateCustomer(updatedCustomer);
     } catch (e) {
-      print('Error updating customer credit balance: $e');
+      debugPrint('Error updating customer credit balance: $e');
       throw Exception('Failed to update customer credit: $e');
     }
   }
@@ -818,7 +814,7 @@ class EnhancedPOSService {
         await _localDb.saveSyncedReturn(createdReturn);
         return ReturnCreationResult.success(createdReturn);
       } catch (e) {
-        print('Online return creation failed, saving locally: $e');
+        debugPrint('Online return creation failed, saving locally: $e');
         return await _createOfflineReturn(returnRequest);
       }
     } else {
@@ -852,7 +848,7 @@ class EnhancedPOSService {
         }
         return returns;
       } catch (e) {
-        print('Online fetch failed, using local data: $e');
+        debugPrint('Online fetch failed, using local data: $e');
         // Fall back to local data
         final allReturns = await _localDb.getAllReturns();
         return allReturns.where((ret) => ret.orderId == orderId).toList();
@@ -882,7 +878,7 @@ class EnhancedPOSService {
         }
         return returns;
       } catch (e) {
-        print('Online fetch failed, using local data: $e');
+        debugPrint('Online fetch failed, using local data: $e');
         return await _localDb.getAllReturns();
       }
     } else {
@@ -903,7 +899,7 @@ class EnhancedPOSService {
           processedBy: processedBy,
         );
       } catch (e) {
-        print('Online status update failed: $e');
+        debugPrint('Online status update failed: $e');
         throw Exception('Failed to update return status online: $e');
       }
     } else {
@@ -916,11 +912,11 @@ class EnhancedPOSService {
     final pendingReturns = await _localDb.getPendingReturns();
 
     if (pendingReturns.isEmpty) {
-      print('No pending returns to sync');
+      debugPrint('No pending returns to sync');
       return;
     }
 
-    print('Syncing ${pendingReturns.length} pending returns...');
+    debugPrint('Syncing ${pendingReturns.length} pending returns...');
 
     for (final pendingReturn in pendingReturns) {
       try {
@@ -928,7 +924,7 @@ class EnhancedPOSService {
 
         if (success) {
           await _localDb.deletePendingReturn(pendingReturn['local_id']);
-          print(
+          debugPrint(
             'Successfully synced pending return ${pendingReturn['local_id']}',
           );
         } else {
@@ -936,10 +932,10 @@ class EnhancedPOSService {
             pendingReturn['local_id'],
             'failed',
           );
-          print('Failed to sync pending return ${pendingReturn['local_id']}');
+          debugPrint('Failed to sync pending return ${pendingReturn['local_id']}');
         }
       } catch (e) {
-        print('Error syncing pending return ${pendingReturn['local_id']}: $e');
+        debugPrint('Error syncing pending return ${pendingReturn['local_id']}: $e');
         final attempts = (pendingReturn['sync_attempts'] as int? ?? 0) + 1;
 
         if (attempts >= 3) {
@@ -963,15 +959,15 @@ class EnhancedPOSService {
   Future<void> _triggerSync() async {
     await _syncLock.synchronized(() async {
       try {
-        print('🔄 Starting full sync...');
+        debugPrint('🔄 Starting full sync...');
         await _syncPendingOrders();
         await _syncPendingRestocks();
         await _syncPendingReturns();
         await _syncPendingCategories();
         await _syncProducts();
-        print('✅ Full sync completed successfully');
+        debugPrint('✅ Full sync completed successfully');
       } catch (e) {
-        print('❌ Sync error: $e');
+        debugPrint('❌ Sync error: $e');
       }
     });
   }
@@ -1019,7 +1015,7 @@ class EnhancedPOSService {
         return await _localDb.getCustomers();
       }
     } catch (e) {
-      print('Error getting all customers: $e');
+      debugPrint('Error getting all customers: $e');
       // Fallback to local data if online fetch fails
       return await _localDb.getCustomers();
     }
@@ -1060,7 +1056,7 @@ class EnhancedPOSService {
         // Fetch fresh products
         await _syncProducts();
       } catch (e) {
-        print('Error refreshing local cache: $e');
+        debugPrint('Error refreshing local cache: $e');
       }
     }
   }
@@ -1116,7 +1112,7 @@ class EnhancedPOSService {
         await _localDb.saveProducts(products);
         return products;
       } catch (e) {
-        print('Online fetch failed, using local data: $e');
+        debugPrint('Online fetch failed, using local data: $e');
         return await _localDb.getProducts(
           limit: limit,
           searchQuery: searchQuery,
@@ -1145,7 +1141,7 @@ class EnhancedPOSService {
         }
         return products;
       } catch (e) {
-        print('Online search failed, using local data: $e');
+        debugPrint('Online search failed, using local data: $e');
         return await _localDb.getProducts(searchQuery: query);
       }
     } else {
@@ -1167,7 +1163,7 @@ class EnhancedPOSService {
         }
         return products;
       } catch (e) {
-        print('Online SKU search failed: $e');
+        debugPrint('Online SKU search failed: $e');
         return [];
       }
     } else {
@@ -1181,7 +1177,7 @@ class EnhancedPOSService {
         final order = await _firestore.createOrder(cartItems);
         return OrderCreationResult.success(order);
       } catch (e) {
-        print('Online order creation failed, saving locally: $e');
+        debugPrint('Online order creation failed, saving locally: $e');
         return await _createOfflineOrder(cartItems);
       }
     } else {
@@ -1210,11 +1206,11 @@ class EnhancedPOSService {
     final pendingOrders = await _localDb.getPendingOrders();
 
     if (pendingOrders.isEmpty) {
-      print('No pending orders to sync');
+      debugPrint('No pending orders to sync');
       return;
     }
 
-    print('Syncing ${pendingOrders.length} pending orders...');
+    debugPrint('Syncing ${pendingOrders.length} pending orders...');
 
     for (final order in pendingOrders) {
       try {
@@ -1237,11 +1233,11 @@ class EnhancedPOSService {
         final createdOrder = await _firestore.createOrder(lineItems);
         await _localDb.deletePendingOrder(order['id']);
 
-        print(
+        debugPrint(
           'Successfully synced pending order ${order['id']} as order ${createdOrder.id}',
         );
       } catch (e) {
-        print('Failed to sync pending order ${order['id']}: $e');
+        debugPrint('Failed to sync pending order ${order['id']}: $e');
         final attempts = (order['sync_attempts'] as int? ?? 0) + 1;
 
         if (attempts >= 3) {
@@ -1265,11 +1261,11 @@ class EnhancedPOSService {
     final pendingRestocks = await _localDb.getPendingRestocks();
 
     if (pendingRestocks.isEmpty) {
-      print('No pending restocks to sync');
+      debugPrint('No pending restocks to sync');
       return;
     }
 
-    print('Syncing ${pendingRestocks.length} pending restocks...');
+    debugPrint('Syncing ${pendingRestocks.length} pending restocks...');
 
     for (final restock in pendingRestocks) {
       try {
@@ -1279,11 +1275,11 @@ class EnhancedPOSService {
           barcode: restock['barcode']?.toString(),
         );
         await _localDb.deletePendingRestock(restock['id']);
-        print(
+        debugPrint(
           'Successfully synced restock for product ${restock['productId']}',
         );
       } catch (e) {
-        print('Failed to sync restock ${restock['id']}: $e');
+        debugPrint('Failed to sync restock ${restock['id']}: $e');
         final attempts = (restock['sync_attempts'] as int? ?? 0) + 1;
 
         if (attempts >= 3) {
@@ -1307,9 +1303,9 @@ class EnhancedPOSService {
     try {
       final products = await _firestore.getProducts(limit: 50);
       await _localDb.saveProducts(products);
-      print('Successfully synced ${products.length} products');
+      debugPrint('Successfully synced ${products.length} products');
     } catch (e) {
-      print('Product sync failed: $e');
+      debugPrint('Product sync failed: $e');
     }
   }
 
@@ -1442,6 +1438,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
   final EnhancedPOSService _posService = EnhancedPOSService();
   bool _isTestingConnection = false;
   String _connectionStatus = '';
+
   bool _isOnline = false;
   int _cartItemCount = 0;
   final _firestore = NavigationService();
@@ -1469,14 +1466,14 @@ class _MainNavScreenState extends State<MainNavScreen> {
       );
     }
   }
-void navigateToInvoices(){
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => OrdersManagementScreen(),
-    ),
-  );
-}
+  void navigateToInvoices(){
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OrdersManagementScreen(),
+      ),
+    );
+  }
   void _handleQuickAction(String action) {
     switch (action) {
       case 'scan':
@@ -1512,7 +1509,7 @@ void navigateToInvoices(){
     if (tenantId != null && tenantId != 'super_admin') {
       _posService.setTenantContext(tenantId);
       _creditService.setTenantId(tenantId);
-      print('Tenant context set: $tenantId');
+      debugPrint('Tenant context set: $tenantId');
     }
 
     if (tenantId != null) {
@@ -1548,7 +1545,7 @@ void navigateToInvoices(){
     _clientSalesManagerScreens.clear();
     _clientCashierScreens.clear();
 
-    // Admin Screens - Full credit access
+    // Admin Screens - Full access (13 screens)
     _clientAdminScreens.addAll([
       ModernDashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
@@ -1567,37 +1564,32 @@ void navigateToInvoices(){
       CustomerCommunicationScreen(
         creditService: _creditService,
         posService: _posService,
-      ),      CreditCollectionScreen(creditService: _creditService),
+      ),
+      CreditCollectionScreen(creditService: _creditService),
       CreditAnalyticsScreen(creditService: _creditService),
     ]);
 
-    // Sales Manager Screens - Limited credit access
+    // Sales Manager Screens - Limited access (8 screens)
     _clientSalesManagerScreens.addAll([
       ModernDashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
+      AnalyticsDashboardScreen(),
       ProductManagementScreen(),
       CategoryManagementScreen(),
       ReturnsManagementScreen(),
-      ClientTicketsScreen(),
-      ProfileScreen(),
       ModernCustomerManagementScreen(posService: _posService),
-      ExpenseManagementScreen(analyticsService: _analyticsService),
-      // Credit Management Screens for Sales Manager
-      RestockProductScreen(),
-      CreditCollectionScreen(creditService: _creditService),
+      // Credit screens accessible only through More menu
     ]);
 
-    // Cashier Screens - Basic credit access
+    // Cashier Screens - Basic access (6 screens)
     _clientCashierScreens.addAll([
       ModernDashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
       ReturnsManagementScreen(),
-      ClientTicketsScreen(),
       ProfileScreen(),
-      // Credit Management for Cashier (view only)
-      RestockProductScreen()
+      // Limited access screens
     ]);
 
     if (mounted) {
@@ -1681,7 +1673,7 @@ void navigateToInvoices(){
     try {
       await _creditService.getAllCreditCustomers();
     } catch (e) {
-      print('Error refreshing credit data: $e');
+      debugPrint('Error refreshing credit data: $e');
     }
   }
 
@@ -1699,7 +1691,7 @@ void navigateToInvoices(){
     return LiquidPullToRefresh(
       key: _refreshIndicatorKey,
       onRefresh: _handleRefresh,
-      color: ThemeUtils.primary(context)!,
+      color: ThemeUtils.primary(context),
       backgroundColor: Colors.white,
       height: 100,
       animSpeedFactor: 2,
@@ -1886,87 +1878,90 @@ void navigateToInvoices(){
             title: 'Profile',
             description: 'Manage your account settings',
             color: Colors.blue,
-            index: 10,
+            index: user!.canManageUsers ? 10 : 4, // Different index for different roles
           ),
           MenuItem(
             icon: Icons.assignment_return_outlined,
             title: 'Returns',
             description: 'Process product returns',
             color: Colors.orange,
-            index: 6,
+            index: user.canManageUsers ? 6 : 3, // Different index for different roles
           ),
           MenuItem(
             icon: Icons.group_outlined,
             title: 'Customers',
             description: 'Manage customer database',
             color: Colors.teal,
-            index: 11,
+            index: user.canManageUsers ? 11 : 5, // Different index for different roles
           ),
           MenuItem(
             icon: Icons.report_problem_outlined,
             title: 'Support Tickets',
             description: 'Get technical assistance',
             color: Colors.red,
-            index: 9,
+            index: user.canManageUsers ? 9 : 6, // Different index for different roles
           ),
         ],
       ),
 
       // Credit Management Section - Role-based access
-      MenuSection(
-        title: 'Credit Management',
-        items: [
-          MenuItem(
-            icon: Icons.credit_card_outlined,
-            title: 'Customer Communication',
-            description: 'Communicate with Customers',
-            color: Colors.purple,
-            index: 13, // Credit Management Screen
-          ),
-          if (user!.canManageUsers || user.canManageProducts)
+      if (user.canManageUsers || user.canManageProducts)
+        MenuSection(
+          title: 'Credit Management',
+          items: [
             MenuItem(
-              icon: Icons.payment_outlined,
-              title: 'Credit Collection',
-              description: 'Track and collect overdue payments',
-              color: Colors.deepOrange,
-              index: 14, // Credit Recovery Screen
+              icon: Icons.credit_card_outlined,
+              title: 'Customer Communication',
+              description: 'Communicate with Customers',
+              color: Colors.purple,
+              index: user.canManageUsers ? 13 : 7,
             ),
-          if (user.canManageUsers)
-            MenuItem(
-              icon: Icons.analytics_outlined,
-              title: 'Credit Analytics',
-              description: 'Advanced credit insights and reports',
-              color: Colors.indigo,
-              index: 15, // Credit Analytics Screen
-            ),
-        ],
-      ),
+            if (user.canManageUsers || user.canManageProducts)
+              MenuItem(
+                icon: Icons.payment_outlined,
+                title: 'Credit Collection',
+                description: 'Track and collect overdue payments',
+                color: Colors.deepOrange,
+                index: user.canManageUsers ? 14 : 8,
+              ),
+            if (user.canManageUsers)
+              MenuItem(
+                icon: Icons.analytics_outlined,
+                title: 'Credit Analytics',
+                description: 'Advanced credit insights and reports',
+                color: Colors.indigo,
+                index: 15,
+              ),
+          ],
+        ),
 
       // Business Management - Admin & Sales Manager
       if (user.canManageUsers || user.canManageProducts)
         MenuSection(
           title: 'Business Management',
           items: [
+            if (user.canManageUsers)
+              MenuItem(
+                icon: Icons.receipt_long_outlined,
+                title: 'Expense Management',
+                description: 'Track business expenses',
+                color: Colors.purple,
+                index: 12,
+              ),
             MenuItem(
-              icon: Icons.receipt_long_outlined,
-              title: 'Expense Management',
-              description: 'Track business expenses',
-              color: Colors.purple,
-              index: 12,
-            ),
-            MenuItem(
+
               icon: Icons.inventory_2_outlined,
               title: 'Inventory',
               description: 'Manage product stock',
               color: Colors.green,
-              index: 4,
+              index: user.canManageUsers ? 4 : 9,
             ),
             MenuItem(
               icon: Icons.category_outlined,
               title: 'Categories',
               description: 'Organize product categories',
               color: Colors.indigo,
-              index: 5,
+              index: user.canManageUsers ? 5 : 10,
             ),
           ],
         ),
@@ -2037,7 +2032,7 @@ void navigateToInvoices(){
                           children: [
                             Text(
                               'More Options',
-                              style: ThemeUtils.headlineMedium(context)?.copyWith(
+                              style: ThemeUtils.headlineMedium(context).copyWith(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 24,
                               ),
@@ -2045,7 +2040,7 @@ void navigateToInvoices(){
                             SizedBox(height: 4),
                             Text(
                               'Quick access to all features',
-                              style: ThemeUtils.bodySmall(context)?.copyWith(
+                              style: ThemeUtils.bodySmall(context).copyWith(
                                 color: ThemeUtils.textSecondary(context).withOpacity(0.7),
                               ),
                             ),
@@ -2054,7 +2049,7 @@ void navigateToInvoices(){
                         Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: ThemeUtils.primary(context)!.withOpacity(0.1),
+                            color: ThemeUtils.primary(context).withOpacity(0.1),
                           ),
                           child: IconButton(
                             icon: Icon(Icons.close_rounded, color: ThemeUtils.primary(context)),
@@ -2078,13 +2073,13 @@ void navigateToInvoices(){
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            ThemeUtils.primary(context)!.withOpacity(0.1),
-                            ThemeUtils.primary(context)!.withOpacity(0.05),
+                            ThemeUtils.primary(context).withOpacity(0.1),
+                            ThemeUtils.primary(context).withOpacity(0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: ThemeUtils.primary(context)!.withOpacity(0.2),
+                          color: ThemeUtils.primary(context).withOpacity(0.2),
                         ),
                       ),
                       child: Row(
@@ -2107,14 +2102,14 @@ void navigateToInvoices(){
                               children: [
                                 Text(
                                   user.displayName ?? 'User',
-                                  style: ThemeUtils.bodyLarge(context)?.copyWith(
+                                  style: ThemeUtils.bodyLarge(context).copyWith(
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                                 SizedBox(height: 4),
                                 Text(
                                   _getUserRole(user),
-                                  style: ThemeUtils.bodySmall(context)?.copyWith(
+                                  style: ThemeUtils.bodySmall(context).copyWith(
                                     color: ThemeUtils.primary(context),
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -2123,7 +2118,7 @@ void navigateToInvoices(){
                                   SizedBox(height: 4),
                                   Text(
                                     '${Constants.CURRENCY_NAME}${creditStats.totalOutstanding.toStringAsFixed(0)} Credit Outstanding',
-                                    style: ThemeUtils.bodySmall(context)?.copyWith(
+                                    style: ThemeUtils.bodySmall(context).copyWith(
                                       color: Colors.orange,
                                       fontWeight: FontWeight.w500,
                                     ),
@@ -2157,7 +2152,7 @@ void navigateToInvoices(){
                                     SizedBox(width: 6),
                                     Text(
                                       _isOnline ? 'Online' : 'Offline',
-                                      style: ThemeUtils.bodySmall(context)?.copyWith(
+                                      style: ThemeUtils.bodySmall(context).copyWith(
                                         color: _isOnline ? Colors.green : Colors.orange,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -2176,7 +2171,7 @@ void navigateToInvoices(){
                                   ),
                                   child: Text(
                                     '${Constants.CURRENCY_NAME}${creditStats.overdueAmount.toStringAsFixed(0)} Overdue',
-                                    style: ThemeUtils.bodySmall(context)?.copyWith(
+                                    style: ThemeUtils.bodySmall(context).copyWith(
                                       color: Colors.red,
                                       fontWeight: FontWeight.w500,
                                       fontSize: 10,
@@ -2199,13 +2194,13 @@ void navigateToInvoices(){
                       padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       child: Text(
                         'Quick Actions',
-                        style: ThemeUtils.bodyLarge(context)?.copyWith(
+                        style: ThemeUtils.bodyLarge(context).copyWith(
                           fontWeight: FontWeight.w600,
                           color: ThemeUtils.textSecondary(context),
                         ),
                       ),
                     ),
-                    Container(
+                    SizedBox(
                       height: 80,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
@@ -2253,7 +2248,7 @@ void navigateToInvoices(){
                             padding: EdgeInsets.symmetric(horizontal: 16),
                             child: Text(
                               section.title,
-                              style: ThemeUtils.bodyLarge(context)?.copyWith(
+                              style: ThemeUtils.bodyLarge(context).copyWith(
                                 fontWeight: FontWeight.w600,
                                 color: ThemeUtils.textSecondary(context),
                               ),
@@ -2316,10 +2311,10 @@ void navigateToInvoices(){
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              color: ThemeUtils.primary(context)!.withOpacity(0.1),
+              color: ThemeUtils.primary(context).withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: ThemeUtils.primary(context)!.withOpacity(0.2),
+                color: ThemeUtils.primary(context).withOpacity(0.2),
               ),
             ),
             child: Column(
@@ -2333,7 +2328,7 @@ void navigateToInvoices(){
                 SizedBox(height: 6),
                 Text(
                   label,
-                  style: ThemeUtils.bodySmall(context)?.copyWith(
+                  style: ThemeUtils.bodySmall(context).copyWith(
                     color: ThemeUtils.primary(context),
                     fontWeight: FontWeight.w500,
                   ),
@@ -2393,14 +2388,14 @@ void navigateToInvoices(){
                     children: [
                       Text(
                         item.title,
-                        style: ThemeUtils.bodyLarge(context)?.copyWith(
+                        style: ThemeUtils.bodyLarge(context).copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       SizedBox(height: 4),
                       Text(
                         item.description,
-                        style: ThemeUtils.bodySmall(context)?.copyWith(
+                        style: ThemeUtils.bodySmall(context).copyWith(
                           color: ThemeUtils.textSecondary(context).withOpacity(0.7),
                         ),
                       ),
@@ -2440,6 +2435,11 @@ void navigateToInvoices(){
       currentScreens = _clientCashierScreens;
     }
 
+    // Ensure current index is within bounds
+    if (_currentIndex >= currentScreens.length) {
+      _currentIndex = 0;
+    }
+
     return Scaffold(
       appBar: AppBar(
         actions: [
@@ -2470,9 +2470,6 @@ void navigateToInvoices(){
             ),
           ),
         ],
-
-
-
         flexibleSpace: Container(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2560,11 +2557,11 @@ void navigateToInvoices(){
 
   Widget _buildManagerNavigationBar(MyAuthProvider authProvider) {
     return BottomNavigationBar(
-      selectedItemColor: Colors.black,
-      unselectedItemColor: Colors.grey,
+      selectedItemColor: ThemeUtils.primary(context),
+      unselectedItemColor: ThemeUtils.accentColor(context),
       showUnselectedLabels: true,
       type: BottomNavigationBarType.fixed,
-      currentIndex: _currentIndex < 5 ? _currentIndex : 4,
+      currentIndex: _currentIndex < 4 ? _currentIndex : 3,
       onTap: (index) => _handleBottomNavigationTap(index, authProvider),
       items: [
         BottomNavigationBarItem(
@@ -2583,11 +2580,6 @@ void navigateToInvoices(){
           label: 'Cart',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.analytics_outlined),
-          activeIcon: Icon(Icons.analytics),
-          label: 'Analytics',
-        ),
-        BottomNavigationBarItem(
           icon: _buildMoreIcon(),
           activeIcon: _buildMoreIcon(),
           label: 'More',
@@ -2598,11 +2590,11 @@ void navigateToInvoices(){
 
   Widget _buildCashierNavigationBar(MyAuthProvider authProvider) {
     return BottomNavigationBar(
-      selectedItemColor: Colors.black,
-      unselectedItemColor: Colors.grey,
+      selectedItemColor: ThemeUtils.primary(context),
+      unselectedItemColor: ThemeUtils.accentColor(context),
       showUnselectedLabels: true,
       type: BottomNavigationBarType.fixed,
-      currentIndex: _currentIndex < 4 ? _currentIndex : 3,
+      currentIndex: _currentIndex < 3 ? _currentIndex : 2,
       onTap: (index) {
         if (index == 3) {
           _showMoreMenu(context, authProvider);
@@ -2667,9 +2659,9 @@ class CreditStats {
 }
 
 Future<CreditStats> _getCreditStats() async {
-  CreditService _creditService = CreditService();
+  CreditService creditService = CreditService();
   try {
-    final creditCustomers = await _creditService.getAllCreditCustomers();
+    final creditCustomers = await creditService.getAllCreditCustomers();
     final totalOutstanding = creditCustomers.fold(0.0, (sum, customer) => sum + customer.currentBalance);
     final overdueAmount = creditCustomers.fold(0.0, (sum, customer) => sum + customer.overdueAmount);
     final overdueCustomers = creditCustomers.where((customer) => customer.overdueCount > 0).length;
@@ -2680,7 +2672,7 @@ Future<CreditStats> _getCreditStats() async {
       overdueCustomers: overdueCustomers,
     );
   } catch (e) {
-    print('Error fetching credit stats: $e');
+    debugPrint('Error fetching credit stats: $e');
     return CreditStats.zero();
   }
 }
@@ -2706,4 +2698,14 @@ class MenuItem {
     required this.color,
     required this.index,
   });
+}
+
+class ScreenSelectionProvider extends ChangeNotifier{
+  Widget _currentScreen = ModernDashboardScreen();
+  Widget get  currentScreen => _currentScreen;
+
+  selectScreen(Widget selectedScreen){
+    _currentScreen = selectedScreen ;
+    notifyListeners();
+  }
 }

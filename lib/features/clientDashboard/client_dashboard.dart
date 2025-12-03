@@ -1,37 +1,33 @@
-import 'dart:async';
+
+
 import 'dart:io';
 import 'dart:math';
-
 
 import 'package:camera/camera.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' hide Category;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mpcm/core/models/category_model.dart' show Category;
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 
-import 'package:synchronized/synchronized.dart';
-
-import '../../analytics_screen.dart';
-
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/customer_model.dart';
+import '../../core/models/product_model.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../theme_utils.dart';
-import '../cartBase/cart_base.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../customerBase/customer_base.dart';
-import '../customerBase/customer_management_screen.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../orderBase/order_base.dart';
-
-import '../product_addition_restock_base/product_addition_restock_base.dart' hide EnhancedPOSService;
-import '../product_selling/product_selling_base.dart';
+import '../product_addition_restock_base/product_addition_restock_base.dart';
 import '../returnBase/return_base.dart';
+
 class OrderCreationResult {
   final bool success;
   final AppOrder? order;
@@ -252,7 +248,7 @@ class FirestoreServices {
         return defaultSettings;
       }
     } catch (e) {
-      print('Error getting business settings: $e');
+      debugPrint('Error getting business settings: $e');
       return BusinessSettings.createDefault();
     }
   }
@@ -270,7 +266,7 @@ class FirestoreServices {
 
       await businessSettingsRef.doc('business_settings').set(settings.toFirestore());
     } catch (e) {
-      print('Error updating business settings: $e');
+      debugPrint('Error updating business settings: $e');
       throw Exception('Failed to update business settings: $e');
     }
   }
@@ -309,7 +305,7 @@ class FirestoreServices {
         return nextSequence;
       });
     } catch (e) {
-      print('Error generating sequence: $e');
+      debugPrint('Error generating sequence: $e');
       throw Exception('Failed to generate sequence: $e');
     }
   }
@@ -323,7 +319,7 @@ class FirestoreServices {
 
       return '${settings.businessCode}-ORD-$currentYear-${sequence.toString().padLeft(4, '0')}';
     } catch (e) {
-      print('Error generating order number: $e');
+      debugPrint('Error generating order number: $e');
       // Fallback with timestamp (should never happen in normal operation)
       return 'POS-ORD-${DateTime.now().year}-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
     }
@@ -337,7 +333,7 @@ class FirestoreServices {
 
       return '${settings.businessCode}-INV-${sequence.toString().padLeft(4, '0')}';
     } catch (e) {
-      print('Error generating invoice number: $e');
+      debugPrint('Error generating invoice number: $e');
       // Fallback with timestamp (should never happen in normal operation)
       return 'POS-INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
     }
@@ -392,12 +388,12 @@ class FirestoreServices {
               'dateModified': FieldValue.serverTimestamp(),
             });
           } else {
-            print(
+            debugPrint(
               'Product ${item.productId} not found in database, skipping stock update',
             );
           }
         } catch (e) {
-          print('Error updating stock for product ${item.productId}: $e');
+          debugPrint('Error updating stock for product ${item.productId}: $e');
           // Continue with other products even if one fails
         }
       }
@@ -413,13 +409,13 @@ class FirestoreServices {
             });
           }
         } catch (e) {
-          print('Error updating order status: $e');
+          debugPrint('Error updating order status: $e');
         }
       }
 
       return returnRequest;
     } catch (e) {
-      print('Failed to create return: $e');
+      debugPrint('Failed to create return: $e');
       throw Exception('Failed to create return: $e');
     }
   }
@@ -441,7 +437,7 @@ class FirestoreServices {
 
       await returnsRef.doc(returnId).update(updateData);
     } catch (e) {
-      print('Error updating return status: $e');
+      debugPrint('Error updating return status: $e');
       throw Exception('Failed to update return status: $e');
     }
   }
@@ -460,7 +456,7 @@ class FirestoreServices {
         );
       }).toList();
     } catch (e) {
-      print('Error getting returns by order: $e');
+      debugPrint('Error getting returns by order: $e');
       return [];
     }
   }
@@ -493,7 +489,7 @@ class FirestoreServices {
         );
       }).toList();
     } catch (e) {
-      print('Error getting all returns: $e');
+      debugPrint('Error getting all returns: $e');
       return [];
     }
   }
@@ -507,7 +503,7 @@ class FirestoreServices {
 
       return true;
     } catch (e) {
-      print('Failed to sync pending return: $e');
+      debugPrint('Failed to sync pending return: $e');
       return false;
     }
   }
@@ -528,7 +524,7 @@ class FirestoreServices {
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
     } catch (e) {
-      print('Error searching orders: $e');
+      debugPrint('Error searching orders: $e');
       return [];
     }
   }
@@ -541,7 +537,7 @@ class FirestoreServices {
       }
       return null;
     } catch (e) {
-      print('Error getting order: $e');
+      debugPrint('Error getting order: $e');
       return null;
     }
   }
@@ -558,7 +554,7 @@ class FirestoreServices {
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
     } catch (e) {
-      print('Error getting recent orders: $e');
+      debugPrint('Error getting recent orders: $e');
       return [];
     }
   }
@@ -647,7 +643,7 @@ class FirestoreServices {
         'dateModified': FieldValue.serverTimestamp(),
       });
     } catch (e) {
-      print('Failed to update customer stats: $e');
+      debugPrint('Failed to update customer stats: $e');
     }
   }
 
@@ -892,12 +888,12 @@ class FirestoreServices {
 
       final createdOrder = AppOrder.fromFirestore(orderData, orderRef.id);
 
-      // Debug: Print customer data to verify it's stored correctly
+      // Debug: debugPrint customer data to verify it's stored correctly
       createdOrder.printCustomerData();
 
       return createdOrder;
     } catch (e) {
-      print('Error creating order with enhanced data: $e');
+      debugPrint('Error creating order with enhanced data: $e');
       throw Exception('Failed to create order: $e');
     }
   }
@@ -1068,7 +1064,7 @@ class FirestoreServices {
 
       return product.id;
     } catch (e) {
-      print('Error adding product: $e');
+      debugPrint('Error adding product: $e');
       throw Exception('Failed to add product: $e');
     }
   }
@@ -1157,7 +1153,7 @@ class FirestoreServices {
 
       return downloadUrl;
     } catch (e) {
-      print('Image upload failed: $e');
+      debugPrint('Image upload failed: $e');
       return null;
     }
   }
@@ -1269,9 +1265,9 @@ class FirestoreServices {
   Future<void> initializeNumberingSystem(String businessName) async {
     try {
       await updateBusinessSettings(businessName);
-      print('Numbering system initialized for business: $businessName');
+      debugPrint('Numbering system initialized for business: $businessName');
     } catch (e) {
-      print('Error initializing numbering system: $e');
+      debugPrint('Error initializing numbering system: $e');
     }
   }
 }
@@ -1364,7 +1360,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         throw Exception('Invalid tenant ID');
       }
 
-      print('Loading dashboard for tenant: $tenantId');
+      debugPrint('Loading dashboard for tenant: $tenantId');
 
       // Check connectivity FIRST
       final connectivityResult = await Connectivity().checkConnectivity();
@@ -1377,7 +1373,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
       // If offline, load cached data immediately
       if (!hasNetwork) {
-        print('No network - loading offline data immediately');
+        debugPrint('No network - loading offline data immediately');
         await _loadOfflineData(tenantId);
         return;
       }
@@ -1386,7 +1382,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       try {
         await _loadOnlineData(tenantId).timeout(Duration(seconds: 10));
       } catch (onlineError) {
-        print('Online load failed or timed out: $onlineError');
+        debugPrint('Online load failed or timed out: $onlineError');
         // Fallback to offline data
         await _loadOfflineData(tenantId);
         _isOfflineMode = true;
@@ -1403,7 +1399,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       }
 
     } catch (e) {
-      print('Error in dashboard load: $e');
+      debugPrint('Error in dashboard load: $e');
 
       // Final fallback - try basic offline data
       try {
@@ -1413,7 +1409,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
           await _loadBasicOfflineData();
         }
       } catch (fallbackError) {
-        print('All data loading failed: $fallbackError');
+        debugPrint('All data loading failed: $fallbackError');
       }
 
       if (mounted) {
@@ -1427,7 +1423,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
 // ADD this method for basic offline data fallback
   Future<void> _loadBasicOfflineData() async {
-    print('Loading basic offline data as final fallback');
+    debugPrint('Loading basic offline data as final fallback');
 
     // Create minimal dashboard data
     final basicStats = DashboardStats.empty();
@@ -1470,12 +1466,12 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
   }
 // In ModernDashboardScreen - REPLACE the _loadOnlineData method
   Future<void> _loadOnlineData(String tenantId) async {
-    print('🔄 Loading optimized online data...');
+    debugPrint('🔄 Loading optimized online data...');
 
     // Check for recent cached data first (even when online)
     final cachedData = await _localDb.getDashboardData(tenantId);
     if (cachedData != null && !_isRefreshing) {
-      print('📁 Loading from cache first for faster display');
+      debugPrint('📁 Loading from cache first for faster display');
       _loadCachedData(cachedData);
     }
 
@@ -1494,7 +1490,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
     final results = await Future.wait(futures.map((future) =>
         future.catchError((e) {
-          print('Partial data load error: $e');
+          debugPrint('Partial data load error: $e');
           return _getFallbackForType(future);
         })
     ), eagerError: false);
@@ -1526,7 +1522,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     );
 
     await _localDb.saveDashboardData(offlineData);
-    print('✅ Dashboard data loaded and cached');
+    debugPrint('✅ Dashboard data loaded and cached');
   }
 
 // ADD this helper method for fallback data
@@ -1540,7 +1536,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     return null;
   }
   Future<void> _loadOfflineData(String tenantId) async {
-    print('Loading dashboard data from offline sources');
+    debugPrint('Loading dashboard data from offline sources');
 
     // Generate data from local database
     final results = await Future.wait([
@@ -1824,7 +1820,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         totalReturns: allReturnsSnapshot.docs.length,
       );
     } catch (e) {
-      print('Error in _fetchDashboardStats: $e');
+      debugPrint('Error in _fetchDashboardStats: $e');
       return DashboardStats.empty();
     }
   }
@@ -1866,7 +1862,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         return AppOrder.fromFirestore(data, doc.id);
       }).toList();
     } catch (e) {
-      print('Error fetching recent orders: $e');
+      debugPrint('Error fetching recent orders: $e');
       return [];
     }
   }
@@ -1887,7 +1883,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         return Product.fromFirestore(data, doc.id);
       }).toList();
     } catch (e) {
-      print('Error fetching low stock products: $e');
+      debugPrint('Error fetching low stock products: $e');
       return [];
     }
   }
@@ -1927,7 +1923,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
       return revenueData;
     } catch (e) {
-      print('Error generating revenue data: $e');
+      debugPrint('Error generating revenue data: $e');
       return [];
     }
   }
@@ -1972,7 +1968,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                   imageUrl = productData?['imageUrl']?.toString();
                 }
               } catch (e) {
-                print('Error fetching product image: $e');
+                debugPrint('Error fetching product image: $e');
               }
 
               productSales[productId] = TopSellingProduct(
@@ -1991,7 +1987,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       sortedList.sort((a, b) => b.totalSold.compareTo(a.totalSold));
       return sortedList.take(5).toList();
     } catch (e) {
-      print('Error fetching top selling products: $e');
+      debugPrint('Error fetching top selling products: $e');
       return [];
     }
   }
@@ -2002,7 +1998,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       final customers = await _posService.getAllCustomers();
       return customers.take(5).toList();
     } catch (e) {
-      print('Error fetching recent customers: $e');
+      debugPrint('Error fetching recent customers: $e');
       return [];
     }
   }
@@ -2120,7 +2116,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       throw Exception('User ${user.uid} not found in tenant $tenantId');
     }
 
-    print('Tenant validation successful: $tenantId');
+    debugPrint('Tenant validation successful: $tenantId');
   }
 
   void _showErrorDialog(String error) {

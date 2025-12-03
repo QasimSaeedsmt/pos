@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../app.dart';
-import '../features/customerBase/customer_base.dart';
-import '../features/orderBase/order_base.dart';
+import '../core/models/app_order_model.dart';
+import '../core/models/customer_model.dart';
 import 'invoice_model.dart';
 import 'invoice_preview_screen.dart';
 import 'invoice_service.dart';

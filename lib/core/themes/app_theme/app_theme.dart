@@ -8,7 +8,7 @@ class AppTheme {
       colorScheme: ColorScheme.light(
         primary: Colors.blue[700]!,
         secondary: Colors.cyan[400]!,
-        background: Colors.grey[50]!,
+        surface: Colors.grey[50]!,
       ),
       scaffoldBackgroundColor: Colors.white,
       appBarTheme: AppBarTheme(

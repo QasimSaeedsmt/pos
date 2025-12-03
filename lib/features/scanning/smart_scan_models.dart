@@ -1,16 +1,15 @@
 import 'dart:async';
-import 'dart:io';
-import 'dart:ui';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:mpcm/core/overlay_manager.dart';
 import 'package:mpcm/features/users/users_base.dart';
 import 'package:mpcm/theme_utils.dart';
-import 'package:intl/intl.dart';
-
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/cart_item_model.dart';
+import '../../core/models/category_model.dart';
+import '../../core/models/product_model.dart';
 import '../../printing/bottom_sheet.dart';
 import '../cartBase/cart_base.dart';
 import '../credit/credit_sale_modal.dart';
@@ -18,8 +17,6 @@ import '../credit/credit_sale_model.dart';
 import '../customerBase/customer_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../orderBase/order_base.dart';
-import '../product_addition_restock_base/product_addition_restock_base.dart' show Category;
 import '../product_selling/product_selling_base.dart';
 
 class SmartProductGrid extends StatefulWidget {
@@ -429,7 +426,7 @@ class SmartProductCard extends StatelessWidget {
         SizedBox(height: 12),
 
         // Add to Cart Button
-        Container(
+        SizedBox(
           width: double.infinity,
           height: 40,
           child: ElevatedButton(
@@ -501,7 +498,7 @@ class _SmartCategoryFilterState extends State<SmartCategoryFilter> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       height: 60,
       child: ListView(
         controller: _scrollController,
@@ -544,7 +541,7 @@ class _SmartCategoryFilterState extends State<SmartCategoryFilter> {
         checkmarkColor: Colors.white,
         shape: StadiumBorder(
           side: BorderSide(
-            color: isSelected ? ThemeUtils.primary(context)! : Colors.grey[300]!,
+            color: isSelected ? ThemeUtils.primary(context) : Colors.grey[300]!,
             width: 2,
           ),
         ),
@@ -605,7 +602,7 @@ class _SmartSearchBarState extends State<SmartSearchBar> {
           ),
         ],
         border: Border.all(
-          color: _hasFocus ? ThemeUtils.primary(context)! : Colors.transparent,
+          color: _hasFocus ? ThemeUtils.primary(context) : Colors.transparent,
           width: 2,
         ),
       ),
@@ -721,7 +718,7 @@ class SmartEmptyState extends StatelessWidget {
             ),
             if (showButton) ...[
               SizedBox(height: 24),
-              Container(
+              SizedBox(
                 height: 44,
                 child: ElevatedButton(
                   onPressed: onButtonPressed,
@@ -832,7 +829,7 @@ class SmartProductDetailSheet extends StatelessWidget {
   Widget _buildImageGallery() {
     final images = [product.imageUrl, ...product.imageUrls].where((url) => url != null && url.isNotEmpty).toList();
 
-    return Container(
+    return SizedBox(
       height: 200,
       child: PageView.builder(
         itemCount: images.isEmpty ? 1 : images.length,
@@ -1080,7 +1077,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         }
       }
     } catch (e) {
-      print('Error loading current user: $e');
+      debugPrint('Error loading current user: $e');
       // Create a basic user as fallback
       setState(() {
         currentUser = AppUser(
@@ -1163,7 +1160,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         _categories.addAll(categories);
       });
     } catch (e) {
-      print('Failed to load categories: $e');
+      debugPrint('Failed to load categories: $e');
     }
   }
 
@@ -1217,10 +1214,10 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
     }
 
     // Debug: Print all categories for this product
-    print('Checking product "${product.name}" for category ID: $categoryId');
-    print('Product categories:');
+    debugPrint('Checking product "${product.name}" for category ID: $categoryId');
+    debugPrint('Product categories:');
     for (final cat in product.categories) {
-      print('  - "${cat.name}" (ID: "${cat.id}") [Length: ${cat.id.length}]');
+      debugPrint('  - "${cat.name}" (ID: "${cat.id}") [Length: ${cat.id.length}]');
     }
 
     // FIX: Compare by NAME if ID is empty, or by ID if available
@@ -1229,7 +1226,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
       if (category.id.isNotEmpty) {
         final matches = category.id == categoryId;
         if (matches) {
-          print('  ✅ MATCH by ID: ${category.id} == $categoryId');
+          debugPrint('  ✅ MATCH by ID: ${category.id} == $categoryId');
         }
         return matches;
       }
@@ -1244,7 +1241,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         if (matchingCategory.id.isNotEmpty) {
           final matches = matchingCategory.id == categoryId;
           if (matches) {
-            print('  ✅ MATCH by NAME: "${category.name}" -> ID: ${matchingCategory.id} == $categoryId');
+            debugPrint('  ✅ MATCH by NAME: "${category.name}" -> ID: ${matchingCategory.id} == $categoryId');
           }
           return matches;
         }
@@ -1253,7 +1250,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
       return false;
     });
 
-    print('  Result: $hasCategory');
+    debugPrint('  Result: $hasCategory');
     return hasCategory;
   }
   void _applyFilters() {
@@ -1261,15 +1258,15 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
 
     // Apply category filter
     if (_selectedCategoryId != 'all') {
-      print('=== CATEGORY FILTER DEBUG ===');
-      print('Filtering for category ID: "$_selectedCategoryId"');
+      debugPrint('=== CATEGORY FILTER DEBUG ===');
+      debugPrint('Filtering for category ID: "$_selectedCategoryId"');
 
       filtered = filtered.where((product) {
         return _hasProductCategory(product, _selectedCategoryId);
       }).toList();
 
-      print('Products after category filter: ${filtered.length}');
-      print('=== END CATEGORY FILTER DEBUG ===');
+      debugPrint('Products after category filter: ${filtered.length}');
+      debugPrint('=== END CATEGORY FILTER DEBUG ===');
     }
 
     // Apply stock filter
@@ -1644,7 +1641,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         });
       }
     } catch (e) {
-      print('Failed to refresh products after sale: $e');
+      debugPrint('Failed to refresh products after sale: $e');
       // Even if refresh fails, continue with reset
     }
   }
@@ -1801,7 +1798,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         ),
 
         // Categories
-        Container(
+        SizedBox(
           height: 60,
           child: ListView(
             scrollDirection: Axis.horizontal,
@@ -2478,7 +2475,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '${_cartItemCount} ${_cartItemCount == 1 ? 'Item' : 'Items'}',
+                    '$_cartItemCount ${_cartItemCount == 1 ? 'Item' : 'Items'}',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,

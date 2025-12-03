@@ -106,12 +106,12 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
           PopupMenuButton(
             itemBuilder: (context) => [
               PopupMenuItem(
-                child: Text('Generate Full Report'),
                 onTap: _generateFullPdfReport,
+                child: Text('Generate Full Report'),
               ),
               PopupMenuItem(
-                child: Text('Customer Statements'),
                 onTap: _generateCustomerStatements,
+                child: Text('Customer Statements'),
               ),
             ],
           ),
@@ -352,7 +352,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 16),
-            Container(
+            SizedBox(
               height: 200,
               child: SfCartesianChart(
                 primaryXAxis: CategoryAxis(),
@@ -498,7 +498,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
                 Spacer(),
                 TextButton(
                   onPressed: () {
-                    DefaultTabController.of(context)?.animateTo(2);
+                    DefaultTabController.of(context).animateTo(2);
                   },
                   child: Text('View All'),
                 ),
@@ -627,7 +627,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
                       ),
                     ),
                   )
-              ).toList(),
+              ),
             ],
           ),
         ),
@@ -735,7 +735,7 @@ class _CreditAnalyticsScreenState extends State<CreditAnalyticsScreen> {
                         ),
                       ),
                     )
-                ).toList(),
+                ),
               ],
             ],
           ),

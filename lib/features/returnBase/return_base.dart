@@ -3,22 +3,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../constants.dart';
+import '../../core/models/app_order_model.dart';
+import '../../core/models/product_model.dart';
 import '../../printing/invoice_service.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../orderBase/order_base.dart';
-import '../product_selling/product_selling_base.dart';
 
 
-import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import '../../constants.dart';
-import '../invoiceBase/invoice_and_printing_base.dart';
-import '../main_navigation/main_navigation_base.dart';
-import '../orderBase/order_base.dart';
-import '../product_selling/product_selling_base.dart';
 
 // ReturnReason class
 class ReturnReason {
@@ -325,7 +317,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
         _returns.addAll(returns);
       });
     } catch (e) {
-      print('Failed to load returns: $e');
+      debugPrint('Failed to load returns: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to load returns: ${e.toString()}'),
@@ -381,7 +373,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
           scanResult = await QRScannerService().processScannedQRCode(qrData, context);
         }
       } catch (e) {
-        print('Failed to parse as OrderQRData: $e');
+        debugPrint('Failed to parse as OrderQRData: $e');
       }
 
       // If new format failed, try the old InvoiceQRData format
@@ -398,7 +390,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
             );
           }
         } catch (e) {
-          print('Failed to parse as InvoiceQRData: $e');
+          debugPrint('Failed to parse as InvoiceQRData: $e');
         }
       }
 
@@ -430,7 +422,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
         }
 
         // Show return options
-        _showQRReturnOptions(orderQRData, scanResult!);
+        _showQRReturnOptions(orderQRData, scanResult);
       } else {
         _showQRCodeError(qrData, scanResult?.error);
       }
@@ -507,7 +499,7 @@ class _ReturnsManagementScreenState extends State<ReturnsManagementScreen> {
         }
       }
     } catch (e) {
-      print('Error extracting order from text: $e');
+      debugPrint('Error extracting order from text: $e');
     }
 
     return null;
@@ -3003,7 +2995,7 @@ class _ReturnAnyProductScreenState extends State<ReturnAnyProductScreen> {
 
       Navigator.of(context).pop();
     } catch (e) {
-      print('Error processing return: $e');
+      debugPrint('Error processing return: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to process return: ${e.toString()}'),
