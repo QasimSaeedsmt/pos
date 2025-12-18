@@ -1,22 +1,45 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 
 import '../../features/main_navigation/main_navigation_base.dart';
 import 'customer_model.dart';
 
+part 'app_order_model.g.dart';
+
+@HiveType(typeId: 9)
 class AppOrder {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String number;
+
+  @HiveField(2)
   final DateTime dateCreated;
+
+  @HiveField(3)
   final double total;
+
+  @HiveField(4)
   final List<dynamic> lineItems;
 
-  // Add direct customer fields
+  @HiveField(5)
   final String? customerId;
+
+  @HiveField(6)
   final String? customerName;
+
+  @HiveField(7)
   final String? customerEmail;
+
+  @HiveField(8)
   final String? customerPhone;
+
+  @HiveField(9)
   final String? customerAddress;
+
+  @HiveField(10)
   final Map<String, dynamic>? customerData;
 
   AppOrder({

@@ -12,7 +12,7 @@ import '../../core/models/customer_model.dart';
 import '../../printing/invoice_model.dart';
 import '../../printing/invoice_service.dart';
 import '../barcode/barcode_base.dart';
-import '../connectivityBase/local_db_base.dart';
+import '../connectivityBase/local_db_base.dart' hide Constants;
 import '../users/users_base.dart';
 
 class ScannerOverlay extends CustomPainter {

@@ -1,34 +1,91 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
+
+part 'customer_model.g.dart';
+
+@HiveType(typeId: 13)
 class Customer {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String firstName;
+
+  @HiveField(2)
   final String lastName;
+
+  @HiveField(3)
   final String email;
+
+  @HiveField(4)
   final String phone;
+
+  @HiveField(5)
   final String? company;
+
+  @HiveField(6)
   final String? address1;
+
+  @HiveField(7)
   final String? address2;
+
+  @HiveField(8)
   final String? city;
+
+  @HiveField(9)
   final String? state;
+
+  @HiveField(10)
   final String? postcode;
+
+  @HiveField(11)
   final String? country;
+
+  @HiveField(12)
   final DateTime? dateCreated;
+
+  @HiveField(13)
   final DateTime? dateModified;
+
+  @HiveField(14)
   final int orderCount;
+
+  @HiveField(15)
   final double totalSpent;
+
+  @HiveField(16)
   final String? notes;
+
+  @HiveField(17)
   final Map<String, dynamic> metaData;
 
-  // Enhanced Credit Fields
+  @HiveField(18)
   final double creditLimit;
+
+  @HiveField(19)
   final double currentBalance;
+
+  @HiveField(20)
   final double totalCreditGiven;
+
+  @HiveField(21)
   final double totalCreditPaid;
+
+  @HiveField(22)
   final DateTime? lastCreditDate;
+
+  @HiveField(23)
   final DateTime? lastPaymentDate;
+
+  @HiveField(24)
   final Map<String, dynamic> creditTerms;
+
+  @HiveField(25)
   final double overdueAmount;
+
+  @HiveField(26)
   final int overdueCount;
 
   Customer({
@@ -62,15 +119,20 @@ class Customer {
   });
 
   String get fullName => '$firstName $lastName';
+
   String get displayName =>
       company?.isNotEmpty == true ? '$fullName ($company)' : fullName;
 
-  // Enhanced credit helper methods
   bool get hasCreditLimit => creditLimit > 0;
+
   bool get isOverLimit => currentBalance > creditLimit;
+
   double get availableCredit => creditLimit - currentBalance;
+
   double get creditUtilization => creditLimit > 0 ? (currentBalance / creditLimit) * 100 : 0;
+
   bool get hasOverdue => overdueAmount > 0;
+
   bool get canMakeCreditSale => hasCreditLimit ? !isOverLimit : true;
 
   factory Customer.fromFirestore(Map<String, dynamic> data, String id) {
@@ -125,7 +187,6 @@ class Customer {
     );
   }
 
-  // Enhanced copyWith method for credit operations
   Customer copyWith({
     String? firstName,
     String? lastName,
@@ -180,7 +241,6 @@ class Customer {
     );
   }
 
-  // Specific credit copy method
   Customer copyWithCredit({
     double? creditLimit,
     double? currentBalance,
@@ -226,7 +286,6 @@ class Customer {
       'notes': notes,
       'metaData': metaData,
       'searchKeywords': _generateSearchKeywords(),
-      // Credit fields
       'creditLimit': creditLimit,
       'currentBalance': currentBalance,
       'totalCreditGiven': totalCreditGiven,
@@ -249,4 +308,17 @@ class Customer {
     }
     return keywords.where((k) => k.length > 1).toSet().toList();
   }
+
+  @override
+  String toString() {
+    return 'Customer{id: $id, name: $fullName, email: $email}';
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Customer && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }

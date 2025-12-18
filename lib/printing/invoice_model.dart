@@ -408,9 +408,7 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
         return 'Cashier';
       case UserRole.salesInventoryManager:
         return 'Sales Manager';
-      default:
-        return 'Staff';
-    }
+      }
   }
 }
 

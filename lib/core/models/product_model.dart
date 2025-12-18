@@ -4,40 +4,109 @@ import 'package:flutter/material.dart';
 import '../../features/product_selling/product_selling_base.dart';
 import 'category_model.dart';
 
+import 'package:hive/hive.dart';
+
+part 'product_model.g.dart';
+
+@HiveType(typeId: 14)
 class Product {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final String sku;
+
+  @HiveField(3)
   final double price;
+
+  @HiveField(4)
   final double? purchasePrice;
+
+  @HiveField(5)
   final double? regularPrice;
+
+  @HiveField(6)
   final double? salePrice;
+
+  @HiveField(7)
   final String? imageUrl;
+
+  @HiveField(8)
   final List<String> imageUrls;
+
+  @HiveField(9)
   final int stockQuantity;
+
+  @HiveField(10)
   final bool inStock;
+
+  @HiveField(11)
   final String stockStatus;
+
+  @HiveField(12)
   final String? description;
+
+  @HiveField(13)
   final String? shortDescription;
+
+  @HiveField(14)
   final List<Category> categories;
+
+  @HiveField(15)
   final List<Attribute> attributes;
+
+  @HiveField(16)
   final Map<String, dynamic> metaData;
+
+  @HiveField(17)
   final DateTime? dateCreated;
+
+  @HiveField(18)
   final DateTime? dateModified;
+
+  @HiveField(19)
   final bool purchasable;
+
+  @HiveField(20)
   final String? type;
+
+  @HiveField(21)
   final String? status;
+
+  @HiveField(22)
   final bool featured;
+
+  @HiveField(23)
   final String? permalink;
+
+  @HiveField(24)
   final double? averageRating;
+
+  @HiveField(25)
   final int? ratingCount;
+
+  @HiveField(26)
   final String? parentId;
+
+  @HiveField(27)
   final List<String> variations;
+
+  @HiveField(28)
   final String? weight;
+
+  @HiveField(29)
   final String? dimensions;
-  // NEW FIELDS FOR WAC
+
+  @HiveField(30)
   final double totalCostValue;
+
+  @HiveField(31)
   final int totalUnitsPurchased;
+
+  @HiveField(32)
   final DateTime? lastRestockDate;
 
   Product({
@@ -71,7 +140,6 @@ class Product {
     this.variations = const [],
     this.weight,
     this.dimensions,
-    // Initialize new fields
     this.totalCostValue = 0.0,
     this.totalUnitsPurchased = 0,
     this.lastRestockDate,
@@ -83,7 +151,6 @@ class Product {
     return categories.any((cat) => cat.id == categoryId);
   }
 
-  // Copy with method update
   Product copyWith({
     String? id,
     String? name,
@@ -156,9 +223,7 @@ class Product {
     );
   }
 
-  // Complete fromFirestore method with all fields
   factory Product.fromFirestore(Map<String, dynamic> data, String id) {
-    // Parse categories
     final List<Category> categories = [];
     if (data['categories'] is List) {
       for (final catData in data['categories']) {
@@ -172,7 +237,6 @@ class Product {
       }
     }
 
-    // Parse image URLs
     final List<String> imageUrls = [];
     if (data['imageUrls'] is List) {
       for (final url in data['imageUrls']) {
@@ -182,7 +246,6 @@ class Product {
       }
     }
 
-    // Parse attributes
     final List<Attribute> attributes = [];
     if (data['attributes'] is List) {
       for (final attrData in data['attributes']) {
@@ -227,14 +290,12 @@ class Product {
       variations: data['variations'] is List ? List<String>.from(data['variations']) : [],
       weight: data['weight']?.toString(),
       dimensions: data['dimensions']?.toString(),
-      // New WAC fields
       totalCostValue: _parseDouble(data['totalCostValue']) ?? 0.0,
       totalUnitsPurchased: _parseInt(data['totalUnitsPurchased']) ?? 0,
       lastRestockDate: _parseDate(data['lastRestockDate']),
     );
   }
 
-  // Complete toFirestore method
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
@@ -267,47 +328,37 @@ class Product {
       'variations': variations,
       'weight': weight,
       'dimensions': dimensions,
-      // New WAC fields
       'totalCostValue': totalCostValue,
       'totalUnitsPurchased': totalUnitsPurchased,
       'lastRestockDate': lastRestockDate?.toIso8601String(),
-      // Add search keywords for better search functionality
       'searchKeywords': _generateSearchKeywords(),
     };
   }
 
-  // Generate search keywords for better search functionality
   List<String> _generateSearchKeywords() {
     final keywords = <String>[];
 
-    // Add product name words
     keywords.addAll(name.toLowerCase().split(' '));
 
-    // Add SKU
     if (sku.isNotEmpty) {
       keywords.add(sku.toLowerCase());
     }
 
-    // Add category names
     for (final category in categories) {
       keywords.addAll(category.name.toLowerCase().split(' '));
     }
 
-    // Add description words if available
     if (description != null && description!.isNotEmpty) {
       keywords.addAll(description!.toLowerCase().split(' '));
     }
 
-    // Remove duplicates and empty strings
     return keywords.where((k) => k.length > 1).toSet().toList();
   }
 
-  // Helper method to calculate current inventory value
   double get inventoryValue {
     return (purchasePrice ?? 0.0) * stockQuantity;
   }
 
-  // Helper method to get profit margin
   double get profitMargin {
     if (purchasePrice == null || purchasePrice == 0) return 0.0;
     return ((price - purchasePrice!) / purchasePrice!) * 100;
@@ -354,4 +405,9 @@ class Product {
 
   @override
   int get hashCode => id.hashCode;
+
+  @override
+  String toString() {
+    return 'Product{id: $id, name: $name, price: $price, stock: $stockQuantity}';
+  }
 }
