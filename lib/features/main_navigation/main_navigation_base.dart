@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:camera/camera.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
@@ -17,6 +16,7 @@ import '../../core/models/cart_item_model.dart';
 import '../../core/models/category_model.dart';
 import '../../core/models/customer_model.dart';
 import '../../core/models/product_model.dart';
+import '../../core/models/return_request.dart';
 import '../../core/overlay_manager.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../modules/auth/screens/settings_screen.dart';
@@ -40,93 +40,8 @@ import '../scanning/action_sheets.dart';
 import '../ticketing/ticketing.dart';
 import '../users/users_base.dart';
 
-class NavigationService {
-  String? _currentTenantId;
-
-  void setTenantId(String tenantId) {
-    _currentTenantId = tenantId;
-  }
-
-  CollectionReference get productsRef => _firestore
-      .collection('tenants')
-      .doc(_currentTenantId)
-      .collection('products');
-
-  CollectionReference get customersRef => _firestore
-      .collection('tenants')
-      .doc(_currentTenantId)
-      .collection('customers');
-
-  static final NavigationService _instance = NavigationService._internal();
-
-  factory NavigationService() => _instance;
-  NavigationService._internal();
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
-  Future<List<Customer>> searchCustomers(String query) async {
-    if (query.isEmpty) return [];
-
-    final snapshot = await customersRef
-        .where('searchKeywords', arrayContains: query.toLowerCase())
-        .limit(20)
-        .get();
-
-    return snapshot.docs
-        .map(
-          (doc) => Customer.fromFirestore(
-        doc.data() as Map<String, dynamic>,
-        doc.id,
-      ),
-    )
-        .toList();
-  }
-
-  Future<Customer?> getCustomerById(String id) async {
-    final doc = await customersRef.doc(id).get();
-    if (doc.exists) {
-      return Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
-    }
-    return null;
-  }
-
-  Future<Customer?> getCustomerByEmail(String email) async {
-    final snapshot = await customersRef
-        .where('email', isEqualTo: email.toLowerCase())
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isNotEmpty) {
-      final doc = snapshot.docs.first;
-      return Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
-    }
-    return null;
-  }
-
-  Future<String> addCustomer(Customer customer) async {
-    try {
-      final customerData = customer.toFirestore();
-      final docRef = customersRef.doc();
-      await docRef.set(customerData);
-      return docRef.id;
-    } catch (e) {
-      throw Exception('Failed to add customer: $e');
-    }
-  }
-
-  Future<void> updateCustomer(Customer customer) async {
-    try {
-      final customerData = customer.toFirestore();
-      await customersRef.doc(customer.id).update(customerData);
-    } catch (e) {
-      throw Exception('Failed to update customer: $e');
-    }
-  }
-}
-
 class EnhancedPOSService {
-  final FirestoreServices _firestore = FirestoreServices();
-  String? _currentTenantId;
+  final FirestoreServices _firestoreServices = FirestoreServices();
   final LocalDatabase _localDb = LocalDatabase();
   final Connectivity _connectivity = Connectivity();
   final Lock _syncLock = Lock();
@@ -134,7 +49,7 @@ class EnhancedPOSService {
   bool _isOnline = false;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
-  // WAC CALCULATION: Update product cost and stock when restocking
+  ///working
   Future<void> restockProductWithWAC(
       String productId,
       int quantity,
@@ -145,7 +60,7 @@ class EnhancedPOSService {
       }) async {
     try {
       // 1. Get current product
-      final productDoc = await _firestore.productsRef
+      final productDoc = await _firestoreServices.productsRef
           .doc(productId)
           .get();
 
@@ -183,7 +98,7 @@ class EnhancedPOSService {
       );
 
       // 5. Save updated product
-      await _firestore
+      await _firestoreServices
           .productsRef
           .doc(productId)
           .update(updatedProduct.toFirestore());
@@ -203,7 +118,7 @@ class EnhancedPOSService {
         notes: notes,
       );
 
-      await _firestore
+      await _firestoreServices
           .purchaseRecordRef
           .doc(purchaseRecord.id)
           .set(purchaseRecord.toFirestore());
@@ -221,7 +136,7 @@ class EnhancedPOSService {
     }
   }
 
-  // WAC FORMULA: Calculate weighted average cost
+  ///working
   double _calculateWeightedAverage({
     required int oldQuantity,
     required double oldCost,
@@ -237,85 +152,12 @@ class EnhancedPOSService {
     return (totalOldValue + totalNewValue) / totalQuantity;
   }
 
-  // Calculate profit for a sale
-  Map<String, dynamic> calculateSaleProfit(Product product, int quantity, double salePrice) {
-    final cost = product.purchasePrice ?? 0.0;
-    final totalCost = cost * quantity;
-    final totalRevenue = salePrice * quantity;
-    final profit = totalRevenue - totalCost;
-    final profitMargin = cost > 0 ? (profit / totalCost) * 100 : 0.0;
-
-    return {
-      'product': product,
-      'quantity': quantity,
-      'salePrice': salePrice,
-      'costPrice': cost,
-      'totalRevenue': totalRevenue,
-      'totalCost': totalCost,
-      'profit': profit,
-      'profitMargin': profitMargin,
-      'profitPerUnit': profit / quantity,
-    };
-  }
-
-  // Update stock after sale (cost remains the same until next restock)
-  Future<void> updateStockAfterSale(String productId, int quantitySold) async {
-    try {
-      final productDoc = await _firestore
-          .productsRef
-          .doc(productId)
-          .get();
-
-      if (!productDoc.exists) {
-        throw Exception('Product not found');
-      }
-
-      final currentProduct = Product.fromFirestore(
-        productDoc.data() as Map<String, dynamic>,
-        productDoc.id,
-      );
-
-      final newStock = currentProduct.stockQuantity - quantitySold;
-
-      await _firestore
-          .productsRef
-          .doc(productId)
-          .update({
-        'stockQuantity': newStock,
-        'inStock': newStock > 0,
-        'stockStatus': newStock > 0 ? 'instock' : 'outofstock',
-        'dateModified': DateTime.now(),
-      });
-
-      debugPrint('📦 Stock updated: ${currentProduct.name}');
-      debugPrint('🛒 Sold: $quantitySold');
-      debugPrint('📊 New Stock: $newStock');
-      debugPrint('💰 Cost Price remains: ${currentProduct.purchasePrice}');
-
-    } catch (e) {
-      debugPrint('❌ Error updating stock after sale: $e');
-      throw Exception('Failed to update stock: $e');
-    }
-  }
-
-  // GET PRODUCT PROFITABILITY
-  double calculateProductProfit(Product product, double salePrice) {
-    final cost = product.purchasePrice ?? 0.0;
-    return salePrice - cost;
-  }
-
-  double calculateProductProfitMargin(Product product, double salePrice) {
-    final cost = product.purchasePrice ?? 0.0;
-    if (cost == 0) return 0.0;
-    return ((salePrice - cost) / cost) * 100;
-  }
-
-  // GET PURCHASE HISTORY
+  ///working
   Future<List<PurchaseRecord>> getPurchaseHistory(String productId) async {
 
 
     try {
-      final snapshot = await _firestore
+      final snapshot = await _firestoreServices
           .purchaseRecordRef
           .where('productId', isEqualTo: productId)
           .orderBy('purchaseDate', descending: true)
@@ -333,59 +175,14 @@ class EnhancedPOSService {
     }
   }
 
-  // INVENTORY VALUATION REPORT
-  Future<Map<String, dynamic>> getInventoryValuation() async {
-    try {
-      final productsSnapshot = await _firestore
-          .productsRef
-          .get();
-
-      double totalInventoryValue = 0.0;
-      double totalCostValue = 0.0;
-      int totalItems = 0;
-      final List<Map<String, dynamic>> productValuations = [];
-
-      for (final doc in productsSnapshot.docs) {
-        final product = Product.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
-
-        final productValue = product.inventoryValue;
-        totalInventoryValue += productValue;
-        totalCostValue += product.totalCostValue;
-        totalItems += product.stockQuantity;
-
-        productValuations.add({
-          'product': product,
-          'valuation': productValue,
-          'costValue': product.totalCostValue,
-          'profitPotential': (product.price * product.stockQuantity) - productValue,
-        });
-      }
-
-      return {
-        'totalInventoryValue': totalInventoryValue,
-        'totalCostValue': totalCostValue,
-        'totalItems': totalItems,
-        'averageCostPerItem': totalItems > 0 ? totalCostValue / totalItems : 0,
-        'productValuations': productValuations,
-        'generatedAt': DateTime.now(),
-      };
-    } catch (e) {
-      debugPrint('Error getting inventory valuation: $e');
-      throw Exception('Failed to generate inventory valuation: $e');
-    }
-  }
-
-  // Enhanced category methods with complete integration
+  ///working
   Future<List<Category>> getCategories() async {
     try {
       List<Category> categories;
 
       if (_isOnline) {
         debugPrint('🔄 Fetching categories from Firestore...');
-        categories = await _firestore.getCategories();
+        categories = await _firestoreServices.getCategories();
 
         // Always sync Firestore categories to local database for offline access
         await _localDb.saveCategories(categories);
@@ -412,13 +209,14 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<String> addCategory(Category category) async {
     try {
       String categoryId;
 
       if (_isOnline) {
         debugPrint('🔄 Adding category to Firestore: ${category.name}');
-        categoryId = await _firestore.addCategory(category);
+        categoryId = await _firestoreServices.addCategory(category);
 
         // Update the category with the Firestore ID
         final updatedCategory = category.copyWith(id: categoryId);
@@ -456,11 +254,12 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> updateCategory(Category category) async {
     try {
       if (_isOnline) {
         debugPrint('🔄 Updating category in Firestore: ${category.name} (${category.id})');
-        await _firestore.updateCategory(category);
+        await _firestoreServices.updateCategory(category);
       }
 
       // Always update local database for consistency (online or offline)
@@ -481,11 +280,12 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> deleteCategory(String categoryId) async {
     try {
       if (_isOnline) {
         debugPrint('🔄 Deleting category from Firestore: $categoryId');
-        await _firestore.deleteCategory(categoryId);
+        await _firestoreServices.deleteCategory(categoryId);
       }
 
       // Always update local database for consistency
@@ -506,23 +306,7 @@ class EnhancedPOSService {
     }
   }
 
-  Stream<List<Category>> getCategoriesStream() {
-    if (_isOnline) {
-      return _firestore.getCategoriesStream().asyncMap((categories) async {
-        // Sync Firestore categories to local database when they update
-        await _localDb.saveCategories(categories);
-        return categories;
-      }).handleError((error) {
-        debugPrint('❌ Categories stream error: $error');
-        // Fallback to local data when stream fails
-        return _localDb.getAllCategories();
-      });
-    } else {
-      return _localDb.getCategoriesStream();
-    }
-  }
-
-  // Enhanced sync method for categories
+  ///working
   Future<void> _syncPendingCategories() async {
     if (!_isOnline) {
       debugPrint('📱 Skipping category sync - offline');
@@ -543,7 +327,7 @@ class EnhancedPOSService {
       for (final localCategory in localOnlyCategories) {
         try {
           // Add to Firestore and get the real ID
-          final firestoreId = await _firestore.addCategory(localCategory);
+          final firestoreId = await _firestoreServices.addCategory(localCategory);
 
           // Update local category with Firestore ID
           final updatedCategory = localCategory.copyWith(id: firestoreId);
@@ -561,9 +345,10 @@ class EnhancedPOSService {
   }
 
   void setTenantContext(String tenantId) {
-    _firestore.setTenantId(tenantId);
+    _firestoreServices.setTenantId(tenantId);
   }
 
+  ///working
   Map<String, dynamic> _createEnhancedCartData(
       List<CartItem> cartItems,
       Map<String, dynamic>? additionalData, {
@@ -633,6 +418,7 @@ class EnhancedPOSService {
     };
   }
 
+  ///working
   Future<OrderCreationResult> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
@@ -682,7 +468,7 @@ class EnhancedPOSService {
           }
         }
 
-        final order = await _firestore.createOrderWithEnhancedData(
+        final order = await _firestoreServices.createOrderWithEnhancedData(
           cartItems,
           customerSelection,
           enhancedData,
@@ -704,6 +490,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _updateCustomerCreditBalance(
       Customer customer,
       CreditSaleData creditSaleData,
@@ -722,20 +509,8 @@ class EnhancedPOSService {
       throw Exception('Failed to update customer credit: $e');
     }
   }
-
-  Future<OrderCreationResult> createOrderWithCustomer(
-      List<CartItem> cartItems,
-      CustomerSelection customerSelection, {
-        Map<String, dynamic>? additionalData,
-      }) async {
-    // Use the enhanced method by default
-    return await createOrderWithEnhancedData(
-      cartItems,
-      customerSelection,
-      additionalData: additionalData,
-    );
-  }
-
+  
+  ///working
   Future<OrderCreationResult> _createOfflineOrderWithCustomer(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
@@ -766,11 +541,13 @@ class EnhancedPOSService {
       await _localDb.clearCart();
       return OrderCreationResult.offline(pendingOrderId);
     } catch (e) {
+      // print("Dagha chal de $e");
       return OrderCreationResult.error('Failed to save order locally: $e');
     }
   }
 
   // Get invoice settings
+  ///working
   Future<Map<String, dynamic>> getInvoiceSettings() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -787,6 +564,7 @@ class EnhancedPOSService {
   }
 
   // Get business info
+  ///working
   Future<Map<String, dynamic>> getBusinessInfo() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -806,10 +584,11 @@ class EnhancedPOSService {
   EnhancedPOSService._internal();
 
   // Enhanced Return operations with offline support
+  ///working
   Future<ReturnCreationResult> createReturn(ReturnRequest returnRequest) async {
     if (_isOnline) {
       try {
-        final createdReturn = await _firestore.createReturn(returnRequest);
+        final createdReturn = await _firestoreServices.createReturn(returnRequest);
         // Save to local cache for offline access
         await _localDb.saveSyncedReturn(createdReturn);
         return ReturnCreationResult.success(createdReturn);
@@ -822,6 +601,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<ReturnCreationResult> _createOfflineReturn(
       ReturnRequest returnRequest,
       ) async {
@@ -837,41 +617,12 @@ class EnhancedPOSService {
       return ReturnCreationResult.error('Failed to save return locally: $e');
     }
   }
-
-  Future<List<ReturnRequest>> getReturnsByOrder(String orderId) async {
-    if (_isOnline) {
-      try {
-        final returns = await _firestore.getReturnsByOrder(orderId);
-        // Cache the returns locally
-        for (final returnReq in returns) {
-          await _localDb.saveSyncedReturn(returnReq);
-        }
-        return returns;
-      } catch (e) {
-        debugPrint('Online fetch failed, using local data: $e');
-        // Fall back to local data
-        final allReturns = await _localDb.getAllReturns();
-        return allReturns.where((ret) => ret.orderId == orderId).toList();
-      }
-    } else {
-      final allReturns = await _localDb.getAllReturns();
-      return allReturns.where((ret) => ret.orderId == orderId).toList();
-    }
-  }
-
-  Stream<List<ReturnRequest>> getReturnsStream() {
-    if (_isOnline) {
-      return _firestore.getReturnsStream();
-    } else {
-      // Return a stream from local data
-      return Stream.fromFuture(_localDb.getAllReturns());
-    }
-  }
-
+  
+  ///working
   Future<List<ReturnRequest>> getAllReturns({int limit = 50}) async {
     if (_isOnline) {
       try {
-        final returns = await _firestore.getAllReturns(limit: limit);
+        final returns = await _firestoreServices.getAllReturns(limit: limit);
         // Cache returns locally
         for (final returnReq in returns) {
           await _localDb.saveSyncedReturn(returnReq);
@@ -885,29 +636,8 @@ class EnhancedPOSService {
       return await _localDb.getAllReturns();
     }
   }
-
-  Future<void> updateReturnStatus(
-      String returnId,
-      String status, {
-        String? processedBy,
-      }) async {
-    if (_isOnline) {
-      try {
-        await _firestore.updateReturnStatus(
-          returnId,
-          status,
-          processedBy: processedBy,
-        );
-      } catch (e) {
-        debugPrint('Online status update failed: $e');
-        throw Exception('Failed to update return status online: $e');
-      }
-    } else {
-      throw Exception('Cannot update return status while offline');
-    }
-  }
-
-  // Enhanced sync method to include returns
+  
+  ///working
   Future<void> _syncPendingReturns() async {
     final pendingReturns = await _localDb.getPendingReturns();
 
@@ -920,7 +650,7 @@ class EnhancedPOSService {
 
     for (final pendingReturn in pendingReturns) {
       try {
-        final success = await _firestore.syncPendingReturn(pendingReturn);
+        final success = await _firestoreServices.syncPendingReturn(pendingReturn);
 
         if (success) {
           await _localDb.deletePendingReturn(pendingReturn['local_id']);
@@ -956,6 +686,7 @@ class EnhancedPOSService {
   }
 
   // Update the main sync method to include returns
+  ///working
   Future<void> _triggerSync() async {
     await _syncLock.synchronized(() async {
       try {
@@ -973,28 +704,32 @@ class EnhancedPOSService {
   }
 
   // Add to EnhancedPOSService class
+  ///working
   Future<List<AppOrder>> searchOrders(String query) async {
-    return await _firestore.searchOrders(query);
+    return await _firestoreServices.searchOrders(query);
   }
 
+  ///working
   Future<AppOrder?> getOrderById(String orderId) async {
-    return await _firestore.getOrderById(orderId);
+    return await _firestoreServices.getOrderById(orderId);
   }
 
+  ///working
   Future<List<AppOrder>> getRecentOrders({int limit = 50}) async {
-    return await _firestore.getRecentOrders(limit: limit);
+    return await _firestoreServices.getRecentOrders(limit: limit);
   }
 
-  // Customer management methods
+  ///working
   Future<List<Customer>> searchCustomers(String query) async {
-    return await _firestore.searchCustomers(query);
+    return await _firestoreServices.searchCustomers(query);
   }
 
+  ///working
   Future<List<Customer>> getAllCustomers() async {
     try {
       if (_isOnline) {
         // Get all customers from Firestore
-        final snapshot = await _firestore.customersRef
+        final snapshot = await _firestoreServices.customersRef
             .orderBy('firstName')
             .get();
 
@@ -1021,20 +756,19 @@ class EnhancedPOSService {
     }
   }
 
-  Future<Customer?> getCustomerById(String id) async {
-    return await _firestore.getCustomerById(id);
+  ///working
+Future<Customer?> getCustomerById(String id) async {
+    return await _firestoreServices.getCustomerById(id);
   }
-
-  Future<Customer?> getCustomerByEmail(String email) async {
-    return await _firestore.getCustomerByEmail(email);
-  }
-
+  
+  ///working
   Future<String> addCustomer(Customer customer) async {
-    return await _firestore.addCustomer(customer);
+    return await _firestoreServices.addCustomer(customer);
   }
 
+  ///working
   Future<void> updateCustomer(Customer customer) async {
-    await _firestore.updateCustomer(customer);
+    await _firestoreServices.updateCustomer(customer);
   }
 
   void initialize() {
@@ -1046,12 +780,13 @@ class EnhancedPOSService {
     _connectivitySubscription?.cancel();
   }
 
+  ///working
   Future<void> refreshLocalCache() async {
     if (_isOnline) {
       try {
         // Clear existing cache and fetch fresh data
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(LocalDatabase.productsKey);
+        await prefs.remove(LocalDatabase.productsBox);
 
         // Fetch fresh products
         await _syncProducts();
@@ -1061,6 +796,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _startConnectivityListener() async {
     _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
         List<ConnectivityResult> resultList,
@@ -1075,6 +811,7 @@ class EnhancedPOSService {
     });
   }
 
+  ///working
   Future<void> _checkInitialConnection() async {
     final result = await _connectivity.checkConnectivity();
     _isOnline = result != ConnectivityResult.none;
@@ -1082,15 +819,8 @@ class EnhancedPOSService {
       _triggerSync();
     }
   }
-
-  Stream<List<Product>> getProductsStream() {
-    if (_isOnline) {
-      return _firestore.getProductsStream();
-    } else {
-      return Stream.value([]);
-    }
-  }
-
+  
+  ///working
   Future<List<Product>> fetchProducts({
     int limit = 50,
     String? lastDocumentId,
@@ -1101,7 +831,7 @@ class EnhancedPOSService {
   }) async {
     if (_isOnline) {
       try {
-        final products = await _firestore.getProducts(
+        final products = await _firestoreServices.getProducts(
           limit: limit,
           lastDocumentId: lastDocumentId,
           searchQuery: searchQuery,
@@ -1132,10 +862,11 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<List<Product>> searchProducts(String query) async {
     if (_isOnline) {
       try {
-        final products = await _firestore.searchProducts(query);
+        final products = await _firestoreServices.searchProducts(query);
         if (products.isNotEmpty) {
           await _localDb.saveProducts(products);
         }
@@ -1149,6 +880,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<List<Product>> searchProductsBySKU(String sku) async {
     final localProduct = await _localDb.getProductBySku(sku);
     if (localProduct != null) {
@@ -1157,7 +889,7 @@ class EnhancedPOSService {
 
     if (_isOnline) {
       try {
-        final products = await _firestore.searchProductsBySKU(sku);
+        final products = await _firestoreServices.searchProductsBySKU(sku);
         if (products.isNotEmpty) {
           await _localDb.saveProducts(products);
         }
@@ -1170,38 +902,8 @@ class EnhancedPOSService {
       return [];
     }
   }
-
-  Future<OrderCreationResult> createOrder(List<CartItem> cartItems) async {
-    if (_isOnline) {
-      try {
-        final order = await _firestore.createOrder(cartItems);
-        return OrderCreationResult.success(order);
-      } catch (e) {
-        debugPrint('Online order creation failed, saving locally: $e');
-        return await _createOfflineOrder(cartItems);
-      }
-    } else {
-      return await _createOfflineOrder(cartItems);
-    }
-  }
-
-  Future<OrderCreationResult> _createOfflineOrder(
-      List<CartItem> cartItems,
-      ) async {
-    try {
-      // Update local stock quantities first for offline consistency
-      for (final item in cartItems) {
-        await _updateLocalProductStock(item.product.id, -item.quantity);
-      }
-
-      final pendingOrderId = await _localDb.savePendingOrder(cartItems);
-      await _localDb.clearCart();
-      return OrderCreationResult.offline(pendingOrderId);
-    } catch (e) {
-      return OrderCreationResult.error('Failed to save order locally: $e');
-    }
-  }
-
+  
+  ///working
   Future<void> _syncPendingOrders() async {
     final pendingOrders = await _localDb.getPendingOrders();
 
@@ -1230,7 +932,7 @@ class EnhancedPOSService {
           );
         }).toList();
 
-        final createdOrder = await _firestore.createOrder(lineItems);
+        final createdOrder = await _firestoreServices.createOrder(lineItems);
         await _localDb.deletePendingOrder(order['id']);
 
         debugPrint(
@@ -1257,6 +959,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _syncPendingRestocks() async {
     final pendingRestocks = await _localDb.getPendingRestocks();
 
@@ -1269,7 +972,7 @@ class EnhancedPOSService {
 
     for (final restock in pendingRestocks) {
       try {
-        await _firestore.restockProduct(
+        await _firestoreServices.restockProduct(
           restock['productId'].toString(),
           restock['quantity'] as int,
           barcode: restock['barcode']?.toString(),
@@ -1299,9 +1002,10 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _syncProducts() async {
     try {
-      final products = await _firestore.getProducts(limit: 50);
+      final products = await _firestoreServices.getProducts(limit: 50);
       await _localDb.saveProducts(products);
       debugPrint('Successfully synced ${products.length} products');
     } catch (e) {
@@ -1309,6 +1013,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> manualSync() async {
     if (_isOnline) {
       await _triggerSync();
@@ -1316,18 +1021,22 @@ class EnhancedPOSService {
   }
 
   // Product management methods
+  ///working
   Future<String> addProduct(Product product, List<XFile>? images) async {
-    return await _firestore.addProduct(product, images);
+    return await _firestoreServices.addProduct(product, images);
   }
 
+  ///working
   Future<void> updateProduct(Product product, List<XFile>? newImages) async {
-    await _firestore.updateProduct(product, newImages);
+    await _firestoreServices.updateProduct(product, newImages);
   }
 
+  ///working
   Future<void> deleteProduct(String productId) async {
-    await _firestore.deleteProduct(productId);
+    await _firestoreServices.deleteProduct(productId);
   }
 
+  ///working
   Future<void> restockProduct(
       String productId,
       int quantity, {
@@ -1335,7 +1044,7 @@ class EnhancedPOSService {
       }) async {
     if (_isOnline) {
       try {
-        await _firestore.restockProduct(productId, quantity, barcode: barcode);
+        await _firestoreServices.restockProduct(productId, quantity, barcode: barcode);
         // Update local cache after successful online restock
         await _syncLocalProductAfterRestock(productId, quantity);
       } catch (e) {
@@ -1349,6 +1058,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _savePendingRestock(
       String productId,
       int quantity,
@@ -1359,6 +1069,7 @@ class EnhancedPOSService {
     await _updateLocalProductStock(productId, quantity);
   }
 
+  ///working
   Future<void> _updateLocalProductStock(String productId, int quantity) async {
     final products = await _localDb.getProducts(limit: 0); // Get all products
     final productIndex = products.indexWhere((p) => p.id == productId);
@@ -1404,6 +1115,7 @@ class EnhancedPOSService {
     }
   }
 
+  ///working
   Future<void> _syncLocalProductAfterRestock(
       String productId,
       int quantity,
@@ -1413,14 +1125,16 @@ class EnhancedPOSService {
 
   bool get isOnline => _isOnline;
 
+  ///working
   Stream<bool> get onlineStatusStream =>
       _connectivity.onConnectivityChanged.map(
             (List<ConnectivityResult> resultList) =>
             resultList.any((res) => res != ConnectivityResult.none),
       );
 
+  ///working
   Future<bool> testConnection() async {
-    return _firestore.testConnection();
+    return _firestoreServices.testConnection();
   }
 }
 
@@ -1441,7 +1155,6 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
   bool _isOnline = false;
   int _cartItemCount = 0;
-  final _firestore = NavigationService();
   final List<Widget> _clientAdminScreens = [];
   final List<Widget> _clientSalesManagerScreens = [];
   final List<Widget> _clientCashierScreens = [];
@@ -2002,7 +1715,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
               end: Alignment.bottomRight,
               colors: [
                 ThemeUtils.surface(context),
-                ThemeUtils.surface(context).withOpacity(0.95),
+                ThemeUtils.surface(context).withValues(alpha: 0.95),
               ],
             ),
             borderRadius: BorderRadius.only(
@@ -2016,7 +1729,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                 // Header
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
+                    color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.only(
                       topLeft: Radius.circular(32),
                       topRight: Radius.circular(32),
@@ -2041,7 +1754,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                             Text(
                               'Quick access to all features',
                               style: ThemeUtils.bodySmall(context).copyWith(
-                                color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                                color: ThemeUtils.textSecondary(context).withValues(alpha: 0.7),
                               ),
                             ),
                           ],
@@ -2049,7 +1762,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                         Container(
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: ThemeUtils.primary(context).withOpacity(0.1),
+                            color: ThemeUtils.primary(context).withValues(alpha: 0.1),
                           ),
                           child: IconButton(
                             icon: Icon(Icons.close_rounded, color: ThemeUtils.primary(context)),
@@ -2073,13 +1786,13 @@ class _MainNavScreenState extends State<MainNavScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            ThemeUtils.primary(context).withOpacity(0.1),
-                            ThemeUtils.primary(context).withOpacity(0.05),
+                            ThemeUtils.primary(context).withValues(alpha: 0.1),
+                            ThemeUtils.primary(context).withValues(alpha: 0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: ThemeUtils.primary(context).withOpacity(0.2),
+                          color: ThemeUtils.primary(context).withValues(alpha: 0.2),
                         ),
                       ),
                       child: Row(
@@ -2132,10 +1845,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
                               Container(
                                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: _isOnline ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                                  color: _isOnline ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
-                                    color: _isOnline ? Colors.green.withOpacity(0.3) : Colors.orange.withOpacity(0.3),
+                                    color: _isOnline ? Colors.green.withValues(alpha: 0.3) : Colors.orange.withValues(alpha: 0.3),
                                   ),
                                 ),
                                 child: Row(
@@ -2165,9 +1878,9 @@ class _MainNavScreenState extends State<MainNavScreen> {
                                 Container(
                                   padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.withOpacity(0.1),
+                                    color: Colors.red.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.red.withOpacity(0.3)),
+                                    border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                                   ),
                                   child: Text(
                                     '${Constants.CURRENCY_NAME}${creditStats.overdueAmount.toStringAsFixed(0)} Overdue',
@@ -2311,10 +2024,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
           child: Container(
             padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
-              color: ThemeUtils.primary(context).withOpacity(0.1),
+              color: ThemeUtils.primary(context).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: ThemeUtils.primary(context).withOpacity(0.2),
+                color: ThemeUtils.primary(context).withValues(alpha: 0.2),
               ),
             ),
             child: Column(
@@ -2355,10 +2068,10 @@ class _MainNavScreenState extends State<MainNavScreen> {
           child: Container(
             padding: EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: ThemeUtils.card(context)[0].withOpacity(0.5),
+              color: ThemeUtils.card(context)[0].withValues(alpha: 0.5),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: ThemeUtils.card(context)[1].withOpacity(0.1),
+                color: ThemeUtils.card(context)[1].withValues(alpha: 0.1),
               ),
             ),
             child: Row(
@@ -2369,8 +2082,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
-                        item.color.withOpacity(0.2),
-                        item.color.withOpacity(0.1),
+                        item.color.withValues(alpha: 0.2),
+                        item.color.withValues(alpha: 0.1),
                       ],
                     ),
                     borderRadius: BorderRadius.circular(15),
@@ -2396,7 +2109,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                       Text(
                         item.description,
                         style: ThemeUtils.bodySmall(context).copyWith(
-                          color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                          color: ThemeUtils.textSecondary(context).withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -2405,7 +2118,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
                 Icon(
                   Icons.arrow_forward_ios_rounded,
                   size: 16,
-                  color: ThemeUtils.textSecondary(context).withOpacity(0.5),
+                  color: ThemeUtils.textSecondary(context).withValues(alpha: 0.5),
                 ),
               ],
             ),

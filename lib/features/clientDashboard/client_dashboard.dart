@@ -1,5 +1,3 @@
-
-
 import 'dart:io';
 import 'dart:math';
 
@@ -19,10 +17,12 @@ import '../../constants.dart';
 import '../../core/models/app_order_model.dart';
 import '../../core/models/cart_item_model.dart';
 import '../../core/models/customer_model.dart';
+import '../../core/models/offline_dashboard_data.dart';
 import '../../core/models/product_model.dart';
+import '../../core/models/return_request.dart';
 import '../../modules/auth/providers/auth_provider.dart';
 import '../../theme_utils.dart';
-import '../connectivityBase/local_db_base.dart';
+import '../connectivityBase/local_db_base.dart' hide CustomerSelection;
 import '../customerBase/customer_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
@@ -199,43 +199,8 @@ class FirestoreServices {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-  // POS NUMBERING SYSTEM IMPLEMENTATION
 
-  // Business Code Generation Logic
-  String _generateBusinessCode(String businessName) {
-    if (businessName.isEmpty) {
-      return 'POS'; // Fallback
-    }
-
-    // Remove special characters and convert to uppercase
-    String cleanName = businessName.replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), '').toUpperCase();
-
-    // Split into words
-    List<String> words = cleanName.split(' ').where((word) => word.isNotEmpty).toList();
-
-    if (words.isEmpty) {
-      return 'POS'; // Fallback
-    }
-
-    // Generate code from first letters
-    String code = '';
-    for (String word in words) {
-      if (word.isNotEmpty) {
-        code += word[0];
-        // Limit to 5 characters max
-        if (code.length >= 5) break;
-      }
-    }
-
-    // Ensure minimum 2 characters
-    if (code.length < 2) {
-      code = words.first.length >= 2 ? words.first.substring(0, 2) : 'POS';
-    }
-
-    return code;
-  }
-
-  // Business Settings Management
+  ///working
   Future<BusinessSettings> getBusinessSettings() async {
     try {
       final doc = await businessSettingsRef.doc('business_settings').get();
@@ -252,26 +217,9 @@ class FirestoreServices {
       return BusinessSettings.createDefault();
     }
   }
-
-  Future<void> updateBusinessSettings(String businessName) async {
-    try {
-      final businessCode = _generateBusinessCode(businessName);
-      final settings = BusinessSettings(
-        id: 'business_settings',
-        businessName: businessName,
-        businessCode: businessCode,
-        dateCreated: DateTime.now(),
-        dateModified: DateTime.now(),
-      );
-
-      await businessSettingsRef.doc('business_settings').set(settings.toFirestore());
-    } catch (e) {
-      debugPrint('Error updating business settings: $e');
-      throw Exception('Failed to update business settings: $e');
-    }
-  }
-
+  
   // Atomic Sequence Generation with Transactions
+  ///working
   Future<int> _getNextSequence(String type, {int? year}) async {
     try {
       // Use transaction for atomic increment
@@ -311,6 +259,7 @@ class FirestoreServices {
   }
 
   // Order Number Generation
+  ///working
   Future<String> generateOrderNumber() async {
     try {
       final settings = await getBusinessSettings();
@@ -325,23 +274,7 @@ class FirestoreServices {
     }
   }
 
-  // Invoice Number Generation
-  Future<String> generateInvoiceNumber() async {
-    try {
-      final settings = await getBusinessSettings();
-      final sequence = await _getNextSequence('invoice');
-
-      return '${settings.businessCode}-INV-${sequence.toString().padLeft(4, '0')}';
-    } catch (e) {
-      debugPrint('Error generating invoice number: $e');
-      // Fallback with timestamp (should never happen in normal operation)
-      return 'POS-INV-${DateTime.now().millisecondsSinceEpoch.toString().substring(8)}';
-    }
-  }
-
-  // EXISTING FUNCTIONALITY - UPDATED WITH NEW NUMBERING SYSTEM
-
-  // Category operations
+  ///working
   Future<String> addCategory(Category category) async {
     try {
       final categoryData = category.toFirestore();
@@ -353,6 +286,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> updateCategory(Category category) async {
     try {
       final categoryData = category.toFirestore();
@@ -362,6 +296,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> deleteCategory(String categoryId) async {
     try {
       await categoriesRef.doc(categoryId).delete();
@@ -371,6 +306,7 @@ class FirestoreServices {
   }
 
   // Enhanced return operations with offline support
+  ///working
   Future<ReturnRequest> createReturn(ReturnRequest returnRequest) async {
     try {
       final returnRef = returnsRef.doc(returnRequest.id);
@@ -419,62 +355,8 @@ class FirestoreServices {
       throw Exception('Failed to create return: $e');
     }
   }
-
-  Future<void> updateReturnStatus(
-      String returnId,
-      String status, {
-        String? processedBy,
-      }) async {
-    try {
-      final updateData = {
-        'status': status,
-        'dateUpdated': FieldValue.serverTimestamp(),
-      };
-
-      if (processedBy != null) {
-        updateData['processedBy'] = processedBy;
-      }
-
-      await returnsRef.doc(returnId).update(updateData);
-    } catch (e) {
-      debugPrint('Error updating return status: $e');
-      throw Exception('Failed to update return status: $e');
-    }
-  }
-
-  Future<List<ReturnRequest>> getReturnsByOrder(String orderId) async {
-    try {
-      final snapshot = await returnsRef
-          .where('orderId', isEqualTo: orderId)
-          .orderBy('dateCreated', descending: true)
-          .get();
-
-      return snapshot.docs.map((doc) {
-        return ReturnRequest.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
-      }).toList();
-    } catch (e) {
-      debugPrint('Error getting returns by order: $e');
-      return [];
-    }
-  }
-
-  Stream<List<ReturnRequest>> getReturnsStream() {
-    return returnsRef
-        .orderBy('dateCreated', descending: true)
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs.map((doc) {
-        return ReturnRequest.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
-      }).toList(),
-    );
-  }
-
+  
+  ///working
   Future<List<ReturnRequest>> getAllReturns({int limit = 50}) async {
     try {
       final snapshot = await returnsRef
@@ -494,6 +376,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<bool> syncPendingReturn(Map<String, dynamic> pendingReturn) async {
     try {
       final returnRequest = ReturnRequest.fromLocalMap(pendingReturn);
@@ -508,6 +391,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<List<AppOrder>> searchOrders(String query) async {
     if (query.isEmpty) return [];
 
@@ -529,6 +413,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<AppOrder?> getOrderById(String orderId) async {
     try {
       final doc = await ordersRef.doc(orderId).get();
@@ -542,6 +427,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<List<AppOrder>> getRecentOrders({int limit = 50}) async {
     try {
       final snapshot = await ordersRef
@@ -558,24 +444,8 @@ class FirestoreServices {
       return [];
     }
   }
-
-  // Customer operations
-  Stream<List<Customer>> getCustomersStream() {
-    return customersRef
-        .orderBy('firstName')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-          .map(
-            (doc) => Customer.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        ),
-      )
-          .toList(),
-    );
-  }
-
+  
+  ///working
   Future<List<Customer>> searchCustomers(String query) async {
     if (query.isEmpty) return [];
 
@@ -594,6 +464,7 @@ class FirestoreServices {
         .toList();
   }
 
+  ///working
   Future<Customer?> getCustomerById(String id) async {
     final doc = await customersRef.doc(id).get();
     if (doc.exists) {
@@ -601,20 +472,8 @@ class FirestoreServices {
     }
     return null;
   }
-
-  Future<Customer?> getCustomerByEmail(String email) async {
-    final snapshot = await customersRef
-        .where('email', isEqualTo: email.toLowerCase())
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isNotEmpty) {
-      final doc = snapshot.docs.first;
-      return Customer.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
-    }
-    return null;
-  }
-
+  
+  ///working
   Future<String> addCustomer(Customer customer) async {
     try {
       final customerData = customer.toFirestore();
@@ -626,6 +485,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> updateCustomer(Customer customer) async {
     try {
       final customerData = customer.toFirestore();
@@ -635,6 +495,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> updateCustomerStats(String customerId, double orderTotal) async {
     try {
       await customersRef.doc(customerId).update({
@@ -646,121 +507,8 @@ class FirestoreServices {
       debugPrint('Failed to update customer stats: $e');
     }
   }
-
-  // Enhanced order creation with customer support - UPDATED WITH NEW NUMBERING
-  Future<AppOrder> createOrderWithCustomer(
-      List<CartItem> cartItems,
-      CustomerSelection customerSelection, {
-        Map<String, dynamic>? enhancedData,
-      }) async {
-    try {
-      final orderRef = ordersRef.doc();
-      final orderNumber = await generateOrderNumber(); // Use new numbering system
-
-      // Calculate totals with enhanced data if available
-      double subtotal = cartItems.fold(0.0, (sum, item) => sum + item.baseSubtotal);
-      double totalAmount = cartItems.fold(0.0, (sum, item) => sum + item.subtotal);
-
-      // Use enhanced data if provided
-      if (enhancedData != null) {
-        final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
-        if (cartData != null) {
-          subtotal = cartData['subtotal'] ?? subtotal;
-          totalAmount = cartData['totalAmount'] ?? totalAmount;
-        }
-      }
-
-      final orderData = {
-        'id': orderRef.id,
-        'number': orderNumber, // Use generated order number
-        'status': 'completed',
-        'dateCreated': FieldValue.serverTimestamp(),
-        'total': totalAmount,
-        'subtotal': subtotal,
-        'lineItems': cartItems.map((item) {
-          final itemData = {
-            'productId': item.product.id,
-            'productName': item.product.name,
-            'quantity': item.quantity,
-            'price': item.product.price,
-            'subtotal': item.subtotal,
-            'baseSubtotal': item.baseSubtotal,
-            'hasManualDiscount': item.hasManualDiscount,
-          };
-
-          // Add discount information if available
-          if (item.hasManualDiscount) {
-            itemData['manualDiscount'] = item.manualDiscount??0.0;
-            itemData['manualDiscountPercent'] = item.manualDiscountPercent ?? 0.0;
-            itemData['discountAmount'] = item.discountAmount;
-          }
-
-          return itemData;
-        }).toList(),
-        'paymentMethod': 'cash',
-        'paymentStatus': 'paid',
-      };
-
-      // Add enhanced data if provided
-      if (enhancedData != null) {
-        orderData['enhancedData'] = enhancedData;
-
-        // Add individual discount components
-        final cartData = enhancedData['cartData'] as Map<String, dynamic>?;
-        if (cartData != null) {
-          orderData['pricingBreakdown'] = {
-            'itemDiscounts': cartData['item_discounts'] ?? 0.0,
-            'cartDiscount': cartData['cart_discount'] ?? 0.0,
-            'cartDiscountPercent': cartData['cart_discount_percent'] ?? 0.0,
-            'cartDiscountAmount': cartData['cart_discount_amount'] ?? 0.0,
-            'additionalDiscount': enhancedData['additionalDiscount'] ?? 0.0,
-            'shippingAmount': enhancedData['shippingAmount'] ?? 0.0,
-            'tipAmount': enhancedData['tipAmount'] ?? 0.0,
-            'taxRate': cartData['tax_rate'] ?? 0.0,
-            'taxAmount': cartData['tax_amount'] ?? 0.0,
-            'totalDiscount': cartData['total_discount'] ?? 0.0,
-            'finalTotal': cartData['totalAmount'] ?? totalAmount,
-          };
-        }
-      }
-
-      // Add customer information if available
-      if (customerSelection.hasCustomer) {
-        orderData['customerId'] = customerSelection.customer!.id;
-        orderData['customer'] = {
-          'firstName': customerSelection.customer!.firstName,
-          'lastName': customerSelection.customer!.lastName,
-          'email': customerSelection.customer!.email,
-          'phone': customerSelection.customer!.phone,
-          'company': customerSelection.customer!.company,
-        };
-      }
-
-      await orderRef.set(orderData);
-
-      // Update stock quantities
-      for (final item in cartItems) {
-        await productsRef.doc(item.product.id).update({
-          'stockQuantity': FieldValue.increment(-item.quantity),
-          'dateModified': FieldValue.serverTimestamp(),
-        });
-      }
-
-      // Update customer stats if customer is associated
-      if (customerSelection.hasCustomer) {
-        await updateCustomerStats(
-          customerSelection.customer!.id,
-          totalAmount,
-        );
-      }
-
-      return AppOrder.fromFirestore(orderData, orderRef.id);
-    } catch (e) {
-      throw Exception('Failed to create order: $e');
-    }
-  }
-
-  // Complete createOrderWithEnhancedData method - UPDATED WITH NEW NUMBERING
+  
+  ///working
   Future<AppOrder> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection,
@@ -898,6 +646,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   String? _formatCustomerAddress(Customer customer) {
     final addressParts = [
       customer.address1,
@@ -909,24 +658,8 @@ class FirestoreServices {
 
     return addressParts.isNotEmpty ? addressParts.join(', ') : null;
   }
-
-  Stream<List<Product>> getProductsStream() {
-    return productsRef
-        .where('status', isEqualTo: 'publish')
-        .orderBy('name')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-          .map(
-            (doc) => Product.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        ),
-      )
-          .toList(),
-    );
-  }
-
+  
+  ///working
   Future<List<Product>> getProducts({
     int limit = 50,
     String? lastDocumentId,
@@ -973,6 +706,7 @@ class FirestoreServices {
         .toList();
   }
 
+  ///working
   Future<Product?> getProductById(String id) async {
     final doc = await productsRef.doc(id).get();
     if (doc.exists) {
@@ -980,20 +714,8 @@ class FirestoreServices {
     }
     return null;
   }
-
-  Future<Product?> getProductBySku(String sku) async {
-    final snapshot = await productsRef
-        .where('sku', isEqualTo: sku)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isNotEmpty) {
-      final doc = snapshot.docs.first;
-      return Product.fromFirestore(doc.data() as Map<String, dynamic>, doc.id);
-    }
-    return null;
-  }
-
+  
+  ///working
   Future<List<Product>> searchProducts(String query) async {
     if (query.isEmpty) return [];
 
@@ -1011,6 +733,7 @@ class FirestoreServices {
         .toList();
   }
 
+  ///working
   Future<List<Product>> searchProductsBySKU(String sku) async {
     final snapshot = await productsRef
         .where('sku', isEqualTo: sku)
@@ -1027,6 +750,7 @@ class FirestoreServices {
   }
 
   // Product management
+  ///working
   Future<String> addProduct(Product product, List<XFile>? images) async {
     try {
       List<String> imageUrls = [];
@@ -1069,6 +793,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> updateProduct(Product product, List<XFile>? newImages) async {
     try {
       List<String> imageUrls = List.from(product.imageUrls);
@@ -1094,6 +819,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<void> deleteProduct(String productId) async {
     try {
       final snapshot = await productsRef.doc(productId).get();
@@ -1123,6 +849,7 @@ class FirestoreServices {
 
 
 
+  ///working
   Future<void> restockProduct(
       String productId,
       int quantity, {
@@ -1140,6 +867,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   Future<String?> _uploadImage(XFile image, String productId) async {
     try {
       final File file = File(image.path);
@@ -1158,6 +886,7 @@ class FirestoreServices {
     }
   }
 
+  ///working
   List<String> _generateSearchKeywords(Product product) {
     final keywords = <String>[];
 
@@ -1175,6 +904,32 @@ class FirestoreServices {
   }
 
   // Order operations - UPDATED WITH NEW NUMBERING
+  ///working
+  Future<List<Category>> getCategories() async {
+    final snapshot = await categoriesRef.orderBy('name').get();
+    return snapshot.docs
+        .map(
+          (doc) => Category.fromFirestore(
+        doc.data() as Map<String, dynamic>,
+        doc.id,
+      ),
+    )
+        .toList();
+  }
+
+  // Test connection
+  ///working
+  Future<bool> testConnection() async {
+    try {
+      await productsRef.limit(1).get();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+
+  ///working
   Future<AppOrder> createOrder(List<CartItem> cartItems) async {
     try {
       final orderRef = ordersRef.doc();
@@ -1215,61 +970,6 @@ class FirestoreServices {
     }
   }
 
-  // Keep old method for backward compatibility but mark as deprecated
-  @deprecated
-  String _generateOrderNumber() {
-    final now = DateTime.now();
-    return 'ORD-${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}-${now.millisecondsSinceEpoch}';
-  }
-
-  // Category operations
-  Stream<List<Category>> getCategoriesStream() {
-    return categoriesRef
-        .orderBy('name')
-        .snapshots()
-        .map(
-          (snapshot) => snapshot.docs
-          .map(
-            (doc) => Category.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        ),
-      )
-          .toList(),
-    );
-  }
-
-  Future<List<Category>> getCategories() async {
-    final snapshot = await categoriesRef.orderBy('name').get();
-    return snapshot.docs
-        .map(
-          (doc) => Category.fromFirestore(
-        doc.data() as Map<String, dynamic>,
-        doc.id,
-      ),
-    )
-        .toList();
-  }
-
-  // Test connection
-  Future<bool> testConnection() async {
-    try {
-      await productsRef.limit(1).get();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Utility method to initialize numbering system for existing tenants
-  Future<void> initializeNumberingSystem(String businessName) async {
-    try {
-      await updateBusinessSettings(businessName);
-      debugPrint('Numbering system initialized for business: $businessName');
-    } catch (e) {
-      debugPrint('Error initializing numbering system: $e');
-    }
-  }
 }
 class ModernDashboardScreen extends StatefulWidget {
   const ModernDashboardScreen({super.key});
@@ -1454,11 +1154,11 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     if (mounted) {
       setState(() {
         _stats = cachedData.stats;
-        _recentOrders = cachedData.recentOrders ?? [];
-        _lowStockProducts = cachedData.lowStockProducts ?? [];
-        _revenueData = cachedData.revenueData ?? [];
-        _topSellingProducts = cachedData.topSellingProducts ?? [];
-        _recentCustomers = cachedData.recentCustomers ?? [];
+        _recentOrders = cachedData.recentOrders;
+        _lowStockProducts = cachedData.lowStockProducts;
+        _revenueData = cachedData.revenueData;
+        _topSellingProducts = cachedData.topSellingProducts;
+        _recentCustomers = cachedData.recentCustomers;
         _isLoading = false;
         _isRefreshing = false;
       });
@@ -1601,8 +1301,8 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
             boxShadow: [
               BoxShadow(
                 color: showAsOffline
-                    ? Colors.orange[400]!.withOpacity(0.3)
-                    : Colors.green[400]!.withOpacity(0.3),
+                    ? Colors.orange[400]!.withValues(alpha: 0.3)
+                    : Colors.green[400]!.withValues(alpha: 0.3),
                 blurRadius: 8,
                 spreadRadius: 1,
               ),
@@ -2004,48 +1704,48 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
   }
 
 
-  void _showPeriodSelector() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Select Time Period',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 16),
-            _buildPeriodOption('Today', 'today'),
-            _buildPeriodOption('This Week', 'week'),
-            _buildPeriodOption('This Month', 'month'),
-            _buildPeriodOption('This Year', 'year'),
-            SizedBox(height: 16),
-            OutlinedButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // void _showPeriodSelector() {
+  //   showModalBottomSheet(
+  //     context: context,
+  //     builder: (context) => Container(
+  //       padding: EdgeInsets.all(20),
+  //       child: Column(
+  //         mainAxisSize: MainAxisSize.min,
+  //         children: [
+  //           Text(
+  //             'Select Time Period',
+  //             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  //           ),
+  //           SizedBox(height: 16),
+  //           _buildPeriodOption('Today', 'today'),
+  //           _buildPeriodOption('This Week', 'week'),
+  //           _buildPeriodOption('This Month', 'month'),
+  //           _buildPeriodOption('This Year', 'year'),
+  //           SizedBox(height: 16),
+  //           OutlinedButton(
+  //             onPressed: () => Navigator.pop(context),
+  //             child: Text('Cancel'),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
-  Widget _buildPeriodOption(String label, String value) {
-    return ListTile(
-      leading: Icon(Icons.calendar_today, color: Colors.blue),
-      title: Text(label),
-      trailing: _selectedPeriod == value
-          ? Icon(Icons.check, color: Colors.blue)
-          : null,
-      onTap: () {
-        setState(() => _selectedPeriod = value);
-        Navigator.pop(context);
-        _loadDashboardData();
-      },
-    );
-  }
+  // Widget _buildPeriodOption(String label, String value) {
+  //   return ListTile(
+  //     leading: Icon(Icons.calendar_today, color: Colors.blue),
+  //     title: Text(label),
+  //     trailing: _selectedPeriod == value
+  //         ? Icon(Icons.check, color: Colors.blue)
+  //         : null,
+  //     onTap: () {
+  //       setState(() => _selectedPeriod = value);
+  //       Navigator.pop(context);
+  //       _loadDashboardData();
+  //     },
+  //   );
+  // }
 
 
   @override
@@ -2083,64 +1783,64 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       },
     );
   }
-
-
-  Future<void> _validateTenantAccess() async {
-    final user = _authProvider.currentUser;
-    if (user == null) {
-      throw Exception('No authenticated user found');
-    }
-
-    final tenantId = user.tenantId;
-    if (tenantId.isEmpty) {
-      throw Exception('User ${user.uid} has no tenant ID assigned');
-    }
-
-    final tenantDoc = await FirebaseFirestore.instance
-        .collection('tenants')
-        .doc(tenantId)
-        .get();
-
-    if (!tenantDoc.exists) {
-      throw Exception('Tenant $tenantId does not exist in database');
-    }
-
-    final userDoc = await FirebaseFirestore.instance
-        .collection('tenants')
-        .doc(tenantId)
-        .collection('users')
-        .doc(user.uid)
-        .get();
-
-    if (!userDoc.exists) {
-      throw Exception('User ${user.uid} not found in tenant $tenantId');
-    }
-
-    debugPrint('Tenant validation successful: $tenantId');
-  }
-
-  void _showErrorDialog(String error) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Dashboard Error'),
-        content: Text('Failed to load dashboard data: $error'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _loadDashboardData();
-            },
-            child: Text('Retry'),
-          ),
-        ],
-      ),
-    );
-  }
+  //
+  //
+  // Future<void> _validateTenantAccess() async {
+  //   final user = _authProvider.currentUser;
+  //   if (user == null) {
+  //     throw Exception('No authenticated user found');
+  //   }
+  //
+  //   final tenantId = user.tenantId;
+  //   if (tenantId.isEmpty) {
+  //     throw Exception('User ${user.uid} has no tenant ID assigned');
+  //   }
+  //
+  //   final tenantDoc = await FirebaseFirestore.instance
+  //       .collection('tenants')
+  //       .doc(tenantId)
+  //       .get();
+  //
+  //   if (!tenantDoc.exists) {
+  //     throw Exception('Tenant $tenantId does not exist in database');
+  //   }
+  //
+  //   final userDoc = await FirebaseFirestore.instance
+  //       .collection('tenants')
+  //       .doc(tenantId)
+  //       .collection('users')
+  //       .doc(user.uid)
+  //       .get();
+  //
+  //   if (!userDoc.exists) {
+  //     throw Exception('User ${user.uid} not found in tenant $tenantId');
+  //   }
+  //
+  //   debugPrint('Tenant validation successful: $tenantId');
+  // }
+  //
+  // void _showErrorDialog(String error) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       title: Text('Dashboard Error'),
+  //       content: Text('Failed to load dashboard data: $error'),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () => Navigator.pop(context),
+  //           child: Text('Cancel'),
+  //         ),
+  //         TextButton(
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             _loadDashboardData();
+  //           },
+  //           child: Text('Retry'),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
 
 
@@ -2250,7 +1950,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -2369,7 +2069,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
               borderRadius: BorderRadius.circular(25),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 15,
                   offset: Offset(0, 8),
                 ),
@@ -2836,7 +2536,7 @@ class _QuickStatItem extends StatelessWidget {
         Container(
           padding: EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
+            color: Colors.white.withValues(alpha: 0.2),
             shape: BoxShape.circle,
           ),
           child: Icon(icon, size: 20, color: Colors.white),
@@ -2901,7 +2601,7 @@ class _StatCard extends StatelessWidget {
                 Container(
                   padding: EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(icon, size: 20, color: color),
@@ -2965,54 +2665,54 @@ class _StatCard extends StatelessWidget {
     );
   }
 }
-class _QuickActionTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Container(
-        padding: EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, size: 20, color: color),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Colors.grey[800],
-        ),
-      ),
-      subtitle: Text(
-        subtitle,
-        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-      ),
-      trailing: Icon(
-        Icons.arrow_forward_ios,
-        size: 16,
-        color: Colors.grey[400],
-      ),
-      onTap: onTap,
-    );
-  }
-}
+// class _QuickActionTile extends StatelessWidget {
+//   final IconData icon;
+//   final String title;
+//   final String subtitle;
+//   final Color color;
+//   final VoidCallback onTap;
+//
+//   const _QuickActionTile({
+//     required this.icon,
+//     required this.title,
+//     required this.subtitle,
+//     required this.color,
+//     required this.onTap,
+//   });
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return ListTile(
+//       contentPadding: EdgeInsets.zero,
+//       leading: Container(
+//         padding: EdgeInsets.all(8),
+//         decoration: BoxDecoration(
+//           color: color.withValues(alpha: 0.1),
+//           borderRadius: BorderRadius.circular(10),
+//         ),
+//         child: Icon(icon, size: 20, color: color),
+//       ),
+//       title: Text(
+//         title,
+//         style: TextStyle(
+//           fontSize: 14,
+//           fontWeight: FontWeight.w600,
+//           color: Colors.grey[800],
+//         ),
+//       ),
+//       subtitle: Text(
+//         subtitle,
+//         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+//       ),
+//       trailing: Icon(
+//         Icons.arrow_forward_ios,
+//         size: 16,
+//         color: Colors.grey[400],
+//       ),
+//       onTap: onTap,
+//     );
+//   }
+// }
 class _RecentCustomerItem extends StatelessWidget {
   final Customer customer;
 

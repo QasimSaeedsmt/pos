@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/services.dart';
+import 'package:mpcm/core/models/hive_init.dart';
+import 'package:mpcm/features/connectivityBase/local_db_base.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
@@ -23,6 +25,7 @@ import 'theme_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // setupLocator();
+  await LocalDatabase().init();
 
   // Run app immediately with a loading screen
   runApp(const LoadingApp());
@@ -54,11 +57,12 @@ Future<void> _initializeApp() async {
     ).wait;
 
     // Initialize Hive
-    Hive.init(appDir.path);
-    await Future.wait([
-      Hive.openBox('app_cache'),
-      Hive.openBox('offline_data'),
-    ]);
+    // Hive.init(appDir.path);
+    // HiveService.initAdapters();
+    // await Future.wait([
+    //   Hive.openBox('app_cache'),
+    //   Hive.openBox('offline_data'),
+    // ]);
 
     final offlineStorageService = OfflineStorageService(sharedPreferences);
 

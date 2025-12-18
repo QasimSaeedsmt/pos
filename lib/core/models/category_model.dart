@@ -1,9 +1,25 @@
+import 'package:hive/hive.dart';
+
+part 'category_model.g.dart';
+
+@HiveType(typeId: 12)
 class Category {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String name;
+
+  @HiveField(2)
   final String slug;
+
+  @HiveField(3)
   final String? description;
+
+  @HiveField(4)
   final int count;
+
+  @HiveField(5)
   final String? imageUrl;
 
   Category({
@@ -53,4 +69,17 @@ class Category {
       imageUrl: imageUrl ?? this.imageUrl,
     );
   }
+
+  @override
+  String toString() {
+    return 'Category{id: $id, name: $name, count: $count}';
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+          other is Category && runtimeType == other.runtimeType && id == other.id;
+
+  @override
+  int get hashCode => id.hashCode;
 }
