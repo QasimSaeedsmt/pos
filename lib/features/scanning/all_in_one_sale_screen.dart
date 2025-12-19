@@ -1558,8 +1558,15 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
         'paidAmount': _creditSaleData?.paidAmount,
         'previousBalance': _creditSaleData?.previousBalance,
         'newBalance': _creditSaleData?.newBalance,
+        // Include cart manager data for sync
+        'cartManager': {
+          'cartDiscount': widget.cartManager.cartDiscount,
+          'cartDiscountPercent': widget.cartManager.cartDiscountPercent,
+          'taxRate': widget.cartManager.taxRate,
+        },
       };
 
+      // Use offline-first approach (always saves locally first)
       final result = await _posService.createOrderWithEnhancedData(
         widget.cartManager.items,
         _customerSelection,
@@ -1569,43 +1576,31 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
       );
 
       if (result.success) {
-        // Update local product stock
+        // Update local product stock (already done in service, but update UI)
         _updateProductStockLocally(widget.cartManager.items);
 
-        // Refresh from server for final sync
-        await _refreshProductsAfterSale();
-
+        // Clear cart
         await widget.cartManager.clearCart();
 
-        if (result.isOffline) {
-          OverlayManager.showToast(
-            context: context,
-            message: _isCreditSale
-                ? 'Credit sale saved offline. Will sync when online.'
-                : 'Order saved offline. Will sync when online.',
-            backgroundColor: Colors.orange,
-          );
+        // Show success message - IMMEDIATELY after local save
+        OverlayManager.showToast(
+          context: context,
+          message: _isCreditSale
+              ? 'Credit sale processed successfully!'
+              : 'Order processed successfully!',
+          backgroundColor: Colors.green,
+        );
 
-          if (result.pendingOrderId != null) {
-            _showOfflineInvoiceOptions(result.pendingOrderId!);
-          } else {
-            _resetPOSAfterSuccessfulSale();
-          }
-        } else {
-          OverlayManager.showToast(
-            context: context,
-            message: _isCreditSale
-                ? 'Credit sale processed successfully!'
-                : 'Order processed successfully!',
-            backgroundColor: Colors.green,
-          );
-
-          if (result.order != null) {
-            _showEnhancedInvoiceOptions(result.order!, orderData);
-          } else {
-            _resetPOSAfterSuccessfulSale();
-          }
+        // Show invoice options (using local data)
+        if (result.pendingOrderId != null) {
+          _showOfflineInvoiceOptions(result.pendingOrderId!);
         }
+
+        // Reset UI
+        _resetPOSAfterSuccessfulSale();
+
+        // Background sync will happen automatically via _startBackgroundSyncForOrder
+
       } else {
         OverlayManager.showToast(
           context: context,
@@ -1625,7 +1620,6 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
       }
     }
   }
-
   Future<void> _refreshProductsAfterSale() async {
     try {
       final updatedProducts = await _posService.fetchProducts(

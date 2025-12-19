@@ -5,7 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:mpcm/features/customerBase/customer_management_screen.dart';
-import 'package:mpcm/features/scanning/smart_scan_models.dart';
+import 'package:mpcm/features/scanning/all_in_one_sale_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synchronized/synchronized.dart';
@@ -427,62 +427,32 @@ class EnhancedPOSService {
         CreditSaleData? creditSaleData,
       }) async {
     try {
-      if (_isOnline) {
-        // Extract discount data from cart manager if provided
-        double? cartDiscount;
-        double? cartDiscountPercent;
-        double? taxRate;
+      // ALWAYS save locally first - this is the offline-first approach
+      final localResult = await _createOfflineOrderWithCustomer(
+        cartItems,
+        customerSelection,
+        additionalData: additionalData,
+        creditSaleData: creditSaleData,
+      );
 
-        if (cartManager != null) {
-          cartDiscount = cartManager.cartDiscount;
-          cartDiscountPercent = cartManager.cartDiscountPercent;
-          taxRate = cartManager.taxRate;
+      // If local save was successful
+      if (localResult.success && localResult.pendingOrderId != null) {
+        // If we're online, trigger background sync
+        if (_isOnline) {
+          // Get the saved order for background sync
+          final pendingOrders = await _localDb.getPendingOrders();
+          final pendingOrder = pendingOrders.firstWhere(
+                (order) => order['id'] == localResult.pendingOrderId,
+          );
+
+          // Start background sync immediately but don't wait for it
+          _startBackgroundSyncForOrder(pendingOrder);
         }
 
-        // Create enhanced order data with all discount information
-        final enhancedData = _createEnhancedCartData(
-          cartItems,
-          additionalData,
-          cartDiscount: cartDiscount,
-          cartDiscountPercent: cartDiscountPercent,
-          taxRate: taxRate,
-        );
-
-        // Add additional charges/discounts
-        enhancedData['additionalDiscount'] = additionalData?['additionalDiscount'] ?? 0.0;
-        enhancedData['shippingAmount'] = additionalData?['shippingAmount'] ?? 0.0;
-        enhancedData['tipAmount'] = additionalData?['tipAmount'] ?? 0.0;
-        enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
-        enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
-
-        // Add credit sale data if provided
-        if (creditSaleData != null) {
-          enhancedData['creditSaleData'] = creditSaleData.toMap();
-
-          // Update customer credit balance if this is a credit sale
-          if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
-            await _updateCustomerCreditBalance(
-              customerSelection.customer!,
-              creditSaleData,
-            );
-          }
-        }
-
-        final order = await _firestoreServices.createOrderWithEnhancedData(
-          cartItems,
-          customerSelection,
-          enhancedData,
-        );
-
-        return OrderCreationResult.success(order);
+        // Return success immediately (UI won't wait for online sync)
+        return localResult;
       } else {
-        // Enhanced offline order creation with credit support
-        return await _createOfflineOrderWithCustomer(
-          cartItems,
-          customerSelection,
-          additionalData: additionalData,
-          creditSaleData: creditSaleData,
-        );
+        return localResult;
       }
     } catch (e) {
       debugPrint('Enhanced order creation failed: $e');
@@ -490,6 +460,146 @@ class EnhancedPOSService {
     }
   }
 
+// Add this method for background syncing
+  Future<void> _startBackgroundSyncForOrder(Map<String, dynamic> pendingOrder) async {
+    try {
+      // Extract data from pending order
+      final orderData = pendingOrder['order_data'] as Map<String, dynamic>;
+      final lineItems = orderData['line_items'] as List<dynamic>;
+
+      // Convert back to CartItem list
+      final cartItems = lineItems.map((item) {
+        final itemMap = item as Map<String, dynamic>;
+        final product = Product(
+          id: itemMap['product_id'].toString(),
+          name: itemMap['product_name'].toString(),
+          price: (itemMap['price'] as num).toDouble(),
+          sku: itemMap['product_sku']?.toString() ?? '',
+          stockQuantity: 0,
+          inStock: true,
+          stockStatus: 'instock',
+          purchasable: true,
+          status: 'publish',
+          featured: false,
+        );
+
+        return CartItem(
+          product: product,
+          quantity: itemMap['quantity'] as int,
+          manualDiscount: (itemMap['manual_discount'] as num?)?.toDouble(),
+          manualDiscountPercent: (itemMap['manual_discount_percent'] as num?)?.toDouble(),
+        );
+      }).toList();
+
+      // Extract customer selection
+      CustomerSelection customerSelection;
+      final customerData = pendingOrder['customer_data'] as Map<String, dynamic>?;
+      if (customerData != null) {
+        final customer = Customer(
+          id: customerData['customerId'].toString(),
+          firstName: customerData['firstName'].toString(),
+          lastName: customerData['lastName']?.toString() ?? '',
+          email: customerData['email']?.toString() ?? '',
+          phone: customerData['phone']?.toString() ?? '',
+          currentBalance: 0.0,
+          creditLimit: 0.0,
+          totalCreditGiven: 0.0,
+          totalCreditPaid: 0.0,
+          metaData: {},
+          creditTerms: {},
+          overdueAmount: 0.0,
+          overdueCount: 0,
+        );
+        customerSelection = CustomerSelection(customer: customer);
+      } else {
+        customerSelection = CustomerSelection();
+      }
+
+      // Extract credit sale data
+      CreditSaleData? creditSaleData;
+      final additionalData = pendingOrder['additional_data'] as Map<String, dynamic>?;
+      if (additionalData != null && additionalData['isCreditSale'] == true) {
+        creditSaleData = CreditSaleData(
+          isCreditSale: true,
+          creditAmount: additionalData['creditAmount'] as double? ?? 0.0,
+          paidAmount: additionalData['paidAmount'] as double? ?? 0.0,
+          previousBalance: additionalData['previousBalance'] as double? ?? 0.0,
+          newBalance: additionalData['newBalance'] as double? ?? 0.0,
+          notes: additionalData['notes']?.toString() ?? '',
+          creditTerms: additionalData['creditTerms']?.toString(),
+        );
+      }
+
+      // Extract cart manager data
+      double? cartDiscount;
+      double? cartDiscountPercent;
+      double? taxRate;
+
+      if (additionalData != null && additionalData['cartManager'] != null) {
+        final cartManagerData = additionalData['cartManager'] as Map<String, dynamic>;
+        cartDiscount = cartManagerData['cartDiscount'] as double?;
+        cartDiscountPercent = cartManagerData['cartDiscountPercent'] as double?;
+        taxRate = cartManagerData['taxRate'] as double?;
+      }
+
+      // Create enhanced order data for online sync
+      final enhancedData = _createEnhancedCartData(
+        cartItems,
+        additionalData,
+        cartDiscount: cartDiscount,
+        cartDiscountPercent: cartDiscountPercent,
+        taxRate: taxRate,
+      );
+
+      // Add additional charges/discounts
+      if (additionalData != null) {
+        enhancedData['additionalDiscount'] = additionalData['additionalDiscount'] ?? 0.0;
+        enhancedData['shippingAmount'] = additionalData['shippingAmount'] ?? 0.0;
+        enhancedData['tipAmount'] = additionalData['tipAmount'] ?? 0.0;
+        enhancedData['paymentMethod'] = additionalData['paymentMethod'] ?? 'cash';
+        enhancedData['finalTotal'] = additionalData['finalTotal'] ?? enhancedData['totalAmount'];
+      }
+
+      // Add credit sale data if provided
+      if (creditSaleData != null) {
+        enhancedData['creditSaleData'] = creditSaleData.toMap();
+
+        // Update customer credit balance if this is a credit sale
+        if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+          await _updateCustomerCreditBalance(
+            customerSelection.customer!,
+            creditSaleData,
+          );
+        }
+      }
+
+      // Try to create order online
+      final order = await _firestoreServices.createOrderWithEnhancedData(
+        cartItems,
+        customerSelection,
+        enhancedData,
+      );
+
+      // Update local record as synced
+      await _localDb.updatePendingOrderStatus(
+        pendingOrder['id'] as int,
+        'synced',
+      );
+
+      debugPrint('✅ Order #${pendingOrder['id']} synced successfully to online');
+
+    } catch (syncError) {
+      debugPrint('⚠️ Online sync failed for order #${pendingOrder['id']}: $syncError');
+
+      // Update sync status with error
+      final attempts = ((pendingOrder['sync_attempts'] as int?) ?? 0) + 1;
+      await _localDb.updatePendingOrderStatus(
+        pendingOrder['id'] as int,
+        'failed',
+        attempts: attempts,
+      );
+    }
+  }
   ///working
   Future<void> _updateCustomerCreditBalance(
       Customer customer,
