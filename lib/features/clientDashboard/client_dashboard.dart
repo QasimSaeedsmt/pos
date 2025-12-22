@@ -17,7 +17,6 @@ import '../../constants.dart';
 import '../../core/models/app_order_model.dart';
 import '../../core/models/cart_item_model.dart';
 import '../../core/models/customer_model.dart';
-import '../../core/models/offline_dashboard_data.dart';
 import '../../core/models/product_model.dart';
 import '../../core/models/return_request.dart';
 import '../../modules/auth/providers/auth_provider.dart';
@@ -26,7 +25,6 @@ import '../connectivityBase/local_db_base.dart' hide CustomerSelection;
 import '../customerBase/customer_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
-import '../returnBase/return_base.dart';
 
 class OrderCreationResult {
   final bool success;
@@ -199,7 +197,16 @@ class FirestoreServices {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-
+  ///working
+  Future<void> deleteCustomer(String customerId) async {
+    try {
+      await customersRef.doc(customerId).delete();
+      debugPrint('Customer deleted successfully: $customerId');
+    } catch (e) {
+      debugPrint('Failed to delete customer: $e');
+      throw Exception('Failed to delete customer: $e');
+    }
+  }
   ///working
   Future<BusinessSettings> getBusinessSettings() async {
     try {
@@ -1000,7 +1007,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
   bool _isOnline = true;
   bool _isRefreshing = false;
   bool _isOfflineMode = false;
-  String _selectedPeriod = 'today';
+  final String _selectedPeriod = 'today';
 
   // Get auth provider from context
   MyAuthProvider get _authProvider {
@@ -2579,140 +2586,153 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
+    final theme = Theme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              /// ───────────────── TOP ROW ─────────────────
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: maxWidth * 0.10,
+                      color: color,
+                    ),
                   ),
-                  child: Icon(icon, size: 20, color: color),
-                ),
-                Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: trend >= 0 ? Colors.green[50] : Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        trend >= 0 ? Icons.trending_up : Icons.trending_down,
-                        size: 12,
-                        color: trend >= 0 ? Colors.green[600] : Colors.red[600],
-                      ),
-                      SizedBox(width: 2),
-                      Text(
-                        '${trend.abs().toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: trend >= 0
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : Colors.red.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          trend >= 0
+                              ? Icons.trending_up_rounded
+                              : Icons.trending_down_rounded,
+                          size: maxWidth * 0.05,
                           color: trend >= 0
-                              ? Colors.green[600]
-                              : Colors.red[600],
+                              ? Colors.green.shade600
+                              : Colors.red.shade600,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints:
+                          BoxConstraints(maxWidth: maxWidth * 0.25),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${trend.abs().toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              /// ───────────────── VALUE (BULLETPROOF) ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                  maxHeight: maxWidth * 0.22,
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
               ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+
+              const SizedBox(height: 6),
+
+              /// ───────────────── TITLE ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.7),
+                    ),
+                  ),
+                ),
               ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(color: Colors.grey[500], fontSize: 10),
-            ),
-          ],
-        ),
-      ),
+
+              const SizedBox(height: 4),
+
+              /// ───────────────── SUBTITLE ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    subtitle,
+                    maxLines: 2,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.5),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
-// class _QuickActionTile extends StatelessWidget {
-//   final IconData icon;
-//   final String title;
-//   final String subtitle;
-//   final Color color;
-//   final VoidCallback onTap;
-//
-//   const _QuickActionTile({
-//     required this.icon,
-//     required this.title,
-//     required this.subtitle,
-//     required this.color,
-//     required this.onTap,
-//   });
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return ListTile(
-//       contentPadding: EdgeInsets.zero,
-//       leading: Container(
-//         padding: EdgeInsets.all(8),
-//         decoration: BoxDecoration(
-//           color: color.withValues(alpha: 0.1),
-//           borderRadius: BorderRadius.circular(10),
-//         ),
-//         child: Icon(icon, size: 20, color: color),
-//       ),
-//       title: Text(
-//         title,
-//         style: TextStyle(
-//           fontSize: 14,
-//           fontWeight: FontWeight.w600,
-//           color: Colors.grey[800],
-//         ),
-//       ),
-//       subtitle: Text(
-//         subtitle,
-//         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-//       ),
-//       trailing: Icon(
-//         Icons.arrow_forward_ios,
-//         size: 16,
-//         color: Colors.grey[400],
-//       ),
-//       onTap: onTap,
-//     );
-//   }
-// }
 class _RecentCustomerItem extends StatelessWidget {
   final Customer customer;
 

@@ -16,7 +16,17 @@ class LocalDatabase {
   static final LocalDatabase _instance = LocalDatabase._internal();
   factory LocalDatabase() => _instance;
   LocalDatabase._internal();
+  Future<void> deleteCustomer(String customerId) async {
+    final box = await _customersBoxInstance;
 
+    try {
+      await box.delete(customerId);
+      debugPrint('Customer deleted from local storage: $customerId');
+    } catch (e) {
+      debugPrint('Error deleting customer from local storage: $e');
+      throw Exception('Failed to delete customer locally: $e');
+    }
+  }
   // Hive box names
   static const String _pendingReturnsBox = 'pending_returns_box';
   static const String _syncedReturnsBox = 'synced_returns_box';

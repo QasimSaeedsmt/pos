@@ -419,6 +419,7 @@ class EnhancedPOSService {
   }
 
   ///working
+
   Future<OrderCreationResult> createOrderWithEnhancedData(
       List<CartItem> cartItems,
       CustomerSelection customerSelection, {
@@ -427,39 +428,92 @@ class EnhancedPOSService {
         CreditSaleData? creditSaleData,
       }) async {
     try {
-      // ALWAYS save locally first - this is the offline-first approach
-      final localResult = await _createOfflineOrderWithCustomer(
-        cartItems,
-        customerSelection,
-        additionalData: additionalData,
-        creditSaleData: creditSaleData,
-      );
+      if (_isOnline) {
+        // Extract discount data from cart manager if provided
+        double? cartDiscount;
+        double? cartDiscountPercent;
+        double? taxRate;
 
-      // If local save was successful
-      if (localResult.success && localResult.pendingOrderId != null) {
-        // If we're online, trigger background sync
-        if (_isOnline) {
-          // Get the saved order for background sync
-          final pendingOrders = await _localDb.getPendingOrders();
-          final pendingOrder = pendingOrders.firstWhere(
-                (order) => order['id'] == localResult.pendingOrderId,
-          );
-
-          // Start background sync immediately but don't wait for it
-          _startBackgroundSyncForOrder(pendingOrder);
+        if (cartManager != null) {
+          cartDiscount = cartManager.cartDiscount;
+          cartDiscountPercent = cartManager.cartDiscountPercent;
+          taxRate = cartManager.taxRate;
         }
 
-        // Return success immediately (UI won't wait for online sync)
-        return localResult;
+        // Create enhanced order data with all discount information
+        final enhancedData = _createEnhancedCartData(
+          cartItems,
+          additionalData,
+          cartDiscount: cartDiscount,
+          cartDiscountPercent: cartDiscountPercent,
+          taxRate: taxRate,
+        );
+
+        // Add additional charges/discounts
+        enhancedData['additionalDiscount'] = additionalData?['additionalDiscount'] ?? 0.0;
+        enhancedData['shippingAmount'] = additionalData?['shippingAmount'] ?? 0.0;
+        enhancedData['tipAmount'] = additionalData?['tipAmount'] ?? 0.0;
+        enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
+        enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
+
+        // Add credit sale data if provided
+        if (creditSaleData != null) {
+          enhancedData['creditSaleData'] = creditSaleData.toMap();
+
+          // Update customer credit balance if this is a credit sale
+          if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+            await _updateCustomerCreditBalance(
+              customerSelection.customer!,
+              creditSaleData,
+            );
+          }
+        }
+
+        final order = await _firestoreServices.createOrderWithEnhancedData(
+          cartItems,
+          customerSelection,
+          enhancedData,
+        );
+
+        return OrderCreationResult.success(order);
       } else {
-        return localResult;
+        // Enhanced offline order creation with credit support
+        return await _createOfflineOrderWithCustomer(
+          cartItems,
+          customerSelection,
+          additionalData: additionalData,
+          creditSaleData: creditSaleData,
+        );
       }
     } catch (e) {
       debugPrint('Enhanced order creation failed: $e');
       return OrderCreationResult.error('Failed to create order: $e');
     }
   }
+  ///working
+  Future<void> deleteCustomer(String customerId) async {
+    try {
+      if (_isOnline) {
+        await _firestoreServices.deleteCustomer(customerId);
+      }
 
+      // Always delete from local database for consistency
+      await _localDb.deleteCustomer(customerId);
+      debugPrint('Customer deleted: $customerId');
+
+    } catch (e) {
+      debugPrint('❌ Error deleting customer: $e');
+
+      // Fallback: try to delete from local database even if online fails
+      try {
+        await _localDb.deleteCustomer(customerId);
+        debugPrint('✅ Customer deleted locally as fallback: $customerId');
+      } catch (localError) {
+        debugPrint('❌ Local delete also failed: $localError');
+        rethrow;
+      }
+    }
+  }
 // Add this method for background syncing
   Future<void> _startBackgroundSyncForOrder(Map<String, dynamic> pendingOrder) async {
     try {
@@ -619,7 +673,7 @@ class EnhancedPOSService {
       throw Exception('Failed to update customer credit: $e');
     }
   }
-  
+
   ///working
   Future<OrderCreationResult> _createOfflineOrderWithCustomer(
       List<CartItem> cartItems,
@@ -727,7 +781,7 @@ class EnhancedPOSService {
       return ReturnCreationResult.error('Failed to save return locally: $e');
     }
   }
-  
+
   ///working
   Future<List<ReturnRequest>> getAllReturns({int limit = 50}) async {
     if (_isOnline) {
@@ -746,7 +800,7 @@ class EnhancedPOSService {
       return await _localDb.getAllReturns();
     }
   }
-  
+
   ///working
   Future<void> _syncPendingReturns() async {
     final pendingReturns = await _localDb.getPendingReturns();
@@ -870,7 +924,7 @@ class EnhancedPOSService {
 Future<Customer?> getCustomerById(String id) async {
     return await _firestoreServices.getCustomerById(id);
   }
-  
+
   ///working
   Future<String> addCustomer(Customer customer) async {
     return await _firestoreServices.addCustomer(customer);
@@ -929,7 +983,7 @@ Future<Customer?> getCustomerById(String id) async {
       _triggerSync();
     }
   }
-  
+
   ///working
   Future<List<Product>> fetchProducts({
     int limit = 50,
@@ -1012,7 +1066,7 @@ Future<Customer?> getCustomerById(String id) async {
       return [];
     }
   }
-  
+
   ///working
   Future<void> _syncPendingOrders() async {
     final pendingOrders = await _localDb.getPendingOrders();
