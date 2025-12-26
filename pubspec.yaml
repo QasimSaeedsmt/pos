@@ -39,6 +39,7 @@ dependencies:
   json_annotation:
   collection:
   sentry_flutter:
+  flutter_email_sender:
   logger:
   csv:
   package_info_plus:
@@ -61,6 +62,7 @@ dependencies:
   intl:
   syncfusion_flutter_charts:
   liquid_pull_to_refresh:
+  syncfusion_flutter_pdf:
 #  flutter_local_notifications:
   hive_flutter:
   badges:

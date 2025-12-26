@@ -4,7 +4,7 @@ import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:mpcm/sales/sales_management_screen.dart';
+// import 'package:mpcm/sales/sales_management_screen.dart';
 import 'package:mpcm/theme_utils.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:provider/provider.dart';
@@ -3557,17 +3557,17 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen>
           _buildHourlySalesChart(),
           SizedBox(height: 20),
           _buildDailySalesChart(),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SalesManagementScreen(),
-                ),
-              );
-            },
-            child: Text("Management"),
-          ),
+          // ElevatedButton(
+          //   onPressed: () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder: (context) => SalesManagementScreen(),
+          //       ),
+          //     );
+          //   },
+          //   child: Text("Management"),
+          // ),
         ],
       ),
     );

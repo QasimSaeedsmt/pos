@@ -332,29 +332,203 @@ class AppOrder {
   }
 
   double calculateCartDiscount() {
+    // Check multiple data sources in order of priority
+
+    // 1. First check enhancedData in customerData
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+
+      // Try cartData in enhancedData
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        if (cartData.containsKey('cart_discount_amount')) {
+          return (cartData['cart_discount_amount'] as num?)?.toDouble() ?? 0.0;
+        }
+        if (cartData.containsKey('cartDiscount')) {
+          return (cartData['cartDiscount'] as num?)?.toDouble() ?? 0.0;
+        }
+        if (cartData.containsKey('cart_discount')) {
+          return (cartData['cart_discount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+
+      // Try direct fields in enhancedData
+      if (enhancedData.containsKey('cartDiscount')) {
+        return (enhancedData['cartDiscount'] as num?)?.toDouble() ?? 0.0;
+      }
+    }
+
+    // 2. Check if there's a pricingBreakdown field at the order level
+    // This is set in FirestoreServices.createOrderWithEnhancedData()
+    for (var item in lineItems) {
+      if (item is Map<String, dynamic>) {
+        if (item.containsKey('pricingBreakdown')) {
+          final pricing = Map<String, dynamic>.from(item['pricingBreakdown']);
+          if (pricing.containsKey('cartDiscount')) {
+            return (pricing['cartDiscount'] as num?)?.toDouble() ?? 0.0;
+          }
+          if (pricing.containsKey('cartDiscountAmount')) {
+            return (pricing['cartDiscountAmount'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+      }
+    }
+
     return 0.0;
   }
 
   double calculateAdditionalDiscount() {
+    // Check multiple data sources for additional discount
+
+    // 1. Check enhancedData
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+
+      if (enhancedData.containsKey('additionalDiscount')) {
+        return (enhancedData['additionalDiscount'] as num?)?.toDouble() ?? 0.0;
+      }
+
+      // Check in cartData
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        if (cartData.containsKey('additional_discount')) {
+          return (cartData['additional_discount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    }
+
+    // 2. Check for additional discount in line items
+    for (var item in lineItems) {
+      if (item is Map<String, dynamic>) {
+        if (item.containsKey('additionalDiscount')) {
+          return (item['additionalDiscount'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        // Check in pricing breakdown
+        if (item.containsKey('pricingBreakdown')) {
+          final pricing = Map<String, dynamic>.from(item['pricingBreakdown']);
+          if (pricing.containsKey('additionalDiscount')) {
+            return (pricing['additionalDiscount'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+      }
+    }
+
     return 0.0;
   }
 
-  double calculateTaxAmount() {
-    final subtotal = calculateSubtotal();
-    final discounts = calculateTotalDiscount();
-    final taxableAmount = subtotal - discounts;
-
-    const taxRate = 0.0;
-    return taxableAmount * taxRate;
-  }
-
   double calculateShippingAmount() {
+    // Shipping amount is typically stored in enhancedData
+
+    // 1. Check enhancedData
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+
+      if (enhancedData.containsKey('shippingAmount')) {
+        return (enhancedData['shippingAmount'] as num?)?.toDouble() ?? 0.0;
+      }
+
+      // Check in cartData
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        if (cartData.containsKey('shipping_amount')) {
+          return (cartData['shipping_amount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    }
+
+    // 2. Check line items for shipping
+    for (var item in lineItems) {
+      if (item is Map<String, dynamic>) {
+        if (item.containsKey('shippingAmount')) {
+          return (item['shippingAmount'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        // Check in pricing breakdown
+        if (item.containsKey('pricingBreakdown')) {
+          final pricing = Map<String, dynamic>.from(item['pricingBreakdown']);
+          if (pricing.containsKey('shippingAmount')) {
+            return (pricing['shippingAmount'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+      }
+    }
+
     return 0.0;
   }
 
   double calculateTipAmount() {
+    // Tip amount is typically stored in enhancedData
+
+    // 1. Check enhancedData
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+
+      if (enhancedData.containsKey('tipAmount')) {
+        return (enhancedData['tipAmount'] as num?)?.toDouble() ?? 0.0;
+      }
+
+      // Check in cartData
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        if (cartData.containsKey('tip_amount')) {
+          return (cartData['tip_amount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    }
+
+    // 2. Check line items for tip
+    for (var item in lineItems) {
+      if (item is Map<String, dynamic>) {
+        if (item.containsKey('tipAmount')) {
+          return (item['tipAmount'] as num?)?.toDouble() ?? 0.0;
+        }
+
+        // Check in pricing breakdown
+        if (item.containsKey('pricingBreakdown')) {
+          final pricing = Map<String, dynamic>.from(item['pricingBreakdown']);
+          if (pricing.containsKey('tipAmount')) {
+            return (pricing['tipAmount'] as num?)?.toDouble() ?? 0.0;
+          }
+        }
+      }
+    }
+
     return 0.0;
   }
+  double calculateTaxAmount() {
+    // Get tax from enhancedData or calculate from taxable amount
+
+    // 1. Try to get tax amount directly from enhancedData
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        if (cartData.containsKey('tax_amount')) {
+          return (cartData['tax_amount'] as num?)?.toDouble() ?? 0.0;
+        }
+      }
+    }
+
+    // 2. Calculate tax using stored tax rate
+    const defaultTaxRate = 0.0; // Change this to your default tax rate
+
+    // Try to find tax rate in enhancedData
+    double taxRate = defaultTaxRate;
+    if (customerData != null && customerData!.containsKey('enhancedData')) {
+      final enhancedData = Map<String, dynamic>.from(customerData!['enhancedData']);
+      if (enhancedData['cartData'] != null) {
+        final cartData = Map<String, dynamic>.from(enhancedData['cartData']);
+        taxRate = (cartData['tax_rate'] as num?)?.toDouble() ?? defaultTaxRate;
+      }
+    }
+
+    final taxableAmount = calculateTaxableAmount();
+    return taxableAmount * taxRate;
+  }
+
+
 
   double calculateTaxableAmount() {
     final subtotal = calculateSubtotal();

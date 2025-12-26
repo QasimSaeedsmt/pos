@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/services.dart';
+import 'package:hive/hive.dart';
 import 'package:mpcm/features/connectivityBase/local_db_base.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'checkou_screen.dart';
+import 'features/dashboard/dashboard_models.dart';
 import 'features/main_navigation/main_navigation_base.dart';
 import 'firebase_options.dart';
 import 'modules/auth/providers/auth_provider.dart';
@@ -53,7 +55,13 @@ Future<void> _initializeApp() async {
     SharedPreferences.getInstance(),
     getApplicationDocumentsDirectory(),
     ).wait;
-
+    Hive.registerAdapter(DashboardCacheAdapter());
+    Hive.registerAdapter(DashboardStatsAdapter());
+    Hive.registerAdapter(RevenueDataPointAdapter());
+    Hive.registerAdapter(ProductPerformanceAdapter());
+    // Initialize EnhancedPOSService with sync
+    final posService = EnhancedPOSService();
+    await posService.initialize; // This starts sync polling
     // Initialize Hive
     // Hive.init(appDir.path);
     // HiveService.initAdapters();

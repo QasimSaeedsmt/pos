@@ -141,7 +141,7 @@ class LocalDatabase {
     return Hive.box<Customer>(_customersBox);
   }
 
-  Future<Box<Map<String, dynamic>>> get _dashboardDataBoxInstance async {
+  Future<Box<Map<String, dynamic>>> get dashboardDataBoxInstance async {
     await _ensureInitialized();
     if (!Hive.isBoxOpen(_dashboardDataBox)) {
       return await Hive.openBox<Map<String, dynamic>>(_dashboardDataBox);
@@ -149,7 +149,7 @@ class LocalDatabase {
     return Hive.box<Map<String, dynamic>>(_dashboardDataBox);
   }
 
-  Future<Box<int>> get _dashboardCacheTimestampBoxInstance async {
+  Future<Box<int>> get dashboardCacheTimestampBoxInstance async {
     await _ensureInitialized();
     if (!Hive.isBoxOpen(_dashboardCacheTimestampBox)) {
       return await Hive.openBox<int>(_dashboardCacheTimestampBox);
@@ -193,8 +193,8 @@ class LocalDatabase {
         _pendingRestocksBoxInstance,
         _cacheTimestampBoxInstance,
         _customersBoxInstance,
-        _dashboardDataBoxInstance,
-        _dashboardCacheTimestampBoxInstance,
+        dashboardDataBoxInstance,
+        dashboardCacheTimestampBoxInstance,
         _categoriesBoxInstance,
         _categoriesTimestampBoxInstance,
       ]);
@@ -215,7 +215,78 @@ class LocalDatabase {
       return [];
     }
   }
+// ========== SYNC STATUS METHODS ==========
 
+  Future<List<Map<String, dynamic>>> getSyncableItems() async {
+    final List<Map<String, dynamic>> allItems = [];
+
+    // Get all pending items
+    final pendingOrders = await getPendingOrders();
+    final pendingReturns = await getPendingReturns();
+    final pendingRestocks = await getPendingRestocks();
+
+    allItems.addAll(pendingOrders.map((order) => {
+      ...order,
+      'type': 'order',
+    }));
+
+    allItems.addAll(pendingReturns.map((returnReq) => {
+      ...returnReq,
+      'type': 'return',
+    }));
+
+    allItems.addAll(pendingRestocks.map((restock) => {
+      ...restock,
+      'type': 'restock',
+    }));
+
+    return allItems;
+  }
+
+  Future<int> getPendingSyncCount() async {
+    final pendingOrders = await getPendingOrders();
+    final pendingReturns = await getPendingReturns();
+    final pendingRestocks = await getPendingRestocks();
+
+    return pendingOrders.length + pendingReturns.length + pendingRestocks.length;
+  }
+
+  Future<void> resetFailedSyncs() async {
+    // Reset failed sync attempts for retry
+    final pendingOrders = await getPendingOrders();
+    final pendingReturns = await getPendingReturns();
+    final pendingRestocks = await getPendingRestocks();
+
+    for (final order in pendingOrders) {
+      if (order['sync_status'] == 'failed') {
+        await updatePendingOrderStatus(
+          order['id'] as int,
+          'pending',
+          attempts: 0,
+        );
+      }
+    }
+
+    for (final returnReq in pendingReturns) {
+      if (returnReq['sync_status'] == 'failed') {
+        await updatePendingReturnStatus(
+          returnReq['local_id'] as int,
+          'pending',
+          attempts: 0,
+        );
+      }
+    }
+
+    for (final restock in pendingRestocks) {
+      if (restock['sync_status'] == 'failed') {
+        await updatePendingRestockStatus(
+          restock['id'] as int,
+          'pending',
+          attempts: 0,
+        );
+      }
+    }
+  }
   Future<String> saveCategory(Category category) async {
     try {
       final box = await _categoriesBoxInstance;
@@ -269,8 +340,8 @@ class LocalDatabase {
   }
 
   Future<void> saveDashboardData(OfflineDashboardData data) async {
-    final box = await _dashboardDataBoxInstance;
-    final timestampBox = await _dashboardCacheTimestampBoxInstance;
+    final box = await dashboardDataBoxInstance;
+    final timestampBox = await dashboardCacheTimestampBoxInstance;
 
     final dashboardData = data.toJson();
     await box.put(_dashboardDataKey, dashboardData);
@@ -278,8 +349,8 @@ class LocalDatabase {
   }
 
   Future<OfflineDashboardData?> getDashboardData(String tenantId) async {
-    final box = await _dashboardDataBoxInstance;
-    final timestampBox = await _dashboardCacheTimestampBoxInstance;
+    final box = await dashboardDataBoxInstance;
+    final timestampBox = await dashboardCacheTimestampBoxInstance;
 
     final dashboardData = box.get(_dashboardDataKey);
     final timestamp = timestampBox.get(_dashboardCacheTimestampKey);
@@ -300,19 +371,6 @@ class LocalDatabase {
       debugPrint('Error loading cached dashboard data: $e');
       return null;
     }
-  }
-
-  Future<List<Product>> getLowStockProducts() async {
-    final products = await getAllProducts();
-    return products
-        .where((product) => product.stockQuantity <= 10)
-        .toList();
-  }
-
-  Future<List<Customer>> getRecentCustomers({int limit = 5}) async {
-    final customers = await getCustomers();
-    customers.sort((a, b) => (b.dateCreated ?? DateTime(0)).compareTo(a.dateCreated ?? DateTime(0)));
-    return customers.take(limit).toList();
   }
 
   Future<List<RevenueDataPoint>> generateRevenueData() async {
@@ -346,56 +404,6 @@ class LocalDatabase {
     return revenueData;
   }
 
-  Future<List<TopSellingProduct>> generateTopSellingProducts() async {
-    final pendingOrders = await getPendingOrders();
-    final productSales = <String, TopSellingProduct>{};
-
-    for (final order in pendingOrders) {
-      final orderData = order['order_data'] as Map<String, dynamic>;
-      final lineItems = orderData['line_items'] as List<dynamic>? ?? [];
-
-      for (final item in lineItems) {
-        final itemMap = item as Map<String, dynamic>;
-        final productId = itemMap['product_id']?.toString() ?? '';
-        final productName = itemMap['product_name']?.toString() ?? 'Unknown Product';
-        final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
-        final price = (itemMap['price'] as num?)?.toDouble() ?? 0.0;
-
-        if (productId.isNotEmpty) {
-          if (productSales.containsKey(productId)) {
-            final existing = productSales[productId]!;
-            productSales[productId] = TopSellingProduct(
-              productId: productId,
-              productName: productName,
-              totalSold: existing.totalSold + quantity,
-              totalRevenue: existing.totalRevenue + (price * quantity),
-              imageUrl: existing.imageUrl,
-            );
-          } else {
-            String? imageUrl;
-            try {
-              final product = await getProductById(productId);
-              imageUrl = product?.imageUrl;
-            } catch (e) {
-              debugPrint('Error getting product image: $e');
-            }
-
-            productSales[productId] = TopSellingProduct(
-              productId: productId,
-              productName: productName,
-              totalSold: quantity,
-              totalRevenue: price * quantity,
-              imageUrl: imageUrl,
-            );
-          }
-        }
-      }
-    }
-
-    final sortedList = productSales.values.toList();
-    sortedList.sort((a, b) => b.totalSold.compareTo(a.totalSold));
-    return sortedList.take(5).toList();
-  }
 
   Future<DashboardStats> generateOfflineStats() async {
     final pendingOrders = await getPendingOrders();
@@ -1022,21 +1030,13 @@ class LocalDatabase {
   }
 }class OfflineDashboardData {
   final DashboardStats stats;
-  final List<AppOrder> recentOrders;
-  final List<Product> lowStockProducts;
   final List<RevenueDataPoint> revenueData;
-  final List<TopSellingProduct> topSellingProducts;
-  final List<Customer> recentCustomers;
   final DateTime lastUpdated;
   final String tenantId;
 
   OfflineDashboardData({
     required this.stats,
-    required this.recentOrders,
-    required this.lowStockProducts,
     required this.revenueData,
-    required this.topSellingProducts,
-    required this.recentCustomers,
     required this.lastUpdated,
     required this.tenantId,
   });
@@ -1060,20 +1060,11 @@ class LocalDatabase {
         'totalReturns': stats.totalReturns,
       },
       // 'recentOrders': recentOrders.map((order) => order.toFirestore()).toList(),
-      'lowStockProducts': lowStockProducts.map((product) => product.toFirestore()).toList(),
       'revenueData': revenueData.map((point) => {
         'date': point.date.toIso8601String(),
         'revenue': point.revenue,
         'orders': point.orders,
       }).toList(),
-      'topSellingProducts': topSellingProducts.map((product) => {
-        'productId': product.productId,
-        'productName': product.productName,
-        'totalSold': product.totalSold,
-        'totalRevenue': product.totalRevenue,
-        'imageUrl': product.imageUrl,
-      }).toList(),
-      'recentCustomers': recentCustomers.map((customer) => customer.toFirestore()).toList(),
       'lastUpdated': lastUpdated.toIso8601String(),
       'tenantId': tenantId,
     };
@@ -1097,13 +1088,7 @@ class LocalDatabase {
         todayReturns: json['stats']['todayReturns'] ?? 0,
         totalReturns: json['stats']['totalReturns'] ?? 0,
       ),
-      recentOrders: (json['recentOrders'] as List<dynamic>).map((orderJson) {
-        return AppOrder.fromFirestore(Map<String, dynamic>.from(orderJson), '');
-      }).toList(),
-      lowStockProducts: (json['lowStockProducts'] as List<dynamic>).map((productJson) {
-        final id = productJson['id']?.toString() ?? '';
-        return Product.fromFirestore(Map<String, dynamic>.from(productJson), id);
-      }).toList(),
+
       revenueData: (json['revenueData'] as List<dynamic>).map((pointJson) {
         return RevenueDataPoint(
           date: DateTime.parse(pointJson['date']),
@@ -1111,19 +1096,7 @@ class LocalDatabase {
           orders: pointJson['orders'] ?? 0,
         );
       }).toList(),
-      topSellingProducts: (json['topSellingProducts'] as List<dynamic>).map((productJson) {
-        return TopSellingProduct(
-          productId: productJson['productId'] ?? '',
-          productName: productJson['productName'] ?? '',
-          totalSold: productJson['totalSold'] ?? 0,
-          totalRevenue: productJson['totalRevenue'] ?? 0.0,
-          imageUrl: productJson['imageUrl'],
-        );
-      }).toList(),
-      recentCustomers: (json['recentCustomers'] as List<dynamic>).map((customerJson) {
-        final id = customerJson['id']?.toString() ?? '';
-        return Customer.fromFirestore(Map<String, dynamic>.from(customerJson), id);
-      }).toList(),
+
       lastUpdated: DateTime.parse(json['lastUpdated']),
       tenantId: json['tenantId'] ?? '',
     );

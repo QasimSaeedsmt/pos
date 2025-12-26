@@ -30,6 +30,8 @@ import '../credit/customer_communication_screen.dart';
 import '../credit/credit_sale_model.dart';
 import '../credit/credit_service.dart';
 import '../customerBase/customer_base.dart';
+import '../dashboard/dashboard_screen.dart';
+import '../dashboard/manager.dart';
 import '../expense_management.dart';
 import '../invoiceBase/invoice_archieve_screen.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
@@ -45,7 +47,492 @@ class EnhancedPOSService {
   final LocalDatabase _localDb = LocalDatabase();
   final Connectivity _connectivity = Connectivity();
   final Lock _syncLock = Lock();
+// ========== COMPLETE SYNC METHODS ==========
 
+  Future<void> _syncPendingOrders() async {
+    try {
+      final pendingOrders = await _localDb.getPendingOrders();
+
+      if (pendingOrders.isEmpty) {
+        debugPrint('✅ No pending orders to sync');
+        return;
+      }
+
+      debugPrint('🔄 Starting sync for ${pendingOrders.length} pending orders...');
+
+      for (final order in pendingOrders) {
+        try {
+          // Skip orders that are already synced or failed too many times
+          final syncStatus = order['sync_status'] as String? ?? 'pending';
+          final syncAttempts = order['sync_attempts'] as int? ?? 0;
+
+          if (syncStatus == 'synced') continue;
+          if (syncAttempts >= 3 && syncStatus == 'failed') {
+            debugPrint('⚠️ Skipping order #${order['id']} - too many failed attempts');
+            continue;
+          }
+
+          // Sync the full order with all data
+          await _firestoreServices.syncFullPendingOrder(order);
+
+          // Mark as synced in local database
+          await _localDb.updatePendingOrderStatus(
+            order['id'] as int,
+            'synced',
+            attempts: 0,
+          );
+
+          debugPrint('✅ Successfully synced order #${order['id']}');
+
+        } catch (e) {
+          debugPrint('❌ Failed to sync order #${order['id']}: $e');
+          final attempts = ((order['sync_attempts'] as int?) ?? 0) + 1;
+
+          if (attempts >= 3) {
+            await _localDb.updatePendingOrderStatus(
+              order['id'] as int,
+              'failed',
+              attempts: attempts,
+            );
+          } else {
+            await _localDb.updatePendingOrderStatus(
+              order['id'] as int,
+              'pending',
+              attempts: attempts,
+            );
+          }
+
+          // Continue with next order even if one fails
+          continue;
+        }
+      }
+
+      debugPrint('✅ Completed order sync');
+
+    } catch (e) {
+      debugPrint('❌ Error in _syncPendingOrders: $e');
+    }
+  }
+
+  Future<void> _syncPendingReturns() async {
+    try {
+      final pendingReturns = await _localDb.getPendingReturns();
+
+      if (pendingReturns.isEmpty) {
+        debugPrint('✅ No pending returns to sync');
+        return;
+      }
+
+      debugPrint('🔄 Starting sync for ${pendingReturns.length} pending returns...');
+
+      for (final returnReq in pendingReturns) {
+        try {
+          // Skip returns that are already synced or failed too many times
+          final syncStatus = returnReq['sync_status'] as String? ?? 'pending';
+          final syncAttempts = returnReq['sync_attempts'] as int? ?? 0;
+
+          if (syncStatus == 'synced') continue;
+          if (syncAttempts >= 3 && syncStatus == 'failed') {
+            debugPrint('⚠️ Skipping return #${returnReq['local_id']} - too many failed attempts');
+            continue;
+          }
+
+          // Sync the full return with all data
+          await _firestoreServices.syncFullPendingReturn(returnReq);
+
+          // Delete from pending returns (moved to synced returns)
+          await _localDb.deletePendingReturn(returnReq['local_id'] as int);
+
+          debugPrint('✅ Successfully synced return #${returnReq['local_id']}');
+
+        } catch (e) {
+          debugPrint('❌ Failed to sync return #${returnReq['local_id']}: $e');
+          final attempts = ((returnReq['sync_attempts'] as int?) ?? 0) + 1;
+
+          if (attempts >= 3) {
+            await _localDb.updatePendingReturnStatus(
+              returnReq['local_id'] as int,
+              'failed',
+              attempts: attempts,
+            );
+          } else {
+            await _localDb.updatePendingReturnStatus(
+              returnReq['local_id'] as int,
+              'pending',
+              attempts: attempts,
+            );
+          }
+
+          continue;
+        }
+      }
+
+      debugPrint('✅ Completed return sync');
+
+    } catch (e) {
+      debugPrint('❌ Error in _syncPendingReturns: $e');
+    }
+  }
+
+  Future<void> _syncPendingRestocks() async {
+    try {
+      final pendingRestocks = await _localDb.getPendingRestocks();
+
+      if (pendingRestocks.isEmpty) {
+        debugPrint('✅ No pending restocks to sync');
+        return;
+      }
+
+      debugPrint('🔄 Starting sync for ${pendingRestocks.length} pending restocks...');
+
+      for (final restock in pendingRestocks) {
+        try {
+          // Skip restocks that are already synced or failed too many times
+          final syncStatus = restock['sync_status'] as String? ?? 'pending';
+          final syncAttempts = restock['sync_attempts'] as int? ?? 0;
+
+          if (syncStatus == 'synced') continue;
+          if (syncAttempts >= 3 && syncStatus == 'failed') {
+            debugPrint('⚠️ Skipping restock #${restock['id']} - too many failed attempts');
+            continue;
+          }
+
+          // Sync the full restock
+          await _firestoreServices.syncFullPendingRestock(restock);
+
+          // Delete from pending restocks
+          await _localDb.deletePendingRestock(restock['id'] as int);
+
+          debugPrint('✅ Successfully synced restock #${restock['id']}');
+
+        } catch (e) {
+          debugPrint('❌ Failed to sync restock #${restock['id']}: $e');
+          final attempts = ((restock['sync_attempts'] as int?) ?? 0) + 1;
+
+          if (attempts >= 3) {
+            await _localDb.updatePendingRestockStatus(
+              restock['id'] as int,
+              'failed',
+              attempts: attempts,
+            );
+          } else {
+            await _localDb.updatePendingRestockStatus(
+              restock['id'] as int,
+              'pending',
+              attempts: attempts,
+            );
+          }
+
+          continue;
+        }
+      }
+
+      debugPrint('✅ Completed restock sync');
+
+    } catch (e) {
+      debugPrint('❌ Error in _syncPendingRestocks: $e');
+    }
+  }
+
+  Future<void> _syncPendingCategories() async {
+    try {
+      // Get local categories and check which are local-only
+      final localCategories = await _localDb.getAllCategories();
+      final localOnlyCategories = localCategories.where((cat) => cat.id.startsWith('local_')).toList();
+
+      if (localOnlyCategories.isEmpty) {
+        debugPrint('✅ No local-only categories to sync');
+        return;
+      }
+
+      debugPrint('🔄 Starting sync for ${localOnlyCategories.length} local categories...');
+
+      for (final localCategory in localOnlyCategories) {
+        try {
+          // Add to Firestore and get the real ID
+          final firestoreId = await _firestoreServices.addCategory(localCategory);
+
+          // Update local category with Firestore ID
+          final updatedCategory = localCategory.copyWith(id: firestoreId);
+          await _localDb.saveCategory(updatedCategory);
+
+          debugPrint('✅ Synced local category "${localCategory.name}" with ID: $firestoreId');
+
+        } catch (e) {
+          debugPrint('❌ Failed to sync category "${localCategory.name}": $e');
+          continue;
+        }
+      }
+
+      debugPrint('✅ Completed category sync');
+
+    } catch (e) {
+      debugPrint('❌ Error in _syncPendingCategories: $e');
+    }
+  }
+
+// ========== IMPROVED CONNECTIVITY MANAGEMENT ==========
+
+  Timer? _syncTimer;
+  Timer? _retryTimer;
+  int _consecutiveFailures = 0;
+  bool _isSyncing = false;
+
+  void startSyncPolling() {
+    _syncTimer?.cancel();
+    _syncTimer = Timer.periodic(Duration(seconds: 30), (timer) async {
+      if (_isOnline && !_isSyncing) {
+        await _triggerSync();
+      }
+    });
+  }
+
+  void startRetryMechanism() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer.periodic(Duration(minutes: 5), (timer) async {
+      // Retry failed syncs every 5 minutes if online
+      if (_isOnline && !_isSyncing && _consecutiveFailures > 0) {
+        debugPrint('🔄 Retrying previously failed syncs...');
+        await _triggerSync();
+      }
+    });
+  }
+
+  Future<void> _triggerSync() async {
+    if (!_isOnline || _isSyncing) return;
+
+    await _syncLock.synchronized(() async {
+      _isSyncing = true;
+
+      try {
+        debugPrint('🔄 Starting full sync...');
+
+        // Sync in sequence to avoid conflicts
+        await _syncPendingCategories();
+        await _syncPendingRestocks();
+        await _syncPendingReturns();
+        await _syncPendingOrders();
+        await _syncProducts();
+
+        _consecutiveFailures = 0;
+        debugPrint('✅ Full sync completed successfully');
+
+      } catch (e) {
+        _consecutiveFailures++;
+        debugPrint('❌ Sync error (failure #$_consecutiveFailures): $e');
+
+        // Exponential backoff for retries
+        if (_consecutiveFailures <= 3) {
+          final delaySeconds = pow(2, _consecutiveFailures).toInt();
+          debugPrint('⏳ Will retry in $delaySeconds seconds');
+          await Future.delayed(Duration(seconds: delaySeconds));
+        }
+      } finally {
+        _isSyncing = false;
+      }
+    });
+  }
+
+// ========== IMPROVED ORDER CREATION WITH RETRY ==========
+
+  Future<OrderCreationResult> createOrderWithEnhancedData(
+      List<CartItem> cartItems,
+      CustomerSelection customerSelection, {
+        Map<String, dynamic>? additionalData,
+        EnhancedCartManager? cartManager,
+        CreditSaleData? creditSaleData,
+      }) async {
+    try {
+      // Always try online first with timeout
+      if (_isOnline) {
+        try {
+          // Extract discount data from cart manager if provided
+          double? cartDiscount;
+          double? cartDiscountPercent;
+          double? taxRate;
+
+          if (cartManager != null) {
+            cartDiscount = cartManager.cartDiscount;
+            cartDiscountPercent = cartManager.cartDiscountPercent;
+            taxRate = cartManager.taxRate;
+          }
+
+          // Create enhanced order data
+          final enhancedData = _createEnhancedCartData(
+            cartItems,
+            additionalData,
+            cartDiscount: cartDiscount,
+            cartDiscountPercent: cartDiscountPercent,
+            taxRate: taxRate,
+          );
+
+          // Add additional data
+          enhancedData['additionalDiscount'] = additionalData?['additionalDiscount'] ?? 0.0;
+          enhancedData['shippingAmount'] = additionalData?['shippingAmount'] ?? 0.0;
+          enhancedData['tipAmount'] = additionalData?['tipAmount'] ?? 0.0;
+          enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
+          enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
+
+          // Add credit sale data
+          if (creditSaleData != null) {
+            enhancedData['creditSaleData'] = creditSaleData.toMap();
+
+            if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+              await _updateCustomerCreditBalance(
+                customerSelection.customer!,
+                creditSaleData,
+              );
+            }
+          }
+
+          // Try online creation with timeout
+          final order = await _firestoreServices.createOrderWithEnhancedData(
+            cartItems,
+            customerSelection,
+            enhancedData,
+          ).timeout(Duration(seconds: 10));
+
+          debugPrint('✅ Order created online: ${order.id}');
+          return OrderCreationResult.success(order);
+
+        } on TimeoutException catch (_) {
+          debugPrint('⏰ Online order creation timed out, saving offline');
+        } catch (onlineError) {
+          debugPrint('⚠️ Online order creation failed: $onlineError, saving offline');
+        }
+      }
+
+      // OFFLINE PATH: Save locally immediately
+      debugPrint('📱 Saving order locally (offline mode)');
+
+      // Update local stock quantities
+      for (final item in cartItems) {
+        await _updateLocalProductStock(item.product.id, -item.quantity);
+      }
+
+      // Prepare additional data for local storage
+      final Map<String, dynamic> localAdditionalData = {
+        'cartData': _createEnhancedCartData(cartItems, additionalData),
+        'paymentMethod': additionalData?['paymentMethod'] ?? 'cash',
+        'additionalDiscount': additionalData?['additionalDiscount'] ?? 0.0,
+        'shippingAmount': additionalData?['shippingAmount'] ?? 0.0,
+        'tipAmount': additionalData?['tipAmount'] ?? 0.0,
+        'finalTotal': additionalData?['finalTotal'] ?? 0.0,
+      };
+
+      // Add cart manager data if available
+      if (cartManager != null) {
+        localAdditionalData['cartManager'] = {
+          'cartDiscount': cartManager.cartDiscount,
+          'cartDiscountPercent': cartManager.cartDiscountPercent,
+          'taxRate': cartManager.taxRate,
+        };
+      }
+
+      // Add credit sale data if provided
+      if (creditSaleData != null) {
+        localAdditionalData['isCreditSale'] = creditSaleData.isCreditSale;
+        localAdditionalData['creditAmount'] = creditSaleData.creditAmount;
+        localAdditionalData['paidAmount'] = creditSaleData.paidAmount;
+        localAdditionalData['previousBalance'] = creditSaleData.previousBalance;
+        localAdditionalData['newBalance'] = creditSaleData.newBalance;
+        localAdditionalData['notes'] = creditSaleData.notes;
+        localAdditionalData['creditTerms'] = creditSaleData.creditTerms;
+
+        // Update local customer credit balance
+        if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
+          await _updateCustomerCreditBalance(
+            customerSelection.customer!,
+            creditSaleData,
+          );
+        }
+      }
+
+      // Get invoice settings and business info for local storage
+      try {
+        final invoiceSettings = await getInvoiceSettings();
+        localAdditionalData['invoiceSettings'] = invoiceSettings;
+
+        if (invoiceSettings['includeCustomerDetails'] == true) {
+          final businessInfo = await getBusinessInfo();
+          localAdditionalData['businessInfo'] = businessInfo;
+        }
+      } catch (e) {
+        debugPrint('⚠️ Could not load settings for local storage: $e');
+      }
+
+      // Save pending order with all data
+      final pendingOrderId = await _localDb.savePendingOrderWithCustomer(
+        cartItems,
+        customerSelection,
+        additionalData: localAdditionalData,
+      );
+
+      // Clear cart
+      await _localDb.clearCart();
+
+      debugPrint('✅ Order saved locally with ID: $pendingOrderId');
+      return OrderCreationResult.offline(pendingOrderId);
+
+    } catch (e) {
+      debugPrint('❌ Both online and offline order creation failed: $e');
+      return OrderCreationResult.error('Order creation failed: $e');
+    }
+  }
+
+// ========== INITIALIZATION AND DISPOSAL ==========
+
+  void initialize() {
+    _startConnectivityListener();
+    _checkInitialConnection();
+    startSyncPolling();
+    startRetryMechanism();
+  }
+
+  void dispose() {
+    _connectivitySubscription?.cancel();
+    _syncTimer?.cancel();
+    _retryTimer?.cancel();
+    _isSyncing = false;
+  }
+
+  Future<void> _checkInitialConnection() async {
+    try {
+      final result = await _connectivity.checkConnectivity().timeout(Duration(seconds: 5));
+      _isOnline = result != ConnectivityResult.none;
+
+      if (_isOnline) {
+        debugPrint('🌐 Initial connection check: ONLINE');
+        // Start sync immediately when coming online
+        await _triggerSync();
+      } else {
+        debugPrint('📱 Initial connection check: OFFLINE');
+      }
+    } on TimeoutException {
+      debugPrint('⏰ Connection check timeout, assuming offline');
+      _isOnline = false;
+    } catch (e) {
+      debugPrint('❌ Error checking initial connection: $e');
+      _isOnline = false;
+    }
+  }
+
+  Future<void> _startConnectivityListener() async {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+        List<ConnectivityResult> resultList,
+        ) {
+      final wasOnline = _isOnline;
+      _isOnline = resultList.any((res) => res != ConnectivityResult.none);
+
+      debugPrint(_isOnline ? '🌐 Network status: ONLINE' : '📱 Network status: OFFLINE');
+
+      if (!wasOnline && _isOnline) {
+        debugPrint('🔄 Network restored, triggering sync');
+        // Delay sync slightly to ensure network is stable
+        Future.delayed(Duration(seconds: 3), () => _triggerSync());
+      }
+    });
+  }
   bool _isOnline = false;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
@@ -307,42 +794,7 @@ class EnhancedPOSService {
   }
 
   ///working
-  Future<void> _syncPendingCategories() async {
-    if (!_isOnline) {
-      debugPrint('📱 Skipping category sync - offline');
-      return;
-    }
 
-    try {
-      final localCategories = await _localDb.getAllCategories();
-      final localOnlyCategories = localCategories.where((cat) => cat.id.startsWith('local_')).toList();
-
-      if (localOnlyCategories.isEmpty) {
-        debugPrint('✅ No local-only categories to sync');
-        return;
-      }
-
-      debugPrint('🔄 Syncing ${localOnlyCategories.length} local categories to Firestore...');
-
-      for (final localCategory in localOnlyCategories) {
-        try {
-          // Add to Firestore and get the real ID
-          final firestoreId = await _firestoreServices.addCategory(localCategory);
-
-          // Update local category with Firestore ID
-          final updatedCategory = localCategory.copyWith(id: firestoreId);
-          await _localDb.saveCategory(updatedCategory);
-
-          debugPrint('✅ Synced local category "${localCategory.name}" to Firestore with ID: $firestoreId');
-        } catch (e) {
-          debugPrint('❌ Failed to sync local category "${localCategory.name}": $e');
-          // Continue with other categories even if one fails
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ Error syncing pending categories: $e');
-    }
-  }
 
   void setTenantContext(String tenantId) {
     _firestoreServices.setTenantId(tenantId);
@@ -420,76 +872,6 @@ class EnhancedPOSService {
 
   ///working
 
-  Future<OrderCreationResult> createOrderWithEnhancedData(
-      List<CartItem> cartItems,
-      CustomerSelection customerSelection, {
-        Map<String, dynamic>? additionalData,
-        EnhancedCartManager? cartManager,
-        CreditSaleData? creditSaleData,
-      }) async {
-    try {
-      if (_isOnline) {
-        // Extract discount data from cart manager if provided
-        double? cartDiscount;
-        double? cartDiscountPercent;
-        double? taxRate;
-
-        if (cartManager != null) {
-          cartDiscount = cartManager.cartDiscount;
-          cartDiscountPercent = cartManager.cartDiscountPercent;
-          taxRate = cartManager.taxRate;
-        }
-
-        // Create enhanced order data with all discount information
-        final enhancedData = _createEnhancedCartData(
-          cartItems,
-          additionalData,
-          cartDiscount: cartDiscount,
-          cartDiscountPercent: cartDiscountPercent,
-          taxRate: taxRate,
-        );
-
-        // Add additional charges/discounts
-        enhancedData['additionalDiscount'] = additionalData?['additionalDiscount'] ?? 0.0;
-        enhancedData['shippingAmount'] = additionalData?['shippingAmount'] ?? 0.0;
-        enhancedData['tipAmount'] = additionalData?['tipAmount'] ?? 0.0;
-        enhancedData['paymentMethod'] = additionalData?['paymentMethod'] ?? 'cash';
-        enhancedData['finalTotal'] = additionalData?['finalTotal'] ?? enhancedData['totalAmount'];
-
-        // Add credit sale data if provided
-        if (creditSaleData != null) {
-          enhancedData['creditSaleData'] = creditSaleData.toMap();
-
-          // Update customer credit balance if this is a credit sale
-          if (creditSaleData.isCreditSale && customerSelection.hasCustomer) {
-            await _updateCustomerCreditBalance(
-              customerSelection.customer!,
-              creditSaleData,
-            );
-          }
-        }
-
-        final order = await _firestoreServices.createOrderWithEnhancedData(
-          cartItems,
-          customerSelection,
-          enhancedData,
-        );
-
-        return OrderCreationResult.success(order);
-      } else {
-        // Enhanced offline order creation with credit support
-        return await _createOfflineOrderWithCustomer(
-          cartItems,
-          customerSelection,
-          additionalData: additionalData,
-          creditSaleData: creditSaleData,
-        );
-      }
-    } catch (e) {
-      debugPrint('Enhanced order creation failed: $e');
-      return OrderCreationResult.error('Failed to create order: $e');
-    }
-  }
   ///working
   Future<void> deleteCustomer(String customerId) async {
     try {
@@ -801,71 +1183,7 @@ class EnhancedPOSService {
     }
   }
 
-  ///working
-  Future<void> _syncPendingReturns() async {
-    final pendingReturns = await _localDb.getPendingReturns();
 
-    if (pendingReturns.isEmpty) {
-      debugPrint('No pending returns to sync');
-      return;
-    }
-
-    debugPrint('Syncing ${pendingReturns.length} pending returns...');
-
-    for (final pendingReturn in pendingReturns) {
-      try {
-        final success = await _firestoreServices.syncPendingReturn(pendingReturn);
-
-        if (success) {
-          await _localDb.deletePendingReturn(pendingReturn['local_id']);
-          debugPrint(
-            'Successfully synced pending return ${pendingReturn['local_id']}',
-          );
-        } else {
-          await _localDb.updatePendingReturnStatus(
-            pendingReturn['local_id'],
-            'failed',
-          );
-          debugPrint('Failed to sync pending return ${pendingReturn['local_id']}');
-        }
-      } catch (e) {
-        debugPrint('Error syncing pending return ${pendingReturn['local_id']}: $e');
-        final attempts = (pendingReturn['sync_attempts'] as int? ?? 0) + 1;
-
-        if (attempts >= 3) {
-          await _localDb.updatePendingReturnStatus(
-            pendingReturn['local_id'],
-            'failed',
-            attempts: attempts,
-          );
-        } else {
-          await _localDb.updatePendingReturnStatus(
-            pendingReturn['local_id'],
-            'pending',
-            attempts: attempts,
-          );
-        }
-      }
-    }
-  }
-
-  // Update the main sync method to include returns
-  ///working
-  Future<void> _triggerSync() async {
-    await _syncLock.synchronized(() async {
-      try {
-        debugPrint('🔄 Starting full sync...');
-        await _syncPendingOrders();
-        await _syncPendingRestocks();
-        await _syncPendingReturns();
-        await _syncPendingCategories();
-        await _syncProducts();
-        debugPrint('✅ Full sync completed successfully');
-      } catch (e) {
-        debugPrint('❌ Sync error: $e');
-      }
-    });
-  }
 
   // Add to EnhancedPOSService class
   ///working
@@ -935,14 +1253,6 @@ Future<Customer?> getCustomerById(String id) async {
     await _firestoreServices.updateCustomer(customer);
   }
 
-  void initialize() {
-    _startConnectivityListener();
-    _checkInitialConnection();
-  }
-
-  void dispose() {
-    _connectivitySubscription?.cancel();
-  }
 
   ///working
   Future<void> refreshLocalCache() async {
@@ -960,29 +1270,7 @@ Future<Customer?> getCustomerById(String id) async {
     }
   }
 
-  ///working
-  Future<void> _startConnectivityListener() async {
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
-        List<ConnectivityResult> resultList,
-        ) {
-      final wasOnline = _isOnline;
-      _isOnline = resultList.any((res) => res != ConnectivityResult.none);
 
-      if (!wasOnline && _isOnline) {
-        _triggerSync();
-        refreshLocalCache();
-      }
-    });
-  }
-
-  ///working
-  Future<void> _checkInitialConnection() async {
-    final result = await _connectivity.checkConnectivity();
-    _isOnline = result != ConnectivityResult.none;
-    if (_isOnline) {
-      _triggerSync();
-    }
-  }
 
   ///working
   Future<List<Product>> fetchProducts({
@@ -1067,104 +1355,6 @@ Future<Customer?> getCustomerById(String id) async {
     }
   }
 
-  ///working
-  Future<void> _syncPendingOrders() async {
-    final pendingOrders = await _localDb.getPendingOrders();
-
-    if (pendingOrders.isEmpty) {
-      debugPrint('No pending orders to sync');
-      return;
-    }
-
-    debugPrint('Syncing ${pendingOrders.length} pending orders...');
-
-    for (final order in pendingOrders) {
-      try {
-        final orderData = order['order_data'] as Map<String, dynamic>;
-        final lineItems = (orderData['line_items'] as List).map((item) {
-          return CartItem(
-            product: Product(
-              id: item['product_id'].toString(),
-              name: item['product_name']?.toString() ?? '',
-              sku: item['product_sku']?.toString() ?? '',
-              price: (item['price'] as num).toDouble(),
-              stockQuantity: 0,
-              inStock: true,
-              stockStatus: 'instock',
-            ),
-            quantity: item['quantity'],
-          );
-        }).toList();
-
-        final createdOrder = await _firestoreServices.createOrder(lineItems);
-        await _localDb.deletePendingOrder(order['id']);
-
-        debugPrint(
-          'Successfully synced pending order ${order['id']} as order ${createdOrder.id}',
-        );
-      } catch (e) {
-        debugPrint('Failed to sync pending order ${order['id']}: $e');
-        final attempts = (order['sync_attempts'] as int? ?? 0) + 1;
-
-        if (attempts >= 3) {
-          await _localDb.updatePendingOrderStatus(
-            order['id'],
-            'failed',
-            attempts: attempts,
-          );
-        } else {
-          await _localDb.updatePendingOrderStatus(
-            order['id'],
-            'pending',
-            attempts: attempts,
-          );
-        }
-      }
-    }
-  }
-
-  ///working
-  Future<void> _syncPendingRestocks() async {
-    final pendingRestocks = await _localDb.getPendingRestocks();
-
-    if (pendingRestocks.isEmpty) {
-      debugPrint('No pending restocks to sync');
-      return;
-    }
-
-    debugPrint('Syncing ${pendingRestocks.length} pending restocks...');
-
-    for (final restock in pendingRestocks) {
-      try {
-        await _firestoreServices.restockProduct(
-          restock['productId'].toString(),
-          restock['quantity'] as int,
-          barcode: restock['barcode']?.toString(),
-        );
-        await _localDb.deletePendingRestock(restock['id']);
-        debugPrint(
-          'Successfully synced restock for product ${restock['productId']}',
-        );
-      } catch (e) {
-        debugPrint('Failed to sync restock ${restock['id']}: $e');
-        final attempts = (restock['sync_attempts'] as int? ?? 0) + 1;
-
-        if (attempts >= 3) {
-          await _localDb.updatePendingRestockStatus(
-            restock['id'],
-            'failed',
-            attempts: attempts,
-          );
-        } else {
-          await _localDb.updatePendingRestockStatus(
-            restock['id'],
-            'pending',
-            attempts: attempts,
-          );
-        }
-      }
-    }
-  }
 
   ///working
   Future<void> _syncProducts() async {
@@ -1424,7 +1614,8 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     // Admin Screens - Full access (13 screens)
     _clientAdminScreens.addAll([
-      ModernDashboardScreen(),
+      // ModernDashboardScreen(),
+      DashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
       AnalyticsDashboardScreen(),
