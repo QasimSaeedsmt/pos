@@ -1,4 +1,3 @@
-// dashboard_provider.dart
 import 'package:flutter/foundation.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dashboard_models.dart';
@@ -23,17 +22,21 @@ class DashboardProvider extends ChangeNotifier {
   DashboardProvider({
     required DashboardRepository repository,
     required Connectivity connectivity,
-  }) : _repository = repository, _connectivity = connectivity {
+  })  : _repository = repository,
+        _connectivity = connectivity {
     _initConnectivityListener();
   }
 
+  bool _checkOnline(List<ConnectivityResult> results) {
+    return results.any((r) => r != ConnectivityResult.none);
+  }
+
   void _initConnectivityListener() {
-    _connectivity.onConnectivityChanged.listen((result) {
+    _connectivity.onConnectivityChanged.listen((results) {
       final wasOnline = _isOnline;
-      _isOnline = result != ConnectivityResult.none;
+      _isOnline = _checkOnline(results);
 
       if (!wasOnline && _isOnline && _dashboardData != null) {
-        // Auto-refresh when coming back online
         _refreshData(_dashboardData!.tenantId);
       }
 
@@ -49,17 +52,14 @@ class DashboardProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Check initial connectivity
-      final connectivityResult = await _connectivity.checkConnectivity();
-      _isOnline = connectivityResult != ConnectivityResult.none;
+      final results = await _connectivity.checkConnectivity();
+      _isOnline = _checkOnline(results);
 
-      // Load dashboard data with offline-first strategy[citation:1][citation:7]
       _dashboardData = await _repository.loadDashboardData(tenantId);
 
       _isLoading = false;
       notifyListeners();
 
-      // If online, refresh in background for fresh data
       if (_isOnline) {
         _refreshDataInBackground(tenantId);
       }
@@ -79,14 +79,11 @@ class DashboardProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Force refresh from network if online
       if (_isOnline) {
         await _repository.refreshDashboard(tenantId);
-        _dashboardData = await _repository.loadDashboardData(tenantId);
-      } else {
-        // If offline, reload from cache
-        _dashboardData = await _repository.loadDashboardData(tenantId);
       }
+
+      _dashboardData = await _repository.loadDashboardData(tenantId);
 
       _isRefreshing = false;
       notifyListeners();
@@ -103,18 +100,19 @@ class DashboardProvider extends ChangeNotifier {
       await _repository.refreshDashboard(tenantId);
       final updatedData = await _repository.loadDashboardData(tenantId);
 
-      if (updatedData.lastUpdated.isAfter(_dashboardData?.lastUpdated ?? DateTime(0))) {
+      if (updatedData.lastUpdated.isAfter(
+        _dashboardData?.lastUpdated ?? DateTime(0),
+      )) {
         _dashboardData = updatedData;
         notifyListeners();
       }
     } catch (e) {
-      debugPrint('Background refresh failed: $e');
+      debugPrint('⚠️ Background refresh failed: $e');
     }
   }
 
   Future<void> _refreshDataInBackground(String tenantId) async {
-    // Debounce background refresh to avoid too many calls
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 2));
     _refreshData(tenantId);
   }
 

@@ -6,6 +6,7 @@ import 'package:syncfusion_flutter_charts/charts.dart';
 import 'package:intl/intl.dart';
 import '../../../constants.dart';
 import '../../modules/auth/providers/auth_provider.dart';
+import '../../theme_utils.dart';
 import 'dashboard_models.dart';
 import 'dashboard_provider.dart';
 import 'dashboard_repository.dart';
@@ -22,12 +23,30 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _slideAnimation;
+  late DashboardProvider _dashboardProvider;
 
   @override
   void initState() {
     super.initState();
     _initAnimations();
+
+    _dashboardProvider = DashboardProvider(
+      repository: DashboardRepository(),
+      connectivity: Connectivity(),
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider =
+      Provider.of<MyAuthProvider>(context, listen: false);
+
+      final tenantId = authProvider.currentUser?.tenantId;
+
+      if (tenantId != null && tenantId.isNotEmpty) {
+        _dashboardProvider.loadDashboard(tenantId);
+      }
+    });
   }
+
 
   void _initAnimations() {
     _animationController = AnimationController(
@@ -57,11 +76,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     final authProvider = Provider.of<MyAuthProvider>(context);
     final tenantId = authProvider.currentUser?.tenantId ?? '';
 
-    return ChangeNotifierProvider(
-      create: (_) => DashboardProvider(
-        repository: DashboardRepository(),
-        connectivity: Connectivity(),
-      ),
+    return ChangeNotifierProvider.value(
+      value: _dashboardProvider,
+
       child: Consumer<DashboardProvider>(
         builder: (context, provider, child) {
           return Scaffold(
@@ -100,9 +117,10 @@ class _DashboardScreenState extends State<DashboardScreen>
           child: Opacity(
             opacity: _fadeAnimation.value,
             child: RefreshIndicator(
-              onRefresh: () async {
-                await provider.refreshDashboard(tenantId);
-              },
+              onRefresh: provider.isOnline
+                  ? () async => provider.refreshDashboard(tenantId)
+                  : () async {},
+
               child: CustomScrollView(
                 slivers: [
                   _buildHeader(context, provider, dashboardData),
@@ -119,6 +137,22 @@ class _DashboardScreenState extends State<DashboardScreen>
       },
     );
   }
+  double _calculateInventoryHealth(DashboardStats stats) {
+    if (stats.totalProducts == 0) return 0.0;
+    return ((stats.totalProducts - stats.lowStockProducts) / stats.totalProducts) * 100;
+  }
+
+  Color _getInventoryHealthColor(double health) {
+    if (health >= 80) return Colors.green;
+    if (health >= 50) return Colors.orange;
+    return Colors.red;
+  }
+
+  String _getInventoryHealthLabel(double health) {
+    if (health >= 80) return 'Healthy';
+    if (health >= 50) return 'Warning';
+    return 'Critical';
+  }
 
   // ========== HEADER SECTION ==========
   SliverToBoxAdapter _buildHeader(
@@ -130,16 +164,16 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
+            colors: ThemeUtils.appBar(context),
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Colors.blue[700]!, Colors.blue[900]!],
           ),
-          borderRadius: BorderRadius.only(
+          borderRadius: const BorderRadius.only(
             bottomLeft: Radius.circular(24),
             bottomRight: Radius.circular(24),
           ),
         ),
-        padding: EdgeInsets.fromLTRB(20, 60, 20, 30),
+        padding: const EdgeInsets.fromLTRB(20, 60, 20, 30),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -151,26 +185,23 @@ class _DashboardScreenState extends State<DashboardScreen>
                     children: [
                       Text(
                         'Good ${_getGreeting()},',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.9),
-                          fontSize: 16,
+                        style: ThemeUtils.bodyLarge(context).copyWith(
+                          color: ThemeUtils.textOnPrimary(context).withOpacity(0.9),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
                         'Dashboard Overview',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
+                        style: ThemeUtils.headlineLarge(context).copyWith(
+                          color: ThemeUtils.textOnPrimary(context),
                         ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           _buildStatusIndicator(provider.isOnline),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           _buildLastUpdated(dashboardData.lastUpdated),
                         ],
                       ),
@@ -179,28 +210,31 @@ class _DashboardScreenState extends State<DashboardScreen>
                 ),
                 Column(
                   children: [
-                    if (provider.isRefreshing)
-                      CircularProgressIndicator(
+                    if (provider.isOnline)
+                      provider.isRefreshing
+                          ? CircularProgressIndicator(
                         strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
+                        valueColor: AlwaysStoppedAnimation(
+                          ThemeUtils.textOnPrimary(context),
+                        ),
                       )
-                    else
-                      IconButton(
-                        icon: Icon(Icons.refresh, color: Colors.white),
-                        onPressed: () => provider.refreshDashboard(dashboardData.tenantId),
+                          : IconButton(
+                        icon: Icon(Icons.refresh, color: ThemeUtils.textOnPrimary(context)),
                         tooltip: 'Refresh Data',
+                        onPressed: () => provider.refreshDashboard(dashboardData.tenantId),
                       ),
                   ],
                 ),
               ],
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             _buildQuickStatsBar(dashboardData.stats),
           ],
         ),
       ),
     );
   }
+
 
   Widget _buildStatusIndicator(bool isOnline) {
     return Container(
@@ -471,11 +505,13 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // ========== PRODUCT PERFORMANCE ==========
   SliverToBoxAdapter _buildProductPerformance(List<ProductPerformance> products) {
+    final List<ProductPerformance> topProducts = products.take(5).toList();
+
     return SliverToBoxAdapter(
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Container(
-          padding: EdgeInsets.all(16),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
@@ -483,7 +519,7 @@ class _DashboardScreenState extends State<DashboardScreen>
               BoxShadow(
                 color: Colors.black.withOpacity(0.05),
                 blurRadius: 10,
-                offset: Offset(0, 4),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -500,9 +536,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       color: Colors.grey[800],
                     ),
                   ),
-                  Spacer(),
+                  const Spacer(),
                   Text(
-                    'Top ${products.length}',
+                    'Top ${topProducts.length}',
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 12,
@@ -510,11 +546,13 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 ],
               ),
-              SizedBox(height: 12),
-              if (products.isEmpty)
+              const SizedBox(height: 12),
+
+              /// Empty State
+              if (topProducts.isEmpty)
                 Center(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
                     child: Text(
                       'No product performance data available',
                       style: TextStyle(color: Colors.grey[500]),
@@ -522,7 +560,11 @@ class _DashboardScreenState extends State<DashboardScreen>
                   ),
                 )
               else
-                ...products.map((product) => _buildProductItem(product)).toList(),
+                Column(
+                  children: topProducts
+                      .map((product) => _buildProductItem(product))
+                      .toList(),
+                ),
             ],
           ),
         ),
@@ -532,8 +574,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   Widget _buildProductItem(ProductPerformance product) {
     return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.grey[50],
         borderRadius: BorderRadius.circular(12),
@@ -547,14 +589,14 @@ class _DashboardScreenState extends State<DashboardScreen>
               children: [
                 Text(
                   product.productName,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   product.sku,
                   style: TextStyle(
@@ -576,18 +618,18 @@ class _DashboardScreenState extends State<DashboardScreen>
                   color: Colors.green[700],
                 ),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Row(
                 children: [
-                  Icon(Icons.shopping_cart, size: 12, color: Colors.blue),
-                  SizedBox(width: 4),
+                  const Icon(Icons.shopping_cart, size: 12, color: Colors.blue),
+                  const SizedBox(width: 4),
                   Text(
                     '${product.quantitySold} sold',
                     style: TextStyle(fontSize: 11, color: Colors.grey[600]),
                   ),
-                  SizedBox(width: 8),
-                  Icon(Icons.inventory, size: 12, color: Colors.orange),
-                  SizedBox(width: 4),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.inventory, size: 12, color: Colors.orange),
+                  const SizedBox(width: 4),
                   Text(
                     '${product.stockQuantity} in stock',
                     style: TextStyle(fontSize: 11, color: Colors.grey[600]),
@@ -848,7 +890,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             SizedBox(height: 20),
             Text(
-              'No Dashboard Data',
+              'Preparing your dashboard…',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -857,19 +899,10 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
             SizedBox(height: 12),
             Text(
-              'Load dashboard data to get started',
+              'Fetching your latest data',
               style: TextStyle(
                 color: Colors.grey[600],
                 fontSize: 14,
-              ),
-            ),
-            SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => provider.loadDashboard(tenantId),
-              icon: Icon(Icons.cloud_download),
-              label: Text('Load Dashboard'),
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],
@@ -979,91 +1012,122 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 14,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      padding: EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, size: 24, color: color),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double width = constraints.maxWidth;
+
+        // Adjusted sizes (slightly smaller for more spacing)
+        final double iconSize = width * 0.1;
+        final double padding = width * 0.05;
+        final double valueFontSize = width * 0.12; // smaller than before
+        final double titleFontSize = width * 0.07;
+        final double subtitleFontSize = width * 0.06;
+        final double trendFontSize = width * 0.055;
+
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: ThemeUtils.card(context),
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(width * 0.08),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: width * 0.08,
+                offset: Offset(0, width * 0.03),
               ),
-              Spacer(),
-              if (trend != 0)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: trend >= 0
-                        ? Colors.green.withOpacity(0.12)
-                        : Colors.red.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        trend >= 0 ? Icons.trending_up : Icons.trending_down,
-                        size: 14,
-                        color: trend >= 0 ? Colors.green : Colors.red,
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        '${trend.abs().toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: trend >= 0 ? Colors.green : Colors.red,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
-          SizedBox(height: 12),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
+          padding: EdgeInsets.all(padding),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(padding * 0.5),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(width * 0.06),
+                    ),
+                    child: Icon(icon, size: iconSize, color: color),
+                  ),
+                  Spacer(),
+                  if (trend != 0)
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: padding * 0.4, vertical: padding * 0.2),
+                      decoration: BoxDecoration(
+                        color: trend >= 0
+                            ? Colors.green.withOpacity(0.12)
+                            : Colors.red.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(width * 0.05),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            trend >= 0 ? Icons.trending_up : Icons.trending_down,
+                            size: trendFontSize,
+                            color: trend >= 0 ? Colors.green : Colors.red,
+                          ),
+                          SizedBox(width: padding * 0.2),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${trend.abs().toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                fontSize: trendFontSize,
+                                fontWeight: FontWeight.w600,
+                                color: trend >= 0 ? Colors.green : Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              SizedBox(height: padding),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: valueFontSize,
+                    fontWeight: FontWeight.bold,
+                    color: ThemeUtils.textPrimary(context),
+                  ),
+                ),
+              ),
+              SizedBox(height: padding * 0.25),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: titleFontSize,
+                    fontWeight: FontWeight.w500,
+                    color: ThemeUtils.textSecondary(context),
+                  ),
+                ),
+              ),
+              SizedBox(height: padding * 0.15),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: subtitleFontSize,
+                    color: ThemeUtils.textSecondary(context).withOpacity(0.7),
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Colors.grey[600],
-            ),
-          ),
-          SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey[500],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
