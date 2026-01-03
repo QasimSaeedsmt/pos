@@ -1,6 +1,5 @@
 // analytics_hive_database.dart
 import 'dart:convert';
-import 'package:hive/hive.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';

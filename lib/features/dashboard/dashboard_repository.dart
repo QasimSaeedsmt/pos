@@ -5,8 +5,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../core/models/product_model.dart';
 import '../../core/models/customer_model.dart';
-import '../../core/models/app_order_model.dart';
-import '../../core/models/return_request.dart';
 import '../connectivityBase/local_db_base.dart';
 import 'dashboard_models.dart';
 
@@ -492,7 +490,7 @@ class DashboardRepository {
         final dayCustomerIds = <String>{};
 
         for (final order in ordersSnapshot.docs) {
-          final data = order.data() as Map<String, dynamic>;
+          final data = order.data();
           final total = (data['total'] as num?)?.toDouble() ??
               (data['totalAmount'] as num?)?.toDouble() ?? 0;
           dayRevenue += total;
@@ -548,7 +546,7 @@ class DashboardRepository {
       final productSales = <String, Map<String, dynamic>>{};
 
       for (final order in ordersSnapshot.docs) {
-        final data = order.data() as Map<String, dynamic>;
+        final data = order.data();
         final lineItems = data['lineItems'] as List<dynamic>? ?? [];
 
         for (final item in lineItems) {
@@ -578,7 +576,7 @@ class DashboardRepository {
       final performanceList = <ProductPerformance>[];
 
       for (final product in productsSnapshot.docs) {
-        final data = product.data() as Map<String, dynamic>;
+        final data = product.data();
         final productId = product.id;
         final productName = data['name']?.toString() ?? 'Unknown';
         final sku = data['sku']?.toString() ?? '';

@@ -2403,8 +2403,8 @@ class _AnalyticsDashboardScreenState extends State<AnalyticsDashboardScreen>
       floatingActionButton: !_isOnline ? FloatingActionButton(
         onPressed: _manualSync,
         backgroundColor: Colors.blue,
-        child: const Icon(Icons.sync),
         tooltip: 'Try to sync data',
+        child: const Icon(Icons.sync),
       ) : null,
     );
   }

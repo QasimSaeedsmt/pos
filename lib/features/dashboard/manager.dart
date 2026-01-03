@@ -354,16 +354,16 @@ class FirebaseDashboardService {
       ]);
 
       // Parse results
-      final todayOrdersSnapshot = futures[0] as QuerySnapshot;
-      final yesterdayOrdersSnapshot = futures[1] as QuerySnapshot;
-      final allOrdersSnapshot = futures[2] as QuerySnapshot;
-      final productsSnapshot = futures[3] as QuerySnapshot;
-      final customersSnapshot = futures[4] as QuerySnapshot;
-      final todayReturnsSnapshot = futures[5] as QuerySnapshot;
-      final allReturnsSnapshot = futures[6] as QuerySnapshot;
-      final pendingOrdersSnapshot = futures[7] as QuerySnapshot;
-      final pendingRestocksSnapshot = futures[8] as QuerySnapshot;
-      final pendingReturnsSnapshot = futures[9] as QuerySnapshot;
+      final todayOrdersSnapshot = futures[0];
+      final yesterdayOrdersSnapshot = futures[1];
+      final allOrdersSnapshot = futures[2];
+      final productsSnapshot = futures[3];
+      final customersSnapshot = futures[4];
+      final todayReturnsSnapshot = futures[5];
+      final allReturnsSnapshot = futures[6];
+      final pendingOrdersSnapshot = futures[7];
+      final pendingRestocksSnapshot = futures[8];
+      final pendingReturnsSnapshot = futures[9];
 
       // Calculate today's revenue
       double todayRevenue = 0.0;
@@ -890,10 +890,10 @@ class DashboardHeader extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          if (statusIcon != null) ...[
-            const SizedBox(width: 4),
-            Icon(statusIcon, size: 12, color: Colors.white),
-          ],
+          ...[
+          const SizedBox(width: 4),
+          Icon(statusIcon, size: 12, color: Colors.white),
+        ],
         ],
       ),
     );

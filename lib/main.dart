@@ -14,10 +14,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'analytics_hive_database.dart';
 import 'checkou_screen.dart';
-import 'core/models/app_order_model.dart';
-import 'core/models/category_model.dart';
-import 'core/models/customer_model.dart';
-import 'core/models/product_model.dart';
 import 'features/dashboard/dashboard_models.dart';
 import 'features/main_navigation/main_navigation_base.dart';
 import 'firebase_options.dart';
@@ -66,7 +62,7 @@ Future<void> _initializeApp() async {
     Hive.registerAdapter(ProductPerformanceAdapter());
     // Initialize EnhancedPOSService with sync
     final posService = EnhancedPOSService();
-    await posService.initialize; // This starts sync polling
+    posService.initialize; // This starts sync polling
     await HiveAnalyticsDatabase().initialize();
     // Register adapters
     // Hive.registerAdapter(AppOrderAdapter());

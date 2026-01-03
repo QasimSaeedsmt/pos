@@ -31,7 +31,6 @@ import '../credit/credit_sale_model.dart';
 import '../credit/credit_service.dart';
 import '../customerBase/customer_base.dart';
 import '../dashboard/dashboard_screen.dart';
-import '../dashboard/manager.dart';
 import '../expense_management.dart';
 import '../invoiceBase/invoice_archieve_screen.dart';
 import '../product_addition_restock_base/product_addition_restock_base.dart';
