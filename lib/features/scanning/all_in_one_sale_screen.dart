@@ -1128,7 +1128,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
 
     try {
       final products = await _posService.fetchProducts(
-        limit: 100,
+        limit: 1000,
         inStockOnly: _inStockOnly,
       );
 
@@ -1516,6 +1516,7 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
   double get _finalTotal => _taxableAmount + _taxAmount + _shippingAmount + _tipAmount;
 
   // Process Order with enhanced error handling
+  // Process Order with enhanced error handling
   Future<void> _processOrder() async {
     if (widget.cartManager.items.isEmpty) {
       OverlayManager.showToast(
@@ -1625,11 +1626,10 @@ class _AllInOnePOSScreenState extends State<AllInOnePOSScreen> {
       }
     }
   }
-
   Future<void> _refreshProductsAfterSale() async {
     try {
       final updatedProducts = await _posService.fetchProducts(
-        limit: 100,
+        limit: 1000,
         inStockOnly: false,
       );
 

@@ -17,7 +17,6 @@ import '../../constants.dart';
 import '../../core/models/app_order_model.dart';
 import '../../core/models/cart_item_model.dart';
 import '../../core/models/customer_model.dart';
-import '../../core/models/offline_dashboard_data.dart';
 import '../../core/models/product_model.dart';
 import '../../core/models/return_request.dart';
 import '../../modules/auth/providers/auth_provider.dart';
@@ -25,8 +24,7 @@ import '../../theme_utils.dart';
 import '../connectivityBase/local_db_base.dart' hide CustomerSelection;
 import '../customerBase/customer_base.dart';
 import '../main_navigation/main_navigation_base.dart';
-import '../product_addition_restock_base/product_addition_restock_base.dart';
-import '../returnBase/return_base.dart';
+
 
 class OrderCreationResult {
   final bool success;
@@ -144,7 +142,247 @@ class FirestoreServices {
   void setTenantId(String tenantId) {
     _currentTenantId = tenantId;
   }
+// ========== COMPLETE SYNC METHODS FOR PENDING DATA ==========
 
+  /// Sync a full pending order with all enhanced data
+  Future<AppOrder> syncFullPendingOrder(Map<String, dynamic> pendingOrder) async {
+    try {
+      debugPrint('🔄 Syncing full pending order #${pendingOrder['id']}');
+
+      // Extract all data from pending order
+      final orderId = pendingOrder['id'] as int;
+      final orderData = pendingOrder['order_data'] as Map<String, dynamic>;
+      final customerData = pendingOrder['customer_data'] as Map<String, dynamic>?;
+      final paymentData = pendingOrder['payment_data'] as Map<String, dynamic>;
+      final discountSummary = pendingOrder['discount_summary'] as Map<String, dynamic>?;
+      final settingsUsed = pendingOrder['settings_used'] as Map<String, dynamic>?;
+      final additionalData = pendingOrder['additional_data'] as Map<String, dynamic>?;
+      final String createdAt = pendingOrder['created_at'] as String;
+
+      // Use the original order number from pending data or generate new
+      String orderNumber;
+      if (orderData.containsKey('number')) {
+        orderNumber = orderData['number'] as String;
+      } else {
+        orderNumber = await generateOrderNumber();
+      }
+
+      // Convert line items back to CartItem format for stock updates
+      final lineItems = orderData['line_items'] as List<dynamic>;
+      final cartItems = lineItems.map((item) {
+        final itemMap = item as Map<String, dynamic>;
+
+        // Create a minimal Product for CartItem
+        final product = Product(
+          id: itemMap['product_id'] as String,
+          name: itemMap['product_name'] as String,
+          sku: itemMap['product_sku'] as String? ?? '',
+          price: (itemMap['price'] as num).toDouble(),
+          regularPrice: (itemMap['price'] as num).toDouble(),
+          salePrice: (itemMap['price'] as num).toDouble(),
+          stockQuantity: 0, // Will be updated separately
+          inStock: true,
+          stockStatus: 'instock',
+          purchasable: true,
+          status: 'publish',
+          dateCreated: DateTime.now(),
+          dateModified: DateTime.now(),
+          imageUrl: null,
+          imageUrls: [],
+          description: '',
+          shortDescription: '',
+          categories: [],
+          attributes: [],
+          metaData: {},
+          type: 'simple',
+          featured: false,
+          permalink: '',
+          averageRating: 0,
+          ratingCount: 0,
+          parentId: '',
+          variations: [],
+          weight: null,
+          dimensions: null,
+        );
+
+        return CartItem(
+          product: product,
+          quantity: (itemMap['quantity'] as num).toInt(),
+          manualDiscount: (itemMap['manual_discount'] as num?)?.toDouble(),
+          manualDiscountPercent: (itemMap['manual_discount_percent'] as num?)?.toDouble(),
+        );
+      }).toList();
+
+      // Prepare customer selection
+      CustomerSelection customerSelection;
+      if (customerData != null && customerData['customerId'] != null) {
+        final customer = Customer(
+          id: customerData['customerId'] as String,
+          firstName: customerData['firstName'] as String,
+          lastName: customerData['lastName'] as String? ?? '',
+          email: customerData['email'] as String? ?? '',
+          phone: customerData['phone'] as String? ?? '',
+          company: customerData['company'] as String?,
+          address1: customerData['address1'] as String?,
+          address2: customerData['address2'] as String?,
+          city: customerData['city'] as String?,
+          state: customerData['state'] as String?,
+          postcode: customerData['postcode'] as String?,
+          country: customerData['country'] as String?,
+          currentBalance: 0.0,
+          creditLimit: 0.0,
+          totalCreditGiven: 0.0,
+          totalCreditPaid: 0.0,
+          metaData: {},
+          creditTerms: {},
+          overdueAmount: 0.0,
+          overdueCount: 0,
+        );
+        customerSelection = CustomerSelection(customer: customer);
+      } else {
+        customerSelection = CustomerSelection();
+      }
+
+      // Prepare enhanced data
+      final enhancedData = <String, dynamic>{
+        'cartData': {
+          'subtotal': orderData['pricing_breakdown']?['subtotal'] ?? 0.0,
+          'item_discounts': orderData['pricing_breakdown']?['item_discounts'] ?? 0.0,
+          'cart_discount': orderData['pricing_breakdown']?['cart_discount'] ?? 0.0,
+          'cart_discount_percent': orderData['pricing_breakdown']?['cart_discount_percent'] ?? 0.0,
+          'cart_discount_amount': orderData['pricing_breakdown']?['cart_discount_amount'] ?? 0.0,
+          'total_discount': orderData['pricing_breakdown']?['total_discount'] ?? 0.0,
+          'taxable_amount': orderData['pricing_breakdown']?['taxable_amount'] ?? 0.0,
+          'tax_rate': orderData['pricing_breakdown']?['tax_rate'] ?? 0.0,
+          'tax_amount': orderData['pricing_breakdown']?['tax_amount'] ?? 0.0,
+          'shipping_amount': orderData['pricing_breakdown']?['shipping_amount'] ?? 0.0,
+          'tip_amount': orderData['pricing_breakdown']?['tip_amount'] ?? 0.0,
+          'totalAmount': orderData['total'] ?? orderData['pricing_breakdown']?['final_total'] ?? 0.0,
+        },
+        'paymentMethod': paymentData['method'] ?? 'cash',
+        'additionalDiscount': orderData['pricing_breakdown']?['additional_discount'] ?? 0.0,
+        'shippingAmount': orderData['pricing_breakdown']?['shipping_amount'] ?? 0.0,
+        'tipAmount': orderData['pricing_breakdown']?['tip_amount'] ?? 0.0,
+      };
+
+      // Add discount summary if available
+      if (discountSummary != null) {
+        enhancedData['discountSummary'] = discountSummary;
+      }
+
+      // Add settings used if available
+      if (settingsUsed != null) {
+        enhancedData['invoiceSettings'] = {
+          'discountRate': settingsUsed['default_discount_rate'] ?? 0.0,
+        };
+        // if (settingsUsed['business_info_used'] == true) {
+        //   enhancedData['businessInfo'] = await getBusinessInfo();
+        // }
+      }
+
+      // Add credit sale data if present
+      if (additionalData != null && additionalData['isCreditSale'] == true) {
+        enhancedData['isCreditSale'] = true;
+        enhancedData['creditAmount'] = additionalData['creditAmount'];
+        enhancedData['paidAmount'] = additionalData['paidAmount'];
+        enhancedData['previousBalance'] = additionalData['previousBalance'];
+        enhancedData['newBalance'] = additionalData['newBalance'];
+        enhancedData['notes'] = additionalData['notes'];
+        enhancedData['creditTerms'] = additionalData['creditTerms'];
+      }
+
+      // Use the existing order creation method
+      final createdOrder = await createOrderWithEnhancedData(
+        cartItems,
+        customerSelection,
+        enhancedData,
+      );
+
+      debugPrint('✅ Successfully synced pending order #$orderId as ${createdOrder.id}');
+      return createdOrder;
+
+    } catch (e) {
+      debugPrint('❌ Error syncing full pending order: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync a pending return with all its data
+  Future<ReturnRequest> syncFullPendingReturn(Map<String, dynamic> pendingReturn) async {
+    try {
+      debugPrint('🔄 Syncing pending return #${pendingReturn['local_id']}');
+
+      // Extract all return data
+      final returnRequest = ReturnRequest.fromLocalMap(pendingReturn);
+
+      // Create the return in Firestore
+      await createReturn(returnRequest);
+
+      debugPrint('✅ Successfully synced pending return #${pendingReturn['local_id']}');
+      return returnRequest;
+
+    } catch (e) {
+      debugPrint('❌ Error syncing pending return: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync a pending restock operation
+  Future<void> syncFullPendingRestock(Map<String, dynamic> pendingRestock) async {
+    try {
+      debugPrint('🔄 Syncing pending restock #${pendingRestock['id']}');
+
+      final productId = pendingRestock['productId'] as String;
+      final quantity = pendingRestock['quantity'] as int;
+      final barcode = pendingRestock['barcode'] as String?;
+
+      // Restock the product
+      await restockProduct(productId, quantity, barcode: barcode);
+
+      debugPrint('✅ Successfully synced restock for product $productId');
+
+    } catch (e) {
+      debugPrint('❌ Error syncing pending restock: $e');
+      rethrow;
+    }
+  }
+
+  /// Sync a pending category
+  Future<void> syncFullPendingCategory(Map<String, dynamic> pendingCategory) async {
+    try {
+      debugPrint('🔄 Syncing pending category: ${pendingCategory['name']}');
+
+      final category = Category(
+        id: pendingCategory['id'] as String,
+        name: pendingCategory['name'] as String,
+        slug: pendingCategory['slug'] as String,
+        description: pendingCategory['description'] as String?,
+        // parentId: pendingCategory['parentId'] as String?,
+        count: pendingCategory['count'] as int? ?? 0,
+        // display: pendingCategory['display'] as String? ?? 'default',
+        imageUrl: pendingCategory['imageUrl'] as String?,
+        // dateCreated: DateTime.parse(pendingCategory['dateCreated'] as String),
+        // dateModified: DateTime.parse(pendingCategory['dateModified'] as String),
+      );
+
+      // Check if category already exists
+      final existingDoc = await categoriesRef.doc(category.id).get();
+
+      if (existingDoc.exists) {
+        // Update existing category
+        await updateCategory(category);
+      } else {
+        // Add new category
+        await addCategory(category);
+      }
+
+      debugPrint('✅ Successfully synced category: ${category.name}');
+
+    } catch (e) {
+      debugPrint('❌ Error syncing pending category: $e');
+      rethrow;
+    }
+  }
   // Updated collection references with tenant isolation
   CollectionReference get productsRef => _firestore
       .collection('tenants')
@@ -181,7 +419,6 @@ class FirestoreServices {
       .doc(_currentTenantId)
       .collection('purchaseRecords');
 
-  // New collections for numbering system
   CollectionReference get businessSettingsRef => _firestore
       .collection('tenants')
       .doc(_currentTenantId)
@@ -199,7 +436,16 @@ class FirestoreServices {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseStorage _storage = FirebaseStorage.instance;
 
-
+  ///working
+  Future<void> deleteCustomer(String customerId) async {
+    try {
+      await customersRef.doc(customerId).delete();
+      debugPrint('Customer deleted successfully: $customerId');
+    } catch (e) {
+      debugPrint('Failed to delete customer: $e');
+      throw Exception('Failed to delete customer: $e');
+    }
+  }
   ///working
   Future<BusinessSettings> getBusinessSettings() async {
     try {
@@ -217,7 +463,7 @@ class FirestoreServices {
       return BusinessSettings.createDefault();
     }
   }
-  
+
   // Atomic Sequence Generation with Transactions
   ///working
   Future<int> _getNextSequence(String type, {int? year}) async {
@@ -355,7 +601,7 @@ class FirestoreServices {
       throw Exception('Failed to create return: $e');
     }
   }
-  
+
   ///working
   Future<List<ReturnRequest>> getAllReturns({int limit = 50}) async {
     try {
@@ -444,7 +690,7 @@ class FirestoreServices {
       return [];
     }
   }
-  
+
   ///working
   Future<List<Customer>> searchCustomers(String query) async {
     if (query.isEmpty) return [];
@@ -472,7 +718,7 @@ class FirestoreServices {
     }
     return null;
   }
-  
+
   ///working
   Future<String> addCustomer(Customer customer) async {
     try {
@@ -507,7 +753,7 @@ class FirestoreServices {
       debugPrint('Failed to update customer stats: $e');
     }
   }
-  
+
   ///working
   Future<AppOrder> createOrderWithEnhancedData(
       List<CartItem> cartItems,
@@ -658,10 +904,10 @@ class FirestoreServices {
 
     return addressParts.isNotEmpty ? addressParts.join(', ') : null;
   }
-  
+
   ///working
   Future<List<Product>> getProducts({
-    int limit = 50,
+    int limit = 1000,
     String? lastDocumentId,
     String searchQuery = '',
     bool inStockOnly = false,
@@ -714,7 +960,7 @@ class FirestoreServices {
     }
     return null;
   }
-  
+
   ///working
   Future<List<Product>> searchProducts(String query) async {
     if (query.isEmpty) return [];
@@ -990,17 +1236,13 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
 
   // Real data variables
   DashboardStats _stats = DashboardStats.empty();
-  List<AppOrder> _recentOrders = [];
-  List<Product> _lowStockProducts = [];
   List<RevenueDataPoint> _revenueData = [];
-  List<TopSellingProduct> _topSellingProducts = [];
-  List<Customer> _recentCustomers = [];
 
   bool _isLoading = true;
   bool _isOnline = true;
   bool _isRefreshing = false;
   bool _isOfflineMode = false;
-  String _selectedPeriod = 'today';
+  final String _selectedPeriod = 'today';
 
   // Get auth provider from context
   MyAuthProvider get _authProvider {
@@ -1135,11 +1377,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     if (mounted) {
       setState(() {
         _stats = basicStats;
-        _recentOrders = [];
-        _lowStockProducts = [];
         _revenueData = basicRevenueData;
-        _topSellingProducts = [];
-        _recentCustomers = [];
         _isLoading = false;
         _isRefreshing = false;
         _isOfflineMode = true;
@@ -1154,11 +1392,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     if (mounted) {
       setState(() {
         _stats = cachedData.stats;
-        _recentOrders = cachedData.recentOrders;
-        _lowStockProducts = cachedData.lowStockProducts;
         _revenueData = cachedData.revenueData;
-        _topSellingProducts = cachedData.topSellingProducts;
-        _recentCustomers = cachedData.recentCustomers;
         _isLoading = false;
         _isRefreshing = false;
       });
@@ -1184,7 +1418,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       _fetchRecentOrders(tenantId),
       _fetchLowStockProducts(tenantId),
       _fetchRevenueData(tenantId),
-      _fetchTopSellingProducts(tenantId),
       _fetchRecentCustomers(tenantId),
     ];
 
@@ -1198,11 +1431,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     if (mounted) {
       setState(() {
         _stats = results[0] as DashboardStats;
-        _recentOrders = results[1] as List<AppOrder>;
-        _lowStockProducts = results[2] as List<Product>;
         _revenueData = results[3] as List<RevenueDataPoint>;
-        _topSellingProducts = results[4] as List<TopSellingProduct>;
-        _recentCustomers = results[5] as List<Customer>;
         _isLoading = false;
         _isRefreshing = false;
         _isOfflineMode = false;
@@ -1212,11 +1441,7 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     // Cache the successful data
     final offlineData = OfflineDashboardData(
       stats: _stats,
-      recentOrders: _recentOrders,
-      lowStockProducts: _lowStockProducts,
       revenueData: _revenueData,
-      topSellingProducts: _topSellingProducts,
-      recentCustomers: _recentCustomers,
       lastUpdated: DateTime.now(),
       tenantId: tenantId,
     );
@@ -1231,7 +1456,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     if (future == _fetchRecentOrders) return [];
     if (future == _fetchLowStockProducts) return [];
     if (future == _fetchRevenueData) return [];
-    if (future == _fetchTopSellingProducts) return [];
     if (future == _fetchRecentCustomers) return [];
     return null;
   }
@@ -1245,20 +1469,13 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
         final orderData = order['order_data'] as Map<String, dynamic>;
         return AppOrder.fromFirestore(orderData, order['id'].toString());
       }).toList()),
-      _localDb.getLowStockProducts().then((products) => products.take(3).toList()),
       _localDb.generateRevenueData(),
-      _localDb.generateTopSellingProducts(),
-      _localDb.getRecentCustomers(limit: 5),
     ]);
 
     if (mounted) {
       setState(() {
         _stats = results[0] as DashboardStats;
-        _recentOrders = results[1] as List<AppOrder>;
-        _lowStockProducts = results[2] as List<Product>;
         _revenueData = results[3] as List<RevenueDataPoint>;
-        _topSellingProducts = results[4] as List<TopSellingProduct>;
-        _recentCustomers = results[5] as List<Customer>;
         _isLoading = false;
         _isRefreshing = false;
       });
@@ -1628,69 +1845,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
     }
   }
 
-  Future<List<TopSellingProduct>> _fetchTopSellingProducts(String tenantId) async {
-    _firestore.setTenantId(tenantId);
-
-    try {
-      final thirtyDaysAgo = DateTime.now().subtract(Duration(days: 30));
-      final ordersSnapshot = await _firestore.ordersRef
-          .where('dateCreated', isGreaterThanOrEqualTo: Timestamp.fromDate(thirtyDaysAgo))
-          .get();
-
-      final productSales = <String, TopSellingProduct>{};
-      for (final orderDoc in ordersSnapshot.docs) {
-        final orderData = orderDoc.data() as Map<String, dynamic>;
-        final lineItems = orderData['lineItems'] as List<dynamic>? ?? [];
-
-        for (final item in lineItems) {
-          final itemMap = item as Map<String, dynamic>;
-          final productId = itemMap['productId']?.toString() ?? '';
-          final productName = itemMap['productName']?.toString() ?? 'Unknown Product';
-          final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
-          final price = (itemMap['price'] as num?)?.toDouble() ?? 0.0;
-
-          if (productId.isNotEmpty) {
-            if (productSales.containsKey(productId)) {
-              final existing = productSales[productId]!;
-              productSales[productId] = TopSellingProduct(
-                productId: productId,
-                productName: productName,
-                totalSold: existing.totalSold + quantity,
-                totalRevenue: existing.totalRevenue + (price * quantity),
-                imageUrl: existing.imageUrl,
-              );
-            } else {
-              String? imageUrl;
-              try {
-                final productDoc = await _firestore.productsRef.doc(productId).get();
-                if (productDoc.exists) {
-                  final productData = productDoc.data() as Map<String, dynamic>?;
-                  imageUrl = productData?['imageUrl']?.toString();
-                }
-              } catch (e) {
-                debugPrint('Error fetching product image: $e');
-              }
-
-              productSales[productId] = TopSellingProduct(
-                productId: productId,
-                productName: productName,
-                totalSold: quantity,
-                totalRevenue: price * quantity,
-                imageUrl: imageUrl,
-              );
-            }
-          }
-        }
-      }
-
-      final sortedList = productSales.values.toList();
-      sortedList.sort((a, b) => b.totalSold.compareTo(a.totalSold));
-      return sortedList.take(5).toList();
-    } catch (e) {
-      debugPrint('Error fetching top selling products: $e');
-      return [];
-    }
-  }
 
   Future<List<Customer>> _fetchRecentCustomers(String tenantId) async {
     try {
@@ -1773,7 +1927,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
                   _buildHeader(),
                   _buildStatsGrid(),
                   _buildMainContent(),
-                  _buildActivitySection(),
                   SliverToBoxAdapter(child: SizedBox(height: 20)),
                 ],
               ),
@@ -1783,64 +1936,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
       },
     );
   }
-  //
-  //
-  // Future<void> _validateTenantAccess() async {
-  //   final user = _authProvider.currentUser;
-  //   if (user == null) {
-  //     throw Exception('No authenticated user found');
-  //   }
-  //
-  //   final tenantId = user.tenantId;
-  //   if (tenantId.isEmpty) {
-  //     throw Exception('User ${user.uid} has no tenant ID assigned');
-  //   }
-  //
-  //   final tenantDoc = await FirebaseFirestore.instance
-  //       .collection('tenants')
-  //       .doc(tenantId)
-  //       .get();
-  //
-  //   if (!tenantDoc.exists) {
-  //     throw Exception('Tenant $tenantId does not exist in database');
-  //   }
-  //
-  //   final userDoc = await FirebaseFirestore.instance
-  //       .collection('tenants')
-  //       .doc(tenantId)
-  //       .collection('users')
-  //       .doc(user.uid)
-  //       .get();
-  //
-  //   if (!userDoc.exists) {
-  //     throw Exception('User ${user.uid} not found in tenant $tenantId');
-  //   }
-  //
-  //   debugPrint('Tenant validation successful: $tenantId');
-  // }
-  //
-  // void _showErrorDialog(String error) {
-  //   showDialog(
-  //     context: context,
-  //     builder: (context) => AlertDialog(
-  //       title: Text('Dashboard Error'),
-  //       content: Text('Failed to load dashboard data: $error'),
-  //       actions: [
-  //         TextButton(
-  //           onPressed: () => Navigator.pop(context),
-  //           child: Text('Cancel'),
-  //         ),
-  //         TextButton(
-  //           onPressed: () {
-  //             Navigator.pop(context);
-  //             _loadDashboardData();
-  //           },
-  //           child: Text('Retry'),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
 
 
@@ -2043,7 +2138,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
             // SizedBox(width: 16),
             SizedBox(height: 20),
 
-            _buildLowStockAlert(),
 
           ],
         ),
@@ -2177,279 +2271,6 @@ class _ModernDashboardScreenState extends State<ModernDashboardScreen>
   }
 
 
-  Widget _buildLowStockAlert() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Low Stock Alert',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              Spacer(),
-              if (_lowStockProducts.isNotEmpty)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.orange[50],
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${_lowStockProducts.length} items',
-                    style: TextStyle(
-                      color: Colors.orange[700],
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(height: 16),
-          _lowStockProducts.isEmpty
-              ? _buildNoLowStock()
-              : Column(
-            children: _lowStockProducts
-                .map((product) => _LowStockItem(product: product))
-                .toList(),
-          ),
-
-
-          ],
-      ),
-    );
-  }
-
-  Widget _buildNoLowStock() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(Icons.inventory_2_outlined, size: 48, color: Colors.green[300]),
-          SizedBox(height: 8),
-          Text(
-            'All products are well stocked',
-            style: TextStyle(
-              color: Colors.green[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  SliverToBoxAdapter _buildActivitySection() {
-    return SliverToBoxAdapter(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 20, 20, 0),
-        child: Column(
-          children: [
-            _buildRecentOrders(),
-            SizedBox(height: 16),
-            _buildTopProducts(),
-            SizedBox(height: 16),
-
-            _buildRecentCustomers()
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentOrders() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Recent Orders',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
-              ),
-              Spacer(),
-              Text(
-                '${_recentOrders.length} orders',
-                style: TextStyle(color: Colors.grey[600], fontSize: 12),
-              ),
-            ],
-          ),
-          SizedBox(height: 16),
-          _recentOrders.isEmpty
-              ? _buildNoRecentActivity()
-              : Column(
-            children: _recentOrders
-                .map((appOrder) => _RecentOrderItem(order: appOrder))
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopProducts() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Top Selling Products',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          SizedBox(height: 16),
-          _topSellingProducts.isEmpty
-              ? _buildNoTopProducts()
-              : Column(
-            children: _topSellingProducts
-                .map((product) => _TopProductItem(product: product))
-                .toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentCustomers() {
-    return Container(
-      padding: EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recent Customers',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[800],
-            ),
-          ),
-          SizedBox(height: 16),
-          _recentCustomers.isEmpty
-              ? _buildNoRecentCustomers()
-              : ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: 200, // Add a maximum height constraint
-            ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _recentCustomers.length,
-              itemBuilder: (context, index) {
-                final customer = _recentCustomers[index];
-                return _RecentCustomerItem(customer: customer);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _buildNoRecentActivity() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey[400]),
-          SizedBox(height: 8),
-          Text(
-            'No recent transactions',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoTopProducts() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(Icons.star_outline, size: 48, color: Colors.grey[400]),
-          SizedBox(height: 8),
-          Text(
-            'No sales data available',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNoRecentCustomers() {
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        children: [
-          Icon(Icons.people_outline, size: 48, color: Colors.grey[400]),
-          SizedBox(height: 8),
-          Text('No customers', style: TextStyle(color: Colors.grey[600])),
-        ],
-      ),
-    );
-  }
 
   String _getGreeting() {
     final hour = DateTime.now().hour;
@@ -2579,370 +2400,150 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 10,
-            offset: Offset(0, 4),
+    final theme = Theme.of(context);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              /// ───────────────── TOP ROW ─────────────────
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: maxWidth * 0.10,
+                      color: color,
+                    ),
                   ),
-                  child: Icon(icon, size: 20, color: color),
-                ),
-                Spacer(),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: trend >= 0 ? Colors.green[50] : Colors.red[50],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        trend >= 0 ? Icons.trending_up : Icons.trending_down,
-                        size: 12,
-                        color: trend >= 0 ? Colors.green[600] : Colors.red[600],
-                      ),
-                      SizedBox(width: 2),
-                      Text(
-                        '${trend.abs().toStringAsFixed(1)}%',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: trend >= 0
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : Colors.red.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          trend >= 0
+                              ? Icons.trending_up_rounded
+                              : Icons.trending_down_rounded,
+                          size: maxWidth * 0.05,
                           color: trend >= 0
-                              ? Colors.green[600]
-                              : Colors.red[600],
+                              ? Colors.green.shade600
+                              : Colors.red.shade600,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints:
+                          BoxConstraints(maxWidth: maxWidth * 0.25),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${trend.abs().toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              /// ───────────────── VALUE (BULLETPROOF) ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                  maxHeight: maxWidth * 0.22,
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.onSurface,
+                    ),
                   ),
                 ),
-              ],
-            ),
-            SizedBox(height: 12),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
               ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(color: Colors.grey[500], fontSize: 10),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-// class _QuickActionTile extends StatelessWidget {
-//   final IconData icon;
-//   final String title;
-//   final String subtitle;
-//   final Color color;
-//   final VoidCallback onTap;
-//
-//   const _QuickActionTile({
-//     required this.icon,
-//     required this.title,
-//     required this.subtitle,
-//     required this.color,
-//     required this.onTap,
-//   });
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return ListTile(
-//       contentPadding: EdgeInsets.zero,
-//       leading: Container(
-//         padding: EdgeInsets.all(8),
-//         decoration: BoxDecoration(
-//           color: color.withValues(alpha: 0.1),
-//           borderRadius: BorderRadius.circular(10),
-//         ),
-//         child: Icon(icon, size: 20, color: color),
-//       ),
-//       title: Text(
-//         title,
-//         style: TextStyle(
-//           fontSize: 14,
-//           fontWeight: FontWeight.w600,
-//           color: Colors.grey[800],
-//         ),
-//       ),
-//       subtitle: Text(
-//         subtitle,
-//         style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-//       ),
-//       trailing: Icon(
-//         Icons.arrow_forward_ios,
-//         size: 16,
-//         color: Colors.grey[400],
-//       ),
-//       onTap: onTap,
-//     );
-//   }
-// }
-class _RecentCustomerItem extends StatelessWidget {
-  final Customer customer;
 
-  const _RecentCustomerItem({required this.customer});
+              const SizedBox(height: 6),
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Icon(Icons.person, size: 20, color: Colors.blue),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  customer.fullName,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  customer.email,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-class _TopProductItem extends StatelessWidget {
-  final TopSellingProduct product;
-
-  const _TopProductItem({required this.product});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(8),
-              image: product.imageUrl != null
-                  ? DecorationImage(
-                image: NetworkImage(product.imageUrl!),
-                fit: BoxFit.cover,
-              )
-                  : null,
-            ),
-            child: product.imageUrl == null
-                ? Center(
-              child: Icon(
-                Icons.shopping_bag,
-                size: 20,
-                color: Colors.grey,
-              ),
-            )
-                : null,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.productName,
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                Text(
-                  '${product.totalSold} sold • ${Constants.CURRENCY_NAME}${product.totalRevenue.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-class _LowStockItem extends StatelessWidget {
-  final Product product;
-
-  const _LowStockItem({required this.product});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.orange[50],
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.orange[100]!),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              image: product.imageUrl != null
-                  ? DecorationImage(
-                image: NetworkImage(product.imageUrl!),
-                fit: BoxFit.cover,
-              )
-                  : null,
-            ),
-            child: product.imageUrl == null
-                ? Center(
-              child: Icon(
-                Icons.inventory_2,
-                size: 20,
-                color: Colors.orange,
-              ),
-            )
-                : null,
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'Only ${product.stockQuantity} left',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.orange[700],
-                    fontWeight: FontWeight.w500,
+              /// ───────────────── TITLE ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.7),
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.add, size: 18, color: Colors.orange[700]),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => RestockProductScreen()),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
-class _RecentOrderItem extends StatelessWidget {
-  final AppOrder order;
+              ),
 
-  const _RecentOrderItem({required this.order});
+              const SizedBox(height: 4),
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.grey[50],
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.green[100],
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.receipt, size: 20, color: Colors.green[600]),
-          ),
-          SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Order #${order.number}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[800],
+              /// ───────────────── SUBTITLE ─────────────────
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    subtitle,
+                    maxLines: 2,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.5),
+                    ),
                   ),
                 ),
-                SizedBox(height: 2),
-                Text(
-                  '${order.lineItems.length} items • ${Constants.CURRENCY_NAME}${order.total.toStringAsFixed(2)}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-          Text(
-            DateFormat('HH:mm').format(order.dateCreated),
-            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -2959,18 +2560,3 @@ class RevenueDataPoint {
   });
 }
 
-class TopSellingProduct {
-  final String productId;
-  final String productName;
-  final int totalSold;
-  final double totalRevenue;
-  final String? imageUrl;
-
-  TopSellingProduct({
-    required this.productId,
-    required this.productName,
-    required this.totalSold,
-    required this.totalRevenue,
-    this.imageUrl,
-  });
-}

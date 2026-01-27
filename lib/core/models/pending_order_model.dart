@@ -1,7 +1,5 @@
 // pending_order_model.dart
 import 'package:hive/hive.dart';
-import 'package:mpcm/core/models/cart_item_model.dart';
-import 'package:mpcm/core/models/customer_model.dart';
 
 part 'pending_order_model.g.dart';
 

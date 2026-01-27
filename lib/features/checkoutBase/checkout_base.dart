@@ -656,6 +656,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
 // In checkout_base.dart - UPDATE the _processOrder method
   // Update the process order method to include credit data
+
+
   Future<void> _processOrder() async {
     if (widget.cartItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Cart is empty')));
@@ -765,6 +767,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (result.order != null) {
             showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
+
             _resetCheckoutScreen();
           }
         }
@@ -803,6 +806,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     ).then((_) {
       _resetCheckoutScreen();
+
     });
   }
   Widget _buildCustomerSection() {

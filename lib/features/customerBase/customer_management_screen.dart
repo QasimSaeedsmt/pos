@@ -245,6 +245,7 @@ class _ModernCustomerManagementScreenState
 
     if (confirmed == true) {
       try {
+        widget.posService.deleteCustomer(customer.id);
         // Implement delete functionality
         _showSuccessSnackbar('Customer deleted successfully');
         _loadCustomers();
