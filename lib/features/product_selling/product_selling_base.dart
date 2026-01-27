@@ -236,7 +236,7 @@ class _ProductSellingScreenState extends State<ProductSellingScreen> {
     });
     try {
       final products = await _posService.fetchProducts(
-        limit: 100,
+        limit: 1000,
         inStockOnly: _inStockOnly,
       );
       if (!mounted) return;

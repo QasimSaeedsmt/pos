@@ -767,6 +767,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (result.order != null) {
             showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
+
             _resetCheckoutScreen();
           }
         }
@@ -805,6 +806,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     ).then((_) {
       _resetCheckoutScreen();
+
     });
   }
   Widget _buildCustomerSection() {

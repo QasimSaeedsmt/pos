@@ -227,7 +227,14 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: ()
+            {
+              Navigator.pop(context);
+
+              Navigator.popUntil(context, (route) => route.isFirst);
+
+
+          },
             child: Text('Close'),
           ),
           TextButton(
@@ -492,7 +499,12 @@ class _InvoiceOptionsBottomSheetWithOptionsState extends State<InvoiceOptionsBot
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      Navigator.pop(context);
+
+                      Navigator.popUntil(context, (route) => route.isFirst);
+
+                    },
                     child: Text('Cancel'),
                   ),
                 ),

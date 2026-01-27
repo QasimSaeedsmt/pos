@@ -2432,7 +2432,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
       List<Product> products;
 
       if (_posService.isOnline) {
-        products = await _posService.fetchProducts(limit: 100);
+        products = await _posService.fetchProducts(limit: 1000);
       } else {
         products = await localDb.getAllProducts();
       }

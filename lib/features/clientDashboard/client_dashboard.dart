@@ -907,7 +907,7 @@ class FirestoreServices {
 
   ///working
   Future<List<Product>> getProducts({
-    int limit = 50,
+    int limit = 1000,
     String? lastDocumentId,
     String searchQuery = '',
     bool inStockOnly = false,
