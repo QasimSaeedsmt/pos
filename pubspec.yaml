@@ -36,6 +36,7 @@ dependencies:
   excel:
   get_it:
   riverpod:
+  vibration:
   json_annotation:
   collection:
   sentry_flutter:

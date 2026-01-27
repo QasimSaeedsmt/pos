@@ -9,10 +9,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:printing/printing.dart';
+import 'package:provider/provider.dart';
 import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../constants.dart';
 import '../../core/models/category_model.dart';
 import '../../core/models/product_model.dart';
+import '../../vibration_provider.dart';
 import '../connectivityBase/local_db_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
@@ -390,6 +392,7 @@ class _BulkScanScreenState extends State<BulkScanScreen> {
     }
   }
 
+// In _BulkScanScreenState class
   Future<void> _processBarcode(String barcode) async {
     if (barcode.isEmpty) return;
 
@@ -401,6 +404,16 @@ class _BulkScanScreenState extends State<BulkScanScreen> {
     try {
       final result = await _scanService.processBarcode(barcode);
 
+      // Vibrate on success
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final vibrationProvider = context.read<VibrationProvider>();
+        if (result.product != null) {
+          vibrationProvider.vibrateSuccess();
+        } else {
+          vibrationProvider.vibrate();
+        }
+      });
+
       setState(() {
         _scanStatus = result.product != null
             ? '✓ Product found: ${result.product!.name}'
@@ -411,9 +424,13 @@ class _BulkScanScreenState extends State<BulkScanScreen> {
       if (_manualBarcodeController.text == barcode) {
         _manualBarcodeController.clear();
       }
-
-      // Haptic feedback or sound could be added here
     } catch (e) {
+      // Vibrate on error
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final vibrationProvider = context.read<VibrationProvider>();
+        vibrationProvider.vibrateError();
+      });
+
       setState(() {
         _scanStatus = '✗ Error: $e';
       });
@@ -421,7 +438,6 @@ class _BulkScanScreenState extends State<BulkScanScreen> {
       setState(() => _isScanning = false);
     }
   }
-
   Future<void> _startCameraScan() async {
     try {
       final barcode = await UniversalScanningService.scanBarcode(
@@ -4541,8 +4557,11 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
     }
   }
 
+// Update the restock button to use vibration
   Future<void> _restockProduct() async {
     if (_selectedProduct == null) {
+      final vibrationProvider = context.read<VibrationProvider>();
+      vibrationProvider.vibrateError();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please select a product first')),
       );
@@ -4553,6 +4572,8 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
     final purchasePrice = double.tryParse(_purchasePriceController.text) ?? 0.0;
 
     if (quantity <= 0) {
+      final vibrationProvider = context.read<VibrationProvider>();
+      vibrationProvider.vibrateError();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please enter valid quantity')),
       );
@@ -4560,6 +4581,8 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
     }
 
     if (purchasePrice <= 0) {
+      final vibrationProvider = context.read<VibrationProvider>();
+      vibrationProvider.vibrateError();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Please enter valid purchase price')),
       );
@@ -4575,6 +4598,10 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
         supplier: _supplierController.text.isEmpty ? null : _supplierController.text,
         notes: _notesController.text.isEmpty ? null : _notesController.text,
       );
+
+      // Vibrate on success
+      final vibrationProvider = context.read<VibrationProvider>();
+      vibrationProvider.vibrateSuccess();
 
       if (_posService.isOnline) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4598,8 +4625,10 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       }
 
       await _loadAllProducts();
-      // Navigator.of(context).pop();
     } catch (e) {
+      final vibrationProvider = context.read<VibrationProvider>();
+      vibrationProvider.vibrateError();
+
       final errorMessage = e.toString();
       if (errorMessage.contains('offline') || errorMessage.contains('Saved offline')) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4622,7 +4651,6 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       setState(() => _isLoading = false);
     }
   }
-
   void _clearSelection() {
     setState(() {
       _selectedProduct = null;
@@ -5135,19 +5163,57 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
       ),
     );
   }
+// In _RestockProductScreenState class, add these methods
+// Update the increment/decrement methods to trigger vibration immediately
+  void _incrementQuantity() async {
+    final currentQuantity = int.tryParse(_quantityController.text) ?? 0;
+    _quantityController.text = (currentQuantity + 1).toString();
 
+    // Trigger vibration immediately
+    if (context.mounted) {
+      final vibrationProvider = context.read<VibrationProvider>();
+      await vibrationProvider.vibrateForIncrement();
+    }
+
+    setState(() {});
+  }
+
+  void _decrementQuantity() async {
+    final currentQuantity = int.tryParse(_quantityController.text) ?? 0;
+    if (currentQuantity > 1) {
+      _quantityController.text = (currentQuantity - 1).toString();
+
+      // Trigger vibration immediately
+      if (context.mounted) {
+        final vibrationProvider = context.read<VibrationProvider>();
+        await vibrationProvider.vibrate();
+      }
+    }
+    setState(() {});
+  }
+
+// Update the quantity input UI with better buttons
   Widget _buildQuantityInputSection() {
     return Card(
       child: Padding(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.add_circle, color: Colors.orange),
-                SizedBox(width: 8),
-                Text(
+                Consumer<VibrationProvider>(
+                  builder: (context, provider, child) {
+                    return Icon(
+                      Icons.add_circle,
+                      color: provider.incrementHapticEnabled
+                          ? Colors.orange
+                          : Colors.grey,
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                const Text(
                   'Restock Quantity',
                   style: TextStyle(
                     fontSize: 16,
@@ -5156,39 +5222,91 @@ class _RestockProductScreenState extends State<RestockProductScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 12),
-            TextField(
-              controller: _quantityController,
-              focusNode: _quantityFocusNode,
-              decoration: InputDecoration(
-                labelText: 'Quantity to Add',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.add),
-                hintText: 'Enter quantity',
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.clear),
-                  onPressed: () {
-                    _quantityController.text = '1';
-                    setState(() {});
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Consumer<VibrationProvider>(
+                  builder: (context, provider, child) {
+                    return IconButton(
+                      onPressed: _decrementQuantity,
+                      icon: Icon(Icons.remove_circle),
+                      color: provider.vibrationEnabled ? Colors.red : Colors.grey,
+                      iconSize: 32,
+                      tooltip: 'Decrease quantity',
+                    );
                   },
                 ),
-              ),
-              keyboardType: TextInputType.number,
-              onChanged: (value) {
-                setState(() {});
+                Expanded(
+                  child: TextField(
+                    controller: _quantityController,
+                    focusNode: _quantityFocusNode,
+                    decoration: InputDecoration(
+                      labelText: 'Quantity to Add',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.add),
+                      hintText: 'Enter quantity',
+                      suffixIcon: Consumer<VibrationProvider>(
+                        builder: (context, provider, child) {
+                          if (!provider.vibrationEnabled) {
+                            return Icon(
+                              Icons.vibration_outlined,
+                              color: Colors.grey,
+                              size: 20,
+                            );
+                          }
+                          return const SizedBox.shrink();
+                        },
+                      ),
+                    ),
+                    keyboardType: TextInputType.number,
+                    onChanged: (value) {
+                      setState(() {});
+                    },
+                  ),
+                ),
+                Consumer<VibrationProvider>(
+                  builder: (context, provider, child) {
+                    return IconButton(
+                      onPressed: _incrementQuantity,
+                      icon: Icon(Icons.add_circle),
+                      color: provider.vibrationEnabled ? Colors.green : Colors.grey,
+                      iconSize: 32,
+                      tooltip: 'Increase quantity',
+                    );
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Consumer<VibrationProvider>(
+              builder: (context, provider, child) {
+                if (!provider.vibrationEnabled) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Vibration is disabled in settings',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
               },
             ),
-            SizedBox(height: 12),
+            const SizedBox(height: 12),
             Container(
-              padding: EdgeInsets.all(12),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blue[50],
+                color: Colors.blue.shade50,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
+                  const Text(
                     'New Total Stock:',
                     style: TextStyle(
                       fontWeight: FontWeight.w500,

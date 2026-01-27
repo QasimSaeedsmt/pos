@@ -1,14 +1,18 @@
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mpcm/core/overlay_manager.dart';
+import 'package:provider/provider.dart';
+import 'package:vibration/vibration.dart';
 
 import '../../constants.dart';
 import '../../core/models/app_order_model.dart';
 import '../../core/models/cart_item_model.dart';
 import '../../printing/bottom_sheet.dart';
 import '../../theme_utils.dart';
+import '../../vibration_provider.dart';
+import '../../vibration_setting.dart';
 import '../cartBase/cart_base.dart';
 import '../credit/credit_sale_modal.dart';
 import '../credit/credit_sale_model.dart';
@@ -16,8 +20,6 @@ import '../customerBase/customer_base.dart';
 import '../invoiceBase/invoice_and_printing_base.dart';
 import '../main_navigation/main_navigation_base.dart';
 import '../users/users_base.dart';
-
-
 
 class CheckoutScreen extends StatefulWidget {
   final EnhancedCartManager cartManager;
@@ -28,8 +30,7 @@ class CheckoutScreen extends StatefulWidget {
     super.key,
     required this.cartManager,
     required this.cartItems,
-    this.currentUser, // Add this
-
+    this.currentUser,
   });
 
   @override
@@ -43,28 +44,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   int? _pendingOrderId;
   String? _errorMessage;
   CustomerSelection _customerSelection = CustomerSelection(useDefault: true);
-  AppUser? _currentUser; // Add this
+  AppUser? _currentUser;
 
-
-  // Settings data
   Map<String, dynamic> _invoiceSettings = {};
   Map<String, dynamic> _businessInfo = {};
   bool _isLoadingSettings = true;
   bool _isCreditSale = false;
   CreditSaleData? _creditSaleData;
-  // Payment methods
+
   final List<String> _paymentMethods = [
     'cash',
     'easypaisa/bank transfer',
-    'credit', // Add credit option
-
-
+    'credit',
   ];
   String _selectedPaymentMethod = 'cash';
 
-  // Additional charges/discounts
-  final TextEditingController _additionalDiscountController =
-  TextEditingController();
+  final TextEditingController _additionalDiscountController = TextEditingController();
   final TextEditingController _shippingController = TextEditingController();
   final TextEditingController _tipController = TextEditingController();
 
@@ -72,20 +67,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double _shippingAmount = 0.0;
   double _tipAmount = 0.0;
 
-  // Track if we should reset the screen
-  final bool _shouldResetScreen = false;
-
   @override
   void initState() {
     super.initState();
     _loadSettings();
     _setupCartListeners();
-    _initializeCurrentUser(); // Add this
-
+    _initializeCurrentUser();
   }
-  // Add this method to initialize current user
+
   void _initializeCurrentUser() {
-    // Use the passed user or load from Firebase
     if (widget.currentUser != null) {
       setState(() {
         _currentUser = widget.currentUser;
@@ -95,7 +85,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Add this method to load user from Firebase if not provided
   Future<void> _loadCurrentUserFromFirebase() async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
@@ -110,7 +99,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _currentUser = AppUser.fromFirestore(userDoc);
           });
         } else {
-          // Create default user
           setState(() {
             _currentUser = AppUser(
               uid: firebaseUser.uid,
@@ -129,8 +117,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         }
       }
     } catch (e) {
-      // print('Error loading current user: $e');
-      // Create fallback user
       setState(() {
         _currentUser = AppUser(
           uid: 'fallback_user',
@@ -145,7 +131,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           permissions: [],
         );
       });
-    }}
+    }
+  }
+
   void _setupCartListeners() {
     widget.cartManager.totalStream.listen((total) {
       if (mounted) {
@@ -168,16 +156,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           _isLoadingSettings = false;
         });
 
-        // Apply default discount rate from settings if no manual discount is set
         final defaultDiscountRate = _invoiceSettings['discountRate'] ?? 0.0;
-        if (defaultDiscountRate > 0 &&
-            widget.cartManager.cartDiscountPercent == 0) {
-          widget.cartManager.applyCartDiscount(
-            discountPercent: defaultDiscountRate,
-          );
+        if (defaultDiscountRate > 0 && widget.cartManager.cartDiscountPercent == 0) {
+          widget.cartManager.applyCartDiscount(discountPercent: defaultDiscountRate);
         }
 
-        // Apply tax rate from settings
         final taxRate = _invoiceSettings['taxRate'] ?? 0.0;
         widget.cartManager.updateTaxRate(taxRate);
       }
@@ -189,41 +172,57 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       }
     }
   }
-  // Add this method to show credit sale modal
+
+  Future<void> _vibrateSuccess() async {
+    final vibrationProvider = context.read<VibrationProvider>();
+    await vibrationProvider.vibrateSuccess();
+  }
+
+  Future<void> _vibrateError() async {
+    final vibrationProvider = context.read<VibrationProvider>();
+    await vibrationProvider.vibrateError();
+  }
+
+  Future<void> _vibrateProcessing() async {
+    final vibrationProvider = context.read<VibrationProvider>();
+    await vibrationProvider.vibrate(duration: 50);
+  }
+
+  Future<void> _vibrateForCreditSale() async {
+    final vibrationProvider = context.read<VibrationProvider>();
+    try {
+      await Vibration.vibrate(pattern: [0, 100, 200, 150]);
+    } catch (e) {
+      await vibrationProvider.vibrateSuccess();
+    }
+  }
+
   void _showCreditSaleModal() {
     if (!_customerSelection.hasCustomer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Please select a customer for credit sale'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      context.read<VibrationProvider>().vibrateError();
+     OverlayManager.showToast(context: context, message: 'Please select a customer for credit sale',backgroundColor: Colors.orange);
       return;
     }
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // This is crucial
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => CreditSaleModal(
         selectedCustomer: _customerSelection.customer!,
         orderTotal: _finalTotal,
-        onConfirm: (creditData) {
+        onConfirm: (creditData) async {
+          await context.read<VibrationProvider>().vibrateSuccess();
           setState(() {
             _creditSaleData = creditData;
             _selectedPaymentMethod = 'credit';
             _isCreditSale = true;
           });
           Navigator.pop(context);
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Credit sale configured successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
+         OverlayManager.showToast(context: context, message: 'Credit sale configured successfully',backgroundColor: Colors.green);
         },
-        onCancel: () {
+        onCancel: () async {
+          await context.read<VibrationProvider>().vibrate();
           setState(() {
             _isCreditSale = false;
             _creditSaleData = null;
@@ -234,7 +233,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-  // Update the payment section to handle credit selection
+
   Widget _buildPaymentSection() {
     return Card(
       child: Padding(
@@ -247,39 +246,44 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _paymentMethods.map((method) {
-                final isSelected = _selectedPaymentMethod == method;
-                return ChoiceChip(
-                  label: Text(_getPaymentMethodName(method)),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    if (selected) {
-                      if (method == 'credit') {
-                        _showCreditSaleModal();
-                      } else {
-                        setState(() {
-                          _selectedPaymentMethod = method;
-                          _isCreditSale = false;
-                          _creditSaleData = null;
-                        });
-                      }
-                    }
-                  },
-                  selectedColor: method == 'credit' ? Colors.orange[100] : Colors.blue[100],
-                  labelStyle: TextStyle(
-                    color: isSelected ?
-                    (method == 'credit' ? Colors.orange[800] : Colors.blue[800]) :
-                    Colors.grey[800],
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                  ),
+            Consumer<VibrationProvider>(
+              builder: (context, vibrationProvider, child) {
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _paymentMethods.map((method) {
+                    final isSelected = _selectedPaymentMethod == method;
+                    return ChoiceChip(
+                      label: Text(_getPaymentMethodName(method)),
+                      selected: isSelected,
+                      onSelected: (selected) async {
+                        if (selected) {
+                          if (method == 'credit') {
+                            _showCreditSaleModal();
+                          } else {
+                            if (vibrationProvider.vibrationEnabled) {
+                              await vibrationProvider.vibrate(duration: 30);
+                            }
+                            setState(() {
+                              _selectedPaymentMethod = method;
+                              _isCreditSale = false;
+                              _creditSaleData = null;
+                            });
+                          }
+                        }
+                      },
+                      selectedColor: method == 'credit' ? Colors.orange[100] : Colors.blue[100],
+                      labelStyle: TextStyle(
+                        color: isSelected ?
+                        (method == 'credit' ? Colors.orange[800] : Colors.blue[800]) :
+                        Colors.grey[800],
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                    );
+                  }).toList(),
                 );
-              }).toList(),
+              },
             ),
-
-            // Show credit sale details if selected
             if (_isCreditSale && _creditSaleData != null)
               _buildCreditSaleDetails(),
           ],
@@ -317,7 +321,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           if (creditData.dueDate != null)
             _buildCreditDetailRow(
               'Due Date',
-              0, // We'll handle this specially
+              0,
               textValue: DateFormat('MMM dd, yyyy').format(creditData.dueDate!),
             ),
           if (creditData.notes.isNotEmpty)
@@ -370,25 +374,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
+
   void _showInvoiceOptions(AppOrder order) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => InvoiceOptionsBottomSheetWithOptions(
         order: order,
-        customer: _customerSelection.hasCustomer
-            ? _customerSelection.customer
-            : null,
-        currentUser: _currentUser, // Add this
-
-        // businessInfo: _businessInfo,
-        // invoiceSettings: _invoiceSettings,
+        customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
+        currentUser: _currentUser,
       ),
     ).then((_) {
-      // After invoice dialog is closed, reset the screen
       _resetCheckoutScreen();
     });
   }
+
   Widget _buildUserInfoSection() {
     return Card(
       child: Padding(
@@ -438,29 +438,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         return 'Staff';
     }
   }
+
   void _showOfflineInvoiceOptions(int pendingOrderId) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => OfflineInvoiceBottomSheet(
         pendingOrderId: pendingOrderId,
-        customer: _customerSelection.hasCustomer
-            ? _customerSelection.customer
-            : null,
-        currentUser: _currentUser, // Add this - you may need to update OfflineInvoiceBottomSheet to accept this parameter
-
+        customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
+        currentUser: _currentUser,
         businessInfo: _businessInfo,
         invoiceSettings: _invoiceSettings,
         finalTotal: _finalTotal,
         paymentMethod: _selectedPaymentMethod,
       ),
     ).then((_) {
-      // After invoice dialog is closed, reset the screen
       _resetCheckoutScreen();
     });
   }
 
   Future<void> _selectCustomer() async {
+    final vibrationProvider = context.read<VibrationProvider>();
+    if (vibrationProvider.vibrationEnabled) {
+      await vibrationProvider.vibrate(duration: 30);
+    }
+
     final result = await Navigator.push<CustomerSelection>(
       context,
       MaterialPageRoute(
@@ -472,6 +474,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
 
     if (result != null) {
+      if (vibrationProvider.vibrationEnabled) {
+        await vibrationProvider.vibrate(duration: 50);
+      }
       setState(() {
         _customerSelection = result;
       });
@@ -505,13 +510,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         actions: [
           if (_additionalDiscount > 0)
             TextButton(
-              onPressed: () {
+              onPressed: () async {
+                final vibrationProvider = context.read<VibrationProvider>();
+                if (vibrationProvider.vibrationEnabled) {
+                  await vibrationProvider.vibrateSuccess();
+                }
                 setState(() => _additionalDiscount = 0.0);
                 _additionalDiscountController.clear();
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Additional discount removed')),
-                );
+              OverlayManager.showToast(context: context, message: 'Additional discount removed');
               },
               child: Text(
                 'Remove Discount',
@@ -522,21 +529,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final discount = double.tryParse(controller.text);
-              if (discount != null && discount > 0) {
-                setState(() => _additionalDiscount = discount);
-                _additionalDiscountController.text = discount.toStringAsFixed(
-                  2,
-                );
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Additional discount applied')),
-                );
-              }
+          Consumer<VibrationProvider>(
+            builder: (context, vibrationProvider, child) {
+              return ElevatedButton(
+                onPressed: () async {
+                  final discount = double.tryParse(controller.text);
+                  if (discount != null && discount > 0) {
+                    if (vibrationProvider.vibrationEnabled) {
+                      await vibrationProvider.vibrateSuccess();
+                    }
+                    setState(() => _additionalDiscount = discount);
+                    _additionalDiscountController.text = discount.toStringAsFixed(2);
+                    Navigator.pop(context);
+                    OverlayManager.showToast(context: context, message: 'Additional discount applied');
+                  } else {
+                    if (vibrationProvider.vibrationEnabled) {
+                      await vibrationProvider.vibrateError();
+                    }
+                  OverlayManager.showToast(context: context, message: 'Please enter a valid discount amount');
+                  }
+                },
+                child: Text('Apply Discount'),
+              );
             },
-            child: Text('Apply Discount'),
           ),
         ],
       ),
@@ -565,14 +580,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final shipping = double.tryParse(controller.text) ?? 0.0;
-              setState(() => _shippingAmount = shipping);
-              _shippingController.text = shipping.toStringAsFixed(2);
-              Navigator.pop(context);
+          Consumer<VibrationProvider>(
+            builder: (context, vibrationProvider, child) {
+              return ElevatedButton(
+                onPressed: () async {
+                  final shipping = double.tryParse(controller.text) ?? 0.0;
+                  if (vibrationProvider.vibrationEnabled) {
+                    await vibrationProvider.vibrate(duration: 50);
+                  }
+                  setState(() => _shippingAmount = shipping);
+                  _shippingController.text = shipping.toStringAsFixed(2);
+                  Navigator.pop(context);
+                },
+                child: Text('Apply Shipping'),
+              );
             },
-            child: Text('Apply Shipping'),
           ),
         ],
       ),
@@ -601,21 +623,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel'),
           ),
-          ElevatedButton(
-            onPressed: () {
-              final tip = double.tryParse(controller.text) ?? 0.0;
-              setState(() => _tipAmount = tip);
-              _tipController.text = tip.toStringAsFixed(2);
-              Navigator.pop(context);
+          Consumer<VibrationProvider>(
+            builder: (context, vibrationProvider, child) {
+              return ElevatedButton(
+                onPressed: () async {
+                  final tip = double.tryParse(controller.text) ?? 0.0;
+                  if (vibrationProvider.vibrationEnabled) {
+                    await vibrationProvider.vibrate(duration: 50);
+                  }
+                  setState(() => _tipAmount = tip);
+                  _tipController.text = tip.toStringAsFixed(2);
+                  Navigator.pop(context);
+                },
+                child: Text('Apply Tip'),
+              );
             },
-            child: Text('Apply Tip'),
           ),
         ],
       ),
     );
   }
 
-  // Enhanced total calculations with additional charges/discounts
   double get _subtotal => widget.cartManager.subtotal;
   double get _itemDiscounts => widget.cartManager.items.fold(
     0.0,
@@ -631,7 +659,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   double get _finalTotal =>
       _taxableAmount + _taxAmount + _shippingAmount + _tipAmount;
 
-  // Update reset method to clear credit data
   void _resetCheckoutScreen() {
     if (mounted) {
       setState(() {
@@ -645,8 +672,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         _errorMessage = null;
         _isCreditSale = false;
         _creditSaleData = null;
-
-        // Clear controllers
         _additionalDiscountController.clear();
         _shippingController.clear();
         _tipController.clear();
@@ -654,23 +679,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-// In checkout_base.dart - UPDATE the _processOrder method
-  // Update the process order method to include credit data
-
-
   Future<void> _processOrder() async {
     if (widget.cartItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Cart is empty')));
+      await _vibrateError();
+      OverlayManager.showToast(context: context, message: 'Cart is empty');
       return;
     }
 
-    // Validate credit sale requirements
     if (_isCreditSale && !_customerSelection.hasCustomer) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Customer selection is required for credit sales')),
-      );
+      await _vibrateError();
+     OverlayManager.showToast(context: context, message: 'Customer selection is required for credit sales');
       return;
     }
+
+    await _vibrateProcessing();
 
     setState(() {
       _isProcessing = true;
@@ -678,8 +700,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     try {
-      // Create enhanced order data with all discount information
-// In the _processOrder method, update the orderData to include credit information:
       final orderData = {
         'cartData': widget.cartManager.getCartDataForOrder(),
         'additionalDiscount': _additionalDiscount,
@@ -689,51 +709,30 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         'paymentMethod': _selectedPaymentMethod,
         'invoiceSettings': _invoiceSettings,
         'businessInfo': _businessInfo,
-        // Add credit data
         'isCreditSale': _isCreditSale,
         'creditAmount': _creditSaleData?.creditAmount,
         'paidAmount': _creditSaleData?.paidAmount,
         'previousBalance': _creditSaleData?.previousBalance,
         'newBalance': _creditSaleData?.newBalance,
-        // Add user data for invoice attribution
         'processedBy': _currentUser?.formattedName,
         'processedByUserId': _currentUser?.uid,
         'processedByRole': _currentUser?.role.toString(),
       };
 
-// Update the enhanced invoice options call:
-      void showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          builder: (context) => InvoiceOptionsBottomSheetWithOptions(
-            order: order,
-            customer: _customerSelection.hasCustomer ? _customerSelection.customer : null,
-            enhancedData: enhancedData,
-            creditSaleData: _isCreditSale ? _creditSaleData : null,
-            currentUser: _currentUser, // Add this
-
-          ),
-        ).then((_) {
-          _resetCheckoutScreen();
-        });
-      }
-      // Use the enhanced order creation method with credit data
       final result = await _posService.createOrderWithEnhancedData(
         widget.cartItems,
         _customerSelection,
         additionalData: orderData,
         cartManager: widget.cartManager,
         creditSaleData: _isCreditSale ? _creditSaleData : null,
-
       );
 
       if (result.success) {
-        // Clear cart first
         await widget.cartManager.clearCart();
 
         if (result.isOffline) {
           setState(() => _pendingOrderId = result.pendingOrderId);
+          await _vibrateSuccess();
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -744,16 +743,22 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           );
 
-          // Show invoice for offline order
           if (result.pendingOrderId != null) {
             _showOfflineInvoiceOptions(result.pendingOrderId!);
           } else if (result.order != null) {
-            showEnhancedInvoiceOptions(result.order!, orderData);
+            _showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
             _resetCheckoutScreen();
           }
         } else {
           setState(() => _completedOrder = result.order);
+
+          if (_isCreditSale) {
+            await _vibrateForCreditSale();
+          } else {
+            await _vibrateSuccess();
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(_isCreditSale ?
@@ -763,38 +768,28 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
           );
 
-          // Show enhanced invoice for online order
           if (result.order != null) {
-            showEnhancedInvoiceOptions(result.order!, orderData);
+            _showEnhancedInvoiceOptions(result.order!, orderData);
           } else {
-
             _resetCheckoutScreen();
           }
         }
       } else {
+        await _vibrateError();
         setState(() => _errorMessage = result.error);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Order failed: ${result.error}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+     OverlayManager.showToast(context: context, message: 'Order failed: ${result.error}');
       }
     } catch (e) {
+      await _vibrateError();
       setState(() => _errorMessage = e.toString());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Order failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+     OverlayManager.showToast(context: context, message: 'Order failed: $e');
     } finally {
       if (mounted) {
         setState(() => _isProcessing = false);
       }
     }
   }
-// Add this method to show enhanced invoice options
+
   void _showEnhancedInvoiceOptions(AppOrder order, Map<String, dynamic> enhancedData) {
     showModalBottomSheet(
       context: context,
@@ -806,9 +801,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     ).then((_) {
       _resetCheckoutScreen();
-
     });
   }
+
   Widget _buildCustomerSection() {
     return Card(
       child: Padding(
@@ -942,24 +937,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             SizedBox(height: 12),
             _buildPriceRow('Subtotal', _subtotal),
             if (_itemDiscounts > 0)
-              _buildPriceRow(
-                'Item Discounts',
-                -_itemDiscounts,
-                isDiscount: true,
-              ),
+              _buildPriceRow('Item Discounts', -_itemDiscounts, isDiscount: true),
             if (_cartDiscount > 0)
               _buildPriceRow('Cart Discount', -_cartDiscount, isDiscount: true),
             if (_additionalDiscount > 0)
-              _buildPriceRow(
-                'Additional Discount',
-                -_additionalDiscount,
-                isDiscount: true,
-              ),
+              _buildPriceRow('Additional Discount', -_additionalDiscount, isDiscount: true),
             if (widget.cartManager.taxRate > 0)
-              _buildPriceRow(
-                'Tax (${widget.cartManager.taxRate.toStringAsFixed(1)}%)',
-                _taxAmount,
-              ),
+              _buildPriceRow('Tax (${widget.cartManager.taxRate.toStringAsFixed(1)}%)', _taxAmount),
             if (_shippingAmount > 0)
               _buildPriceRow('Shipping', _shippingAmount),
             if (_tipAmount > 0) _buildPriceRow('Tip', _tipAmount),
@@ -977,31 +961,42 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         bool isDiscount = false,
         bool isTotal = false,
       }) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: isTotal ? 16 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              color: isDiscount ? Colors.green : Colors.black,
+    return Consumer<VibrationProvider>(
+      builder: (context, vibrationProvider, child) {
+        return GestureDetector(
+          onTap: () async {
+            if (vibrationProvider.vibrationEnabled && (isDiscount || isTotal)) {
+              await vibrationProvider.vibrate(duration: 20);
+            }
+          },
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: isTotal ? 16 : 14,
+                    fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+                    color: isDiscount ? Colors.green : Colors.black,
+                  ),
+                ),
+                Text(
+                  '${isDiscount ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: isTotal ? 18 : 14,
+                    fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+                    color: isDiscount
+                        ? Colors.green
+                        : (isTotal ? Colors.green[700] : Colors.black),
+                  ),
+                ),
+              ],
             ),
           ),
-          Text(
-            '${isDiscount ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
-            style: TextStyle(
-              fontSize: isTotal ? 18 : 14,
-              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
-              color: isDiscount
-                  ? Colors.green
-                  : (isTotal ? Colors.green[700] : Colors.black),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -1017,47 +1012,68 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildAdditionalOptionButton(
-                    'Additional Discount',
-                    _additionalDiscount > 0
-                        ? '${Constants.CURRENCY_NAME}${_additionalDiscount.toStringAsFixed(2)}'
-                        : 'Add',
-                    _showAdditionalDiscountDialog,
-                    color: _additionalDiscount > 0 ? Colors.green : null,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: _buildAdditionalOptionButton(
-                    'Shipping',
-                    _shippingAmount > 0
-                        ? '${Constants.CURRENCY_NAME}${_shippingAmount.toStringAsFixed(2)}'
-                        : 'Add',
-                    _showShippingDialog,
-                  ),
-                ),
-              ],
+            Consumer<VibrationProvider>(
+              builder: (context, vibrationProvider, child) {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _buildAdditionalOptionButton(
+                        'Additional Discount',
+                        _additionalDiscount > 0
+                            ? '${Constants.CURRENCY_NAME}${_additionalDiscount.toStringAsFixed(2)}'
+                            : 'Add',
+                            () async {
+                          if (vibrationProvider.vibrationEnabled) {
+                            await vibrationProvider.vibrate(duration: 30);
+                          }
+                          _showAdditionalDiscountDialog();
+                        },
+                        color: _additionalDiscount > 0 ? Colors.green : null,
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: _buildAdditionalOptionButton(
+                        'Shipping',
+                        _shippingAmount > 0
+                            ? '${Constants.CURRENCY_NAME}${_shippingAmount.toStringAsFixed(2)}'
+                            : 'Add',
+                            () async {
+                          if (vibrationProvider.vibrationEnabled) {
+                            await vibrationProvider.vibrate(duration: 30);
+                          }
+                          _showShippingDialog();
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildAdditionalOptionButton(
-                    'Tip',
-                    _tipAmount > 0
-                        ? '${Constants.CURRENCY_NAME}${_tipAmount.toStringAsFixed(2)}'
-                        : 'Add',
-                    _showTipDialog,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Container(), // Empty for alignment
-                ),
-              ],
+            Consumer<VibrationProvider>(
+              builder: (context, vibrationProvider, child) {
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _buildAdditionalOptionButton(
+                        'Tip',
+                        _tipAmount > 0
+                            ? '${Constants.CURRENCY_NAME}${_tipAmount.toStringAsFixed(2)}'
+                            : 'Add',
+                            () async {
+                          if (vibrationProvider.vibrationEnabled) {
+                            await vibrationProvider.vibrate(duration: 30);
+                          }
+                          _showTipDialog();
+                        },
+                      ),
+                    ),
+                    SizedBox(width: 8),
+                    Expanded(child: Container()),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -1102,15 +1118,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-
-
   String _getPaymentMethodName(String method) {
     switch (method) {
       case 'cash':
         return 'Cash';
       case 'easypaisa/bank transfer':
-        return         'easypaisa/bank transfer'
-    ;
+        return 'easypaisa/bank transfer';
       case 'credit':
         return 'Credit Sale';
       default:
@@ -1127,81 +1140,90 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         color: Colors.white,
         border: Border(top: BorderSide(color: Colors.grey[200]!)),
       ),
-      child: Column(
-        children: [
-          if (_errorMessage != null)
-            Container(
-              padding: EdgeInsets.all(12),
-              margin: EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.red[50],
-                border: Border.all(color: Colors.red),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.error, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _errorMessage!,
-                      style: TextStyle(color: Colors.red[700]),
+      child: Consumer<VibrationProvider>(
+        builder: (context, vibrationProvider, child) {
+          return Column(
+            children: [
+              if (_errorMessage != null)
+                Container(
+                  padding: EdgeInsets.all(12),
+                  margin: EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red[50],
+                    border: Border.all(color: Colors.red),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error, color: Colors.red, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red[700]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              if (!isOnline)
+                Container(
+                  padding: EdgeInsets.all(12),
+                  margin: EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    border: Border.all(color: Colors.orange),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.cloud_off, color: Colors.orange, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Offline Mode - Order will be saved locally and synced when online',
+                          style: TextStyle(color: Colors.orange[800]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: _isProcessing
+                    ? ElevatedButton(
+                  onPressed: null,
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-          if (!isOnline)
-            Container(
-              padding: EdgeInsets.all(12),
-              margin: EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                border: Border.all(color: Colors.orange),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.cloud_off, color: Colors.orange, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Offline Mode - Order will be saved locally and synced when online',
-                      style: TextStyle(color: Colors.orange[800]),
+                )
+                    : ElevatedButton(
+                  onPressed: widget.cartItems.isEmpty ? null : () async {
+                    if (vibrationProvider.vibrationEnabled) {
+                      await vibrationProvider.vibrate(duration: 30);
+                    }
+                    _processOrder();
+                  },
+                  child: Text(
+                    isOnline ? 'PROCESS PAYMENT' : 'SAVE OFFLINE ORDER',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
-              ),
-            ),
-
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: _isProcessing
-                ? ElevatedButton(
-              onPressed: null,
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
                 ),
               ),
-            )
-                : ElevatedButton(
-              onPressed: widget.cartItems.isEmpty ? null : _processOrder,
-              child: Text(
-                isOnline ? 'PROCESS PAYMENT' : 'SAVE OFFLINE ORDER',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1211,7 +1233,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_isLoadingSettings) {
       return SafeArea(
         child: Scaffold(
-          appBar: AppBar(title: Text('Checkout',),backgroundColor: ThemeUtils.primary(context),),
+          appBar: AppBar(title: Text('Checkout'), backgroundColor: ThemeUtils.primary(context)),
           body: Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1233,6 +1255,27 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           backgroundColor: _posService.isOnline
               ? ThemeUtils.primary(context)
               : ThemeUtils.secondary(context),
+          actions: [
+            Consumer<VibrationProvider>(
+              builder: (context, vibrationProvider, child) {
+                return IconButton(
+                  icon: Icon(
+                    vibrationProvider.vibrationEnabled ? Icons.vibration : Icons.vibration_outlined,
+                    color: vibrationProvider.vibrationEnabled ? Colors.green : Colors.grey,
+                  ),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => VibrationSettingsScreen(),
+                      ),
+                    );
+                  },
+                  tooltip: 'Vibration Settings',
+                );
+              },
+            ),
+          ],
         ),
         body: Column(
           children: [
@@ -1243,31 +1286,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   children: [
                     _buildUserInfoSection(),
                     SizedBox(height: 16),
-                    // Customer Section
                     _buildCustomerSection(),
                     SizedBox(height: 16),
-
-                    // Order Summary
                     _buildOrderSummary(),
                     SizedBox(height: 16),
-
-                    // Additional Options
                     _buildAdditionalOptions(),
                     SizedBox(height: 16),
-
-                    // Price Breakdown
                     _buildPriceBreakdown(),
                     SizedBox(height: 16),
-
-                    // Payment Section
                     _buildPaymentSection(),
                     SizedBox(height: 16),
                   ],
                 ),
               ),
             ),
-
-            // Action Buttons
             _buildActionButtons(),
           ],
         ),

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../features/invoiceBase/invoice_and_printing_base.dart';
 import '../../../features/scanning/smart_scanner_overlay.dart';
+import '../../../vibration_setting.dart';
 import '../providers/auth_provider.dart';
 import '../providers/settings_provider.dart';
 import '../constants/auth_strings.dart';
@@ -256,6 +257,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           //     ],
           //   ),
           // ),
+          // Add this to your navigation or settings section
+          ListTile(
+            leading: const Icon(Icons.vibration),
+            title: const Text('Haptic Settings'),
+            subtitle: const Text('Customize vibration feedback'),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const VibrationSettingsScreen(),
+                ),
+              );
+            },
+          ),
           Card(
             margin: const EdgeInsets.symmetric(
               horizontal: AuthMeasurements.innerPadding,
