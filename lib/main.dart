@@ -9,6 +9,7 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 import 'package:mpcm/features/connectivityBase/local_db_base.dart';
+import 'package:mpcm/vibration_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
@@ -84,6 +85,7 @@ Future<void> _initializeApp() async {
     runApp(
       MultiProvider(
         providers: [
+          ChangeNotifierProvider(create: (context) => VibrationProvider(),),
           ChangeNotifierProvider(create: (_) => ScreenSelectionProvider()),
           // ChangeNotifierProvider(
           //   create: (_) => AnalyticsController(),
