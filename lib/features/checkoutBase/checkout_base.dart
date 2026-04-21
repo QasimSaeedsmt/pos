@@ -235,63 +235,185 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildPaymentSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Payment Method',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            SizedBox(height: 12),
-            Consumer<VibrationProvider>(
-              builder: (context, vibrationProvider, child) {
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _paymentMethods.map((method) {
-                    final isSelected = _selectedPaymentMethod == method;
-                    return ChoiceChip(
-                      label: Text(_getPaymentMethodName(method)),
-                      selected: isSelected,
-                      onSelected: (selected) async {
-                        if (selected) {
-                          if (method == 'credit') {
-                            _showCreditSaleModal();
-                          } else {
-                            if (vibrationProvider.vibrationEnabled) {
-                              await vibrationProvider.vibrate(duration: 30);
-                            }
-                            setState(() {
-                              _selectedPaymentMethod = method;
-                              _isCreditSale = false;
-                              _creditSaleData = null;
-                            });
-                          }
-                        }
-                      },
-                      selectedColor: method == 'credit' ? Colors.orange[100] : Colors.blue[100],
-                      labelStyle: TextStyle(
-                        color: isSelected ?
-                        (method == 'credit' ? Colors.orange[800] : Colors.blue[800]) :
-                        Colors.grey[800],
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          /// HEADER
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Payment',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (_selectedPaymentMethod != null)
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'Selected',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green,
+                    ),
+                  ),
+                )
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          /// PAYMENT OPTIONS GRID
+          Consumer<VibrationProvider>(
+            builder: (context, vibrationProvider, child) {
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _paymentMethods.map((method) {
+                  final isSelected = _selectedPaymentMethod == method;
+
+                  return GestureDetector(
+                    onTap: () async {
+                      if (method == 'credit') {
+                        _showCreditSaleModal();
+                        return;
+                      }
+
+                      if (vibrationProvider.vibrationEnabled) {
+                        await vibrationProvider.vibrate(duration: 30);
+                      }
+
+                      setState(() {
+                        _selectedPaymentMethod = method;
+                        _isCreditSale = false;
+                        _creditSaleData = null;
+                      });
+                    },
+
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      constraints: const BoxConstraints(minWidth: 90),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? _getMethodColor(method).withOpacity(0.1)
+                            : Colors.grey[50],
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isSelected
+                              ? _getMethodColor(method)
+                              : Colors.grey.withOpacity(0.2),
+                          width: isSelected ? 1.4 : 1,
+                        ),
                       ),
-                    );
-                  }).toList(),
-                );
-              },
-            ),
-            if (_isCreditSale && _creditSaleData != null)
-              _buildCreditSaleDetails(),
-          ],
-        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          /// ICON
+                          Icon(
+                            _getMethodIcon(method),
+                            size: 16,
+                            color: isSelected
+                                ? _getMethodColor(method)
+                                : Colors.grey[600],
+                          ),
+
+                          const SizedBox(width: 6),
+
+                          /// LABEL
+                          Flexible(
+                            child: Text(
+                              _getPaymentMethodName(method),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isSelected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: isSelected
+                                    ? _getMethodColor(method)
+                                    : Colors.grey[800],
+                              ),
+                            ),
+                          ),
+
+                          /// CHECK
+                          if (isSelected) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.check_circle,
+                              size: 14,
+                              color: _getMethodColor(method),
+                            )
+                          ]
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+
+          /// CREDIT DETAILS
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: (_isCreditSale && _creditSaleData != null)
+                ? Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: _buildCreditSaleDetails(),
+            )
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
+  IconData _getMethodIcon(String method) {
+    switch (method) {
+      case 'cash':
+        return Icons.payments_outlined;
+      case 'card':
+        return Icons.credit_card;
+      case 'wallet':
+        return Icons.account_balance_wallet_outlined;
+      case 'credit':
+        return Icons.receipt_long;
+      default:
+        return Icons.payment;
+    }
+  }
 
+  Color _getMethodColor(String method) {
+    switch (method) {
+      case 'cash':
+        return Colors.green;
+      case 'card':
+        return Colors.blue;
+      case 'wallet':
+        return Colors.purple;
+      case 'credit':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
   Widget _buildCreditSaleDetails() {
     final creditData = _creditSaleData!;
     return Container(
@@ -389,40 +511,40 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
   }
 
-  Widget _buildUserInfoSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Icon(Icons.person, color: Colors.blue),
-            SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Processed by',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    _currentUser?.formattedName ?? 'Loading...',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  if (_currentUser?.role != null)
-                    Text(
-                      _getUserRoleDisplay(_currentUser!.role),
-                      style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Widget _buildUserInfoSection() {
+  //   return Card(
+  //     child: Padding(
+  //       padding: EdgeInsets.all(16),
+  //       child: Row(
+  //         children: [
+  //           Icon(Icons.person, color: Colors.blue),
+  //           SizedBox(width: 12),
+  //           Expanded(
+  //             child: Column(
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 Text(
+  //                   'Processed by',
+  //                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+  //                 ),
+  //                 SizedBox(height: 4),
+  //                 Text(
+  //                   _currentUser?.formattedName ?? 'Loading...',
+  //                   style: TextStyle(fontWeight: FontWeight.w600),
+  //                 ),
+  //                 if (_currentUser?.role != null)
+  //                   Text(
+  //                     _getUserRoleDisplay(_currentUser!.role),
+  //                     style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+  //                   ),
+  //               ],
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   String _getUserRoleDisplay(UserRole role) {
     switch (role) {
@@ -805,59 +927,132 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildCustomerSection() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final hasCustomer = _customerSelection.hasCustomer;
+    final customer = _customerSelection.customer;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.08)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: _selectCustomer,
+        child: Row(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Customer Information',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                TextButton(onPressed: _selectCustomer, child: Text('Change')),
-              ],
+            /// AVATAR / ICON
+            Container(
+              height: 42,
+              width: 42,
+              decoration: BoxDecoration(
+                color: hasCustomer
+                    ? Colors.blue.withOpacity(0.1)
+                    : Colors.grey.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                hasCustomer ? Icons.person : Icons.person_outline,
+                color: hasCustomer ? Colors.blue : Colors.grey[600],
+                size: 20,
+              ),
             ),
-            SizedBox(height: 8),
-            if (_customerSelection.hasCustomer)
-              Column(
+
+            const SizedBox(width: 10),
+
+            /// MAIN INFO
+            Expanded(
+              child: hasCustomer
+                  ? Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
+                  /// NAME
                   Text(
-                    _customerSelection.customer!.displayName,
-                    style: TextStyle(fontWeight: FontWeight.w600),
+                    customer!.displayName,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  SizedBox(height: 4),
-                  Text(_customerSelection.customer!.email),
-                  if (_customerSelection.customer!.phone.isNotEmpty)
-                    Text(_customerSelection.customer!.phone),
-                  if (_customerSelection.customer!.orderCount > 0)
-                    Text(
-                      '${_customerSelection.customer!.orderCount} previous orders',
-                      style: TextStyle(color: Colors.green, fontSize: 12),
+
+                  const SizedBox(height: 2),
+
+                  /// EMAIL / PHONE (smart fallback)
+                  Text(
+                    customer.email.isNotEmpty
+                        ? customer.email
+                        : (customer.phone.isNotEmpty
+                        ? customer.phone
+                        : 'No contact info'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+
+                  /// ORDER HISTORY BADGE
+                  if (customer.orderCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 3),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${customer.orderCount} orders',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green[700],
+                          ),
+                        ),
+                      ),
                     ),
                 ],
               )
-            else
-              Row(
+
+              /// EMPTY STATE (smart + inviting)
+                  : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.person_outline, size: 16, color: Colors.grey),
-                  SizedBox(width: 8),
+                  const Text(
+                    'Walk-in Customer',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
                   Text(
-                    'Walk-in Customer (No customer information)',
-                    style: TextStyle(color: Colors.grey),
+                    'Tap to add customer details',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
                   ),
                 ],
               ),
+            ),
+
+            /// ACTION (clean arrow instead of button)
+            Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: Colors.grey[500],
+            ),
           ],
         ),
       ),
     );
   }
-
   Widget _buildOrderSummary() {
     return Card(
       child: Padding(
@@ -923,38 +1118,140 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
+  Widget _compactRow(String label, double amount,
+      {bool isDiscount = false, TextStyle? style}) {
+    final color = isDiscount ? Colors.green[700] : style?.color;
 
-  Widget _buildPriceBreakdown() {
-    return Card(
-      child: Padding(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Text(
-              'Price Breakdown',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: style),
+          Text(
+            '${isDiscount ? '-' : ''}${Constants.CURRENCY_NAME}${amount.abs().toStringAsFixed(2)}',
+            style: TextStyle(
+              fontSize: style?.fontSize ?? 12,
+              fontWeight: FontWeight.w500,
+              color: color,
             ),
-            SizedBox(height: 12),
-            _buildPriceRow('Subtotal', _subtotal),
-            if (_itemDiscounts > 0)
-              _buildPriceRow('Item Discounts', -_itemDiscounts, isDiscount: true),
-            if (_cartDiscount > 0)
-              _buildPriceRow('Cart Discount', -_cartDiscount, isDiscount: true),
-            if (_additionalDiscount > 0)
-              _buildPriceRow('Additional Discount', -_additionalDiscount, isDiscount: true),
-            if (widget.cartManager.taxRate > 0)
-              _buildPriceRow('Tax (${widget.cartManager.taxRate.toStringAsFixed(1)}%)', _taxAmount),
-            if (_shippingAmount > 0)
-              _buildPriceRow('Shipping', _shippingAmount),
-            if (_tipAmount > 0) _buildPriceRow('Tip', _tipAmount),
-            Divider(),
-            _buildPriceRow('TOTAL', _finalTotal, isTotal: true),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
+  Widget _buildPriceBreakdown() {
+    final textStyle = TextStyle(fontSize: 12, color: Colors.grey[700]);
 
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.withOpacity(0.08)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          /// HEADER (compact + aligned)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Summary',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (_itemDiscounts +
+                  _cartDiscount +
+                  _additionalDiscount >
+                  0)
+                Container(
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Saved ${Constants.CURRENCY_NAME}${(_itemDiscounts + _cartDiscount + _additionalDiscount).toStringAsFixed(0)}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          /// MAIN VALUES (tight spacing)
+          _compactRow('Subtotal', _subtotal, style: textStyle),
+
+          if (_itemDiscounts > 0)
+            _compactRow('Items', -_itemDiscounts,
+                isDiscount: true, style: textStyle),
+
+          if (_cartDiscount > 0)
+            _compactRow('Cart', -_cartDiscount,
+                isDiscount: true, style: textStyle),
+
+          if (_additionalDiscount > 0)
+            _compactRow('Extra', -_additionalDiscount,
+                isDiscount: true, style: textStyle),
+
+          if (widget.cartManager.taxRate > 0)
+            _compactRow(
+              'Tax ${widget.cartManager.taxRate.toStringAsFixed(0)}%',
+              _taxAmount,
+              style: textStyle,
+            ),
+
+          if (_shippingAmount > 0)
+            _compactRow('Ship', _shippingAmount, style: textStyle),
+
+          if (_tipAmount > 0)
+            _compactRow('Tip', _tipAmount, style: textStyle),
+
+          const SizedBox(height: 6),
+
+          /// TOTAL (highlighted but compact)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Colors.grey.withOpacity(0.2)),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'TOTAL',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${Constants.CURRENCY_NAME}${_finalTotal.toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildPriceRow(
       String label,
       double amount, {
@@ -1227,7 +1524,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
     );
   }
-
+  bool _showAdditionalOptions = false;
   @override
   Widget build(BuildContext context) {
     if (_isLoadingSettings) {
@@ -1282,22 +1579,76 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.all(16),
-                child: Column(
+                child:
+                Column(
                   children: [
-                    _buildUserInfoSection(),
-                    SizedBox(height: 16),
+                    // _buildUserInfoSection(),
+                    // const SizedBox(height: 16),
+
                     _buildCustomerSection(),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
+
                     _buildOrderSummary(),
-                    SizedBox(height: 16),
-                    _buildAdditionalOptions(),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
+
+                    /// TOGGLE BUTTON
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          _showAdditionalOptions = !_showAdditionalOptions;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              _showAdditionalOptions
+                                  ? "Hide additional options"
+                                  : "Show additional options",
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Theme.of(context).primaryColor,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            AnimatedRotation(
+                              turns: _showAdditionalOptions ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 200),
+                              child: const Icon(Icons.keyboard_arrow_down, size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    /// ANIMATED CONTENT
+                    AnimatedCrossFade(
+                      firstChild: const SizedBox.shrink(),
+                      secondChild: Column(
+                        children: [
+                          const SizedBox(height: 8),
+                          _buildAdditionalOptions(),
+                        ],
+                      ),
+                      crossFadeState: _showAdditionalOptions
+                          ? CrossFadeState.showSecond
+                          : CrossFadeState.showFirst,
+                      duration: const Duration(milliseconds: 250),
+                    ),
+
+                    const SizedBox(height: 16),
+
                     _buildPriceBreakdown(),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
+
                     _buildPaymentSection(),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                   ],
-                ),
+                )
               ),
             ),
             _buildActionButtons(),

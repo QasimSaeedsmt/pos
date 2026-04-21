@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_pull_to_refresh/liquid_pull_to_refresh.dart';
 import 'package:mpcm/features/customerBase/customer_management_screen.dart';
 import 'package:mpcm/features/scanning/all_in_one_sale_screen.dart';
+import 'package:mpcm/pos_analytics_s.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:synchronized/synchronized.dart';
@@ -1614,10 +1615,12 @@ class _MainNavScreenState extends State<MainNavScreen> {
     // Admin Screens - Full access (13 screens)
     _clientAdminScreens.addAll([
       // ModernDashboardScreen(),
-      DashboardScreen(),
+      // DashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
-      AnalyticsDashboardScreen(),
+      POSAnalyticsScreen(tenantId: authProvider.currentTenant!.id),
+      // AnalyticsDashboardScreen(),
+      RestockProductScreen(),
       ProductManagementScreen(),
       CategoryManagementScreen(),
       ReturnsManagementScreen(),
@@ -1638,7 +1641,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     // Sales Manager Screens - Limited access (8 screens)
     _clientSalesManagerScreens.addAll([
-      ModernDashboardScreen(),
+      // ModernDashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
       AnalyticsDashboardScreen(),
@@ -1651,7 +1654,7 @@ class _MainNavScreenState extends State<MainNavScreen> {
 
     // Cashier Screens - Basic access (6 screens)
     _clientCashierScreens.addAll([
-      ModernDashboardScreen(),
+      // ModernDashboardScreen(),
       ProductSellingScreen(cartManager: _cartManager),
       CartScreen(cartManager: _cartManager),
       ReturnsManagementScreen(),
@@ -2593,11 +2596,11 @@ class _MainNavScreenState extends State<MainNavScreen> {
       currentIndex: _currentIndex < 5 ? _currentIndex : 4,
       onTap: (index) => _handleBottomNavigationTap(index, authProvider),
       items: [
-        BottomNavigationBarItem(
-          icon: Icon(Icons.dashboard),
-          activeIcon: Icon(Icons.dashboard),
-          label: 'Dashboard',
-        ),
+        // BottomNavigationBarItem(
+        //   icon: Icon(Icons.dashboard),
+        //   activeIcon: Icon(Icons.dashboard),
+        //   label: 'Dashboard',
+        // ),
         BottomNavigationBarItem(
           icon: Icon(Icons.shopping_bag_outlined),
           activeIcon: Icon(Icons.shopping_bag),
@@ -2612,6 +2615,11 @@ class _MainNavScreenState extends State<MainNavScreen> {
           icon: Icon(Icons.analytics_outlined),
           activeIcon: Icon(Icons.analytics),
           label: 'Analytics',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.inventory),
+          activeIcon: Icon(Icons.inventory),
+          label: 'Inventory',
         ),
         BottomNavigationBarItem(
           icon: _buildMoreIcon(),
@@ -2768,7 +2776,8 @@ class MenuItem {
 }
 
 class ScreenSelectionProvider extends ChangeNotifier{
-  Widget _currentScreen = ModernDashboardScreen();
+  EnhancedCartManager cartManager = EnhancedCartManager();
+  late Widget _currentScreen = ProductSellingScreen(cartManager: cartManager);
   Widget get  currentScreen => _currentScreen;
 
   selectScreen(Widget selectedScreen){
